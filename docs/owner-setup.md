@@ -65,10 +65,11 @@ No extra native npm dependency is required for this slice.
 
 ## Current verification limits
 
-Account creation alone does not establish safe deployment. Keep the app local
-while sign-in and access-control verification are pending.
-The provisioning flow still needs runtime and database verification; compilation
-and lint do not prove password handling or concurrent-insert behavior.
+Real-database integration tests verify Argon2 credentials, refusal to replace an
+existing owner, and competing provisioning attempts preserving a single owner.
+The hidden-input provision/reset commands also passed a local interactive check
+against a disposable database. See [sign-in verification](sign-in.md#verification-status)
+for the session, HTTP, and browser checks and remaining deployment limits.
 
 ## Recover a forgotten password
 

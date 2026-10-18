@@ -62,7 +62,11 @@ redaction. They do not need Docker or cloud credentials.
 `pnpm test:integration` starts an isolated Compose project with a random
 loopback port and temporary PostgreSQL storage. It applies the real migrations,
 checks a real vector operation, verifies migration replay is safe, and removes
-that test project. It never uses the development `DATABASE_URL`.
+that test project. It also exercises owner provisioning, password recovery, and
+session lifecycle against PostgreSQL. HTTP tests start the compiled API on random
+local ports with the test database URL to check authentication and request
+protections. Test files run sequentially because they reset the shared disposable
+fixtures. The runner never uses the development `DATABASE_URL`.
 
 The test runner needs Docker access and the pgvector image locally available or
 pullable. Missing Docker is a failed/unavailable integration check, not a pass.

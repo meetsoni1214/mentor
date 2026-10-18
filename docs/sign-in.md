@@ -86,7 +86,8 @@ Health checks and development API documentation contain no owner account data.
 
 The design follows [OWASP CSRF guidance](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
 and [session guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
-These controls still need runtime verification before deployment.
+The local checks below exercise these controls. HTTPS deployment and reverse-proxy
+behavior still need verification on the eventual deployment target.
 
 ## API contract
 
@@ -103,13 +104,35 @@ No signup or password-reset endpoint exists.
 
 ## Verification status
 
-Compilation, type checking, lint, and formatting can be checked in this workspace.
-Backend compilation, API client generation, standalone workspace type checking,
-lint, and formatting passed for this slice. The frontend production compiler
-succeeded, but the full Next.js build hit the previously reproduced sandbox
-child-process output failure at its final TypeScript step. Run `pnpm build` in
-a normal terminal to finish that check for these changes.
-Authentication, cookie behavior, rate limits, expiry, concurrent requests, and
-the new migration have not yet been exercised in a browser or real database.
-No new tests were added or run for this slice. The existing migration-count
-assertion was updated for the third migration.
+Verified locally on 2026-10-18 with synthetic owners and disposable PostgreSQL:
+
+- `pnpm check` covers formatting, lint, strict types, unit tests, generated API
+  client consumption, and the full production build. The sandboxed Next.js build
+  could not parse its TypeScript child-process output; the build passes outside
+  that sandbox without a code change.
+- `pnpm test:integration` applies the real migrations to fresh temporary storage.
+  The 25 checks include owner provisioning and singleton enforcement, session
+  token hashing, rotation, logout, idle/absolute expiry boundaries, concurrent
+  activity and login attempts, password reset invalidation, and rollback.
+- `tests/integration/auth-http.test.ts` starts the compiled API on random local
+  ports. It verifies actual session/error responses, Origin and CSRF rejection,
+  malformed cookies and bodies, cookie attributes, no-store caching, HTTP expiry,
+  absent public signup/reset endpoints, and session/throttle persistence across
+  API restarts. HTTPS-origin checks verify Secure and `__Host-` cookie headers;
+  they do not exercise TLS transport.
+- Chromium checks at 1440×900 and 390×844 exercised invalid credentials, keyboard
+  sign-in, reload restoration, phone sign-in/logout, and return to login after
+  the test database's session activity was aged beyond its idle deadline. Both
+  phone screens fit without horizontal scrolling. A simulated session API 503
+  displayed the retry state, and restoring the API response allowed recovery.
+  Browser local/session storage remained empty after sign-in.
+- The administrative provision/reset commands were exercised in an interactive
+  terminal against the disposable database. Input stayed hidden and success
+  messages contained no credentials.
+
+Browser checks used a temporary copy of the web app and alternate ports, leaving
+the existing development server running. That copy used Next.js's webpack dev
+compiler because Turbopack rejects dependency symlinks outside its workspace.
+The production build used the project's normal compiler. Browser coverage is a
+manual acceptance pass through Playwright CLI, not a committed browser test suite.
+Firefox, WebKit, real phones, and a deployed HTTPS proxy remain unverified.

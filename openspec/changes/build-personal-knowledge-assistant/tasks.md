@@ -11,15 +11,16 @@ Implementation starts after plan review and an explicit request to apply this ch
 
 ## 2. Private access and responsive shell
 
-- [ ] 2.1 Implement owner provisioning/reset, Argon2id password verification, opaque database sessions, expiry, logout, and session revocation; verify authentication integration tests including reset invalidation and absence of public signup.
-  - Progress: owner provisioning, Argon2id verification, browser login, database sessions, idle/absolute expiry, and logout are implemented. Credential reset and authentication runtime/integration verification remain pending. The owner approved login/sessions as a separate slice; this task is not complete.
+- [x] 2.1 Implement owner provisioning/reset, Argon2id password verification, opaque database sessions, expiry, logout, and session revocation; verify authentication integration tests including reset invalidation and absence of public signup.
+  - Verified: the isolated PostgreSQL suite covers provisioning, password verification/reset, singleton enforcement, session lifecycle, expiry boundaries, concurrency, and reset invalidation. Actual API tests verify absent public signup/reset routes; Chromium verifies sign-in, restoration, logout, and expired-session handling. See docs/sign-in.md for evidence and deployment limits.
 - [ ] 2.2 Enforce authorization, CSRF/Origin controls, cookie settings, throttling, and private response caching; verify unauthenticated API/file requests and cross-origin mutations are denied without private content.
-  - Progress: API routes require sessions by default; mutations enforce Origin and session-bound signed CSRF tokens. Cookie protections, a persistent login budget, and private/no-store API responses are implemented. Runtime verification and future personal-resource ownership checks remain pending.
-- [ ] 2.3 Publish versioned OpenAPI errors/session endpoints and generate the typed client; verify frontend consumption and contract generation produce no unexplained drift.
-  - Progress: authentication endpoints and fixed error envelopes are generated into the client and consumed by the login screen. Compilation/type checks pass; runtime contract verification remains pending.
+  - Progress: actual API tests verify session authorization, Origin/CSRF rejection, cookies, persistent throttling, and private/no-store responses. Personal-resource ownership and private file checks remain pending because those resources are not yet implemented; this task remains open.
+- [x] 2.3 Publish versioned OpenAPI errors/session endpoints and generate the typed client; verify frontend consumption and contract generation produce no unexplained drift.
+  - Verified: pnpm check regenerates and typechecks the client without contract drift. Actual API tests verify session and error responses; Chromium sign-in/logout exercises the generated frontend client.
 - [ ] 2.4 Build accessible phone/desktop login and application navigation with TanStack Query, Zod, and shadcn/ui; verify narrow/wide layouts, keyboard interaction, expired sessions, and recoverable errors.
-  - Progress: a native HTML login form and minimal authenticated shell use TanStack Query and Zod, with loading, error, retry, and logout states. Full navigation, the shadcn/ui foundation, and browser acceptance verification remain pending.
-- [ ] 2.5 Document provisioning, password reset, HTTPS/same-origin assumptions, and session behavior; verify the documented flow works with a disposable owner and never prints passwords.
+  - Progress: Chromium checks verify phone/desktop login layouts, keyboard sign-in, expired-session handling, and recovery after a simulated API failure. Full navigation and the shadcn/ui foundation remain pending; this task remains open.
+- [x] 2.5 Document provisioning, password reset, HTTPS/same-origin assumptions, and session behavior; verify the documented flow works with a disposable owner and never prints passwords.
+  - Verified: owner setup and sign-in notes document the implemented flow and remaining limits. Hidden-input provision/reset commands passed interactive checks with disposable synthetic owners and fixed success messages; session reset behavior is covered by the real-database suite.
 
 ## 3. Durable note and image capture
 

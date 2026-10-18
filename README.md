@@ -41,8 +41,8 @@ TypeScript watcher, API, worker, and web processes together. Ctrl+C stops the
 application processes. `pnpm db:down` stops PostgreSQL without deleting its volume.
 
 All application listeners and the database port bind to loopback by default.
-Sign-in is implemented, but deployment hardening and authentication runtime
-verification are still pending. Keep this development setup local.
+Sign-in has local database, API, and browser verification. Deployment hardening
+and deployed HTTPS verification remain pending. Keep this development setup local.
 
 ## Create your owner account
 
@@ -60,6 +60,9 @@ Do not pass credentials as command arguments or put them in `.env`.
 Forgot your password? Run `pnpm owner:reset-password` in your terminal. It asks
 for your existing email and a new 9–128 character password, preserves your
 account, and signs out all sessions.
+
+Local sign-in details can be kept in [README.local.md](README.local.md), which is
+excluded from Git.
 
 See [owner setup](docs/owner-setup.md) for the command's flow and current limits.
 After creating the account, open http://127.0.0.1:3000 and sign in. Keep this
