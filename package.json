@@ -1,0 +1,51 @@
+{
+  "name": "mentor",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.1.2",
+  "engines": {
+    "node": ">=24.14 <25",
+    "pnpm": ">=11 <12"
+  },
+  "scripts": {
+    "dev": "pnpm build:services && pnpm api:generate && concurrently --kill-others --names types,api,worker,web \"pnpm watch:services\" \"pnpm dev:api\" \"pnpm dev:worker\" \"pnpm dev:web\"",
+    "dev:api": "node --env-file-if-exists=.env --watch apps/api/dist/main.js",
+    "dev:worker": "node --env-file-if-exists=.env --watch apps/worker/dist/main.js",
+    "dev:web": "pnpm --filter @mentor/web dev",
+    "watch:services": "tsc -b tsconfig.services.json --watch --preserveWatchOutput",
+    "build:services": "tsc -b tsconfig.services.json",
+    "build": "pnpm build:services && pnpm api:generate && pnpm --filter @mentor/api-client build && pnpm --filter @mentor/web build",
+    "start:api": "node --env-file-if-exists=.env apps/api/dist/main.js",
+    "start:worker": "node --env-file-if-exists=.env apps/worker/dist/main.js",
+    "start:web": "pnpm --filter @mentor/web start",
+    "api:generate": "node apps/api/dist/export-openapi.js && pnpm --filter @mentor/api-client generate",
+    "typecheck": "pnpm build:services && pnpm api:generate && pnpm --filter @mentor/api-client typecheck && pnpm --filter @mentor/web typecheck && tsc -p tsconfig.tests.json --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "test:integration": "pnpm build:services && node scripts/test-integration.mjs",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "db:generate": "pnpm --filter @mentor/backend db:generate",
+    "owner:reset-password": "pnpm build:services && node --env-file-if-exists=.env packages/backend/dist/identity/cli/reset-owner-password.js",
+    "owner:create": "pnpm build:services && node --env-file-if-exists=.env packages/backend/dist/identity/cli/provision-owner.js",
+    "db:migrate": "pnpm build:services && node --env-file-if-exists=.env packages/backend/dist/database/migrate.js"
+  },
+  "devDependencies": {
+    "@mentor/backend": "workspace:*",
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^24.13.3",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.3",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.59.3",
+    "vitest": "^4.1.11"
+  }
+}

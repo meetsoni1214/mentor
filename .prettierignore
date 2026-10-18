@@ -1,0 +1,17 @@
+node_modules
+.pnpm-store
+.pnpm-cache
+.pnpm-state
+dist
+.next
+coverage
+pnpm-lock.yaml
+*.tsbuildinfo
+packages/api-client/src/generated
+packages/api-client/openapi.json
+apps/web/next-env.d.ts
+packages/backend/drizzle/meta
+.agents
+.codex
+.aws
+openspec
