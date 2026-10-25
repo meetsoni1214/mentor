@@ -34,6 +34,7 @@ const configuration = z
       .max(300_000)
       .default(60_000),
     AI_MAX_TOOL_CALLS: z.coerce.number().int().min(1).max(10).default(2),
+    AI_MAX_MODEL_CALLS: z.coerce.number().int().min(1).max(10).default(3),
   })
   .refine((value) => value.AI_MAX_CONTEXT_BYTES >= value.AI_MAX_MESSAGE_BYTES, {
     path: ['AI_MAX_CONTEXT_BYTES'],
@@ -63,6 +64,7 @@ export function readAIEnvironment(
       maxOutputTokens: config.AI_MAX_OUTPUT_TOKENS,
       deadlineMs: config.AI_DEADLINE_MS,
       maxToolCalls: config.AI_MAX_TOOL_CALLS,
+      maxModelCalls: config.AI_MAX_MODEL_CALLS,
     },
   };
 }

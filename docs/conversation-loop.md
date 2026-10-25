@@ -2,8 +2,8 @@
 
 Mentor will have one continuous conversation. The owner will not create, name,
 or choose threads. This checkpoint implements its backend persistence and run
-lifecycle. The current web screen and API routes are unchanged. A later backend
-checkpoint adds AI configuration and an execution gate, described below. No
+lifecycle, server-only AI configuration, and the task 2.2a budget policy described
+below. The current web screen and API routes are unchanged. No
 OpenAI SDK, paid calls, email connection, or background jobs are involved yet.
 
 ## Start the review here
@@ -64,6 +64,7 @@ boundaries reject browser/API-client imports of this server-only entry point.
 | `AI_MAX_OUTPUT_TOKENS` | 2,048   | 1–32,768               |
 | `AI_DEADLINE_MS`       | 60,000  | 100–300,000            |
 | `AI_MAX_TOOL_CALLS`    | 2       | 1–10                   |
+| `AI_MAX_MODEL_CALLS`   | 3       | 1–10                   |
 
 The context budget must also be at least the raw message limit. These are finite
 application guardrails, not guarantees of model compatibility or an exact billing
@@ -83,9 +84,51 @@ deadline, cancellation, and conditional completion behavior.
 This checkpoint verifies those branches directly with the real repository and
 synthetic configuration. It does not yet wire an OpenAI adapter into Nest, add
 assistant HTTP/status routes, or preserve drafts in a conversation UI. Those
-remain tasks 2.2–2.4 and group 3. Setting environment values alone does not enable
+remain tasks 2.2b–2.4 and group 3. Setting environment values alone does not enable
 an interactive conversation in the current app. `.env.example` documents defaults;
 an existing `.env` is left untouched.
+
+## Whole-run budgets (task 2.2a)
+
+`ConversationModel.complete` represents an entire attempt. Its contract now
+receives `maxModelCalls` and `maxContextBytes` as well as the shared output-token
+and hosted-tool allowances. These allowances do not reset at each SDK iteration.
+For example, after a response uses 30 of 100 output tokens and both permitted
+hosted searches, the next request can use at most 70 output tokens and must omit
+tools. That request counts as another model call even if it uses no tools.
+
+`application/run-budget.ts` supplies the framework-independent `RunBudget`
+policy. A future adapter constructs one per attempt, calls `beginModelCall` at
+each actual request boundary, and calls `recordModelResult` for every response,
+including unsuccessful ones with available usage. It returns remaining output
+and hosted-tool allowances, counts model calls separately, and raises a redacted
+`RunBudgetError` with code `LIMIT_EXCEEDED` on exhaustion or an observed overage.
+It prevents overlapping requests and duplicate accounting. A fresh explicit retry
+gets a new budget. This class does not implement a runner, retry requests, or
+register tools.
+
+Input bounds apply to the complete serialized UTF-8 request input, including
+application instructions, tool definitions, JSON overhead, and required in-run
+items. `selectContext` accepts an optional complete-input measurement function
+so the adapter can reserve its actual initial overhead while selecting whole
+history pairs. It always preserves the current message. The adapter must then
+check the complete serialized input through `beginModelCall` before every request;
+an oversized current message or required continuation stops execution rather
+than being removed to force another call. The existing use-case selector still
+uses transcript bytes until the SDK adapter supplies its actual serialization.
+
+Known input/output usage is summed separately. Missing, malformed, or unsafe
+counts remain null, never zero or a partial sum reported as a complete total.
+Missing output usage blocks another model request because its remaining allowance
+is unknown. Unknown input usage alone does not prevent continuation with known
+output usage. Unknown hosted-tool counts also block continuation. A zero remaining
+hosted-tool allowance permits further model calls only with tools omitted.
+
+This checkpoint adds policy and port contracts, tested without an SDK or network.
+Tasks 2.2b–2.2c must still enforce them through the actual SDK/provider boundary,
+verify storage/tracing/retry/cancellation controls, and map normalized outcomes.
+Failed-attempt usage persistence and use-case composition remain task 2.3. These
+limits bound individual attempts; they do not establish a daily or monetary cap.
 
 ## Follow one message
 
@@ -374,3 +417,27 @@ separate advisories: `js-yaml` (moderate), `zod`, `body-parser`, and `multer`
 (high). Those dependencies remain unchanged by this focused update. The earlier
 Next.js advisory notes above describe historical checkpoints and are superseded
 by this verification.
+
+Task 2.2a, verified on 2026-10-25: the model port carries complete-input and
+model-call limits, and `AI_MAX_MODEL_CALLS` defaults to three with accepted integer
+bounds 1–10. Framework-independent budget tests cover shared output/tool allowances,
+separate counters, known/unknown usage, overages, and complete serialized UTF-8
+input checks, including oversized required continuation. The context selector's
+measurement callback reserves initial instructions and serialization overhead.
+Formatting, lint, strict types, and all 199 unit tests pass through `pnpm check`.
+That command's production build hits the existing sandbox TypeScript
+`--showConfig` parsing failure; a separate `pnpm build` passes outside the sandbox.
+`pnpm test:integration` passes all 55 checks with Docker access outside the sandbox,
+including invalid model-call configuration preserving history/clearing and
+independently nullable token counts surviving persistence and migration.
+The disposable container and network were removed. Strict OpenSpec validation
+passes. Existing planning edits and the generated development type references
+are preserved. No existing `.env`, dependencies, migrations, or generated API
+contracts changed; no OpenAI calls were made. Task 2.2a is complete; SDK enforcement
+and network contract verification remain tasks 2.2b–2.2c.
+
+Review follow-up uses `modelRequestPending` and `newestFirstHistory` to make state
+and ordering explicit, and trims comments to explain reasons. Before committing,
+formatting, lint, strict service/test types, all 199 unit tests, and strict
+OpenSpec validation pass again. The earlier production-build and integration
+results above were not rerun for this naming/comment cleanup.

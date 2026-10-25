@@ -17,8 +17,8 @@ export interface RunActivity {
 }
 
 export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
 }
 
 export type RunOutcome =

@@ -4,24 +4,26 @@ export function contextByteLength(messages: readonly ModelMessage[]): number {
   return new TextEncoder().encode(JSON.stringify(messages)).length;
 }
 
-// History arrives newest first. Keep its contiguous newest whole pairs,
-// then send them chronologically followed by the current message.
 export function selectContext(
   text: string,
-  history: readonly CompletedTurn[],
+  newestFirstHistory: readonly CompletedTurn[],
   maxContextBytes: number,
+  // Instructions and wire-format overhead must also fit the input budget.
+  measureInput: (
+    messages: readonly ModelMessage[],
+  ) => number = contextByteLength,
 ): { messages: ModelMessage[]; contextLimited: boolean } {
   let messages: ModelMessage[] = [{ role: 'user', text }];
   let used = 0;
-  for (const pair of history) {
+  for (const pair of newestFirstHistory) {
     const candidate: ModelMessage[] = [
       { role: 'user', text: pair.text },
       { role: 'assistant', text: pair.answer },
       ...messages,
     ];
-    if (used === 100 || contextByteLength(candidate) > maxContextBytes) break;
+    if (used === 100 || measureInput(candidate) > maxContextBytes) break;
     messages = candidate;
     used += 1;
   }
-  return { messages, contextLimited: used < history.length };
+  return { messages, contextLimited: used < newestFirstHistory.length };
 }

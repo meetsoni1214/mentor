@@ -39,6 +39,7 @@ describe('server-only AI configuration', () => {
         maxOutputTokens: 2048,
         deadlineMs: 60000,
         maxToolCalls: 2,
+        maxModelCalls: 3,
       },
     });
   });
@@ -76,6 +77,12 @@ describe('server-only AI configuration', () => {
     {
       key: 'AI_MAX_TOOL_CALLS',
       field: 'maxToolCalls',
+      minimum: 1,
+      maximum: 10,
+    },
+    {
+      key: 'AI_MAX_MODEL_CALLS',
+      field: 'maxModelCalls',
       minimum: 1,
       maximum: 10,
     },
@@ -125,6 +132,7 @@ describe('server-only AI configuration', () => {
       OPENAI_API_KEY: 'private key that cannot be an HTTP credential',
       OPENAI_CHAT_MODEL: 'private model details with spaces',
       AI_MAX_OUTPUT_TOKENS: 'private invalid value',
+      AI_MAX_MODEL_CALLS: 'private model call allowance',
       UNRELATED_SECRET: 'another private value',
     });
     expect(config).toEqual({
@@ -133,6 +141,7 @@ describe('server-only AI configuration', () => {
         'OPENAI_API_KEY',
         'OPENAI_CHAT_MODEL',
         'AI_MAX_OUTPUT_TOKENS',
+        'AI_MAX_MODEL_CALLS',
       ],
     });
     expect(JSON.stringify(config)).not.toContain('private');

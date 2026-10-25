@@ -7,9 +7,11 @@ implemented with local verification. The active change is
 `add-assistant-conversation-loop`: one continuous conversation per owner, with
 no thread creation or selection. Group 1, conversation persistence and run
 lifecycle, and the four architecture follow-ups are implemented. The current
-review checkpoint is task 2.1: server-only AI configuration and an explicit
-execution gate, with history still readable/clearable while execution is disabled.
-Tests use an injected fake provider. The OpenAI adapter, API composition and
+review checkpoint is task 2.2a: framework-independent whole-run budgets and
+model-port limits, including redacted model-call configuration. History remains
+readable/clearable while execution is disabled. Tests use an injected fake provider;
+the budget policy is ready for enforcement at the later SDK request boundary.
+The OpenAI adapter, API composition and
 protected conversation endpoints, UI, and public-web investigation remain later
 checkpoints. Stop after a verified focused slice for review; commit when requested.
 The older `build-personal-knowledge-assistant` change remains

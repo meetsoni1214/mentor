@@ -51,6 +51,8 @@ describe('enforced architecture boundaries', () => {
       'package',
     ],
     [core, "import { Injectable } from '@nestjs/common';", 'core'],
+    [core, "import '@openai/agents';", 'core'],
+    [domain, "import 'openai';", 'core'],
     [
       core,
       "export * from '../adapters/drizzle-conversation.repository.js';",

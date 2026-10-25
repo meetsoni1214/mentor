@@ -22,6 +22,7 @@ export interface RunLimits {
   maxContextBytes: number;
   maxOutputTokens: number;
   maxToolCalls: number;
+  maxModelCalls: number;
 }
 
 export interface AttemptReference {

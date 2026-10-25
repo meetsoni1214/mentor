@@ -32,7 +32,7 @@ The system SHALL provide exactly one continuous conversation per owner, opened a
 
 ### Requirement: Idempotent turn admission
 
-The system SHALL acknowledge a turn only after committing its user message and run record. Repeated submission of the same owner-scoped request identifier and payload SHALL return the same turn without repeating model work. Reuse with different input SHALL be rejected. The system SHALL allow at most one active run per conversation.
+The system SHALL acknowledge a turn only after committing its user message and run record. Repeated submission of the same owner-scoped request identifier and payload SHALL return the same turn without repeating model work or starting another SDK runner. Reuse with different input SHALL be rejected. The system SHALL allow at most one active run per conversation. Internal SDK model/tool steps SHALL remain within that admitted attempt rather than creating additional user turns or attempts.
 
 #### Scenario: Lost submission response
 
@@ -46,7 +46,7 @@ The system SHALL acknowledge a turn only after committing its user message and r
 
 ### Requirement: Observable run lifecycle
 
-The system SHALL distinguish running, completed, failed, and interrupted attempts. Refreshing or losing a browser connection SHALL not imply cancellation or trigger a replacement run. Only successful final output SHALL appear as a completed answer. Expired attempts SHALL become interrupted, and late output SHALL not overwrite terminal state.
+The system SHALL distinguish running, completed, failed, and interrupted attempts. Refresh or connection loss SHALL not imply cancellation or replacement. Only successful final SDK output accepted by application completion checks SHALL become a completed answer. Intermediate results SHALL not become completed entries. Expired attempts SHALL become interrupted; late output SHALL not overwrite terminal state.
 
 #### Scenario: Refresh during generation
 
@@ -56,11 +56,11 @@ The system SHALL distinguish running, completed, failed, and interrupted attempt
 #### Scenario: Process failure and late result
 
 - **WHEN** an attempt exceeds its execution deadline or the API stops before committing its answer
-- **THEN** status reconciliation marks it interrupted and rejects any later completion for that attempt
+- **THEN** status reconciliation marks it interrupted and rejects any later completion for that attempt, without claiming SDK execution guarantees automatic recovery or background completion
 
 ### Requirement: Explicit retry
 
-The owner SHALL be able to retry the latest failed or interrupted turn using a new attempt identifier without duplicating the original message. Retry SHALL require fresh admission checks and SHALL never happen automatically after an uncertain provider outcome. Completed turns and turns preceding newer messages SHALL not be retried through this operation.
+The owner SHALL be able to retry the latest failed or interrupted turn using a new attempt identifier without duplicating the original message. Retry SHALL require fresh admission checks and start a fresh bounded SDK run from application-owned context; it SHALL not automatically resume uncertain intermediate SDK state. Retry SHALL never happen automatically after an uncertain provider outcome. Completed turns and turns preceding newer messages SHALL not be retried through this operation.
 
 #### Scenario: Provider times out
 
@@ -74,12 +74,21 @@ The owner SHALL be able to retry the latest failed or interrupted turn using a n
 
 ### Requirement: Bounded conversation context
 
-New model requests SHALL use the current message and bounded completed turns from the owner's continuous conversation. Failed or incomplete output SHALL be excluded. Older history SHALL remain browsable when omitted from model context. The app SHALL disclose limited context without requiring a new conversation or implying complete long-term recall.
+Each new user turn SHALL start from the current message and bounded completed turns from the owner's PostgreSQL conversation. Failed or incomplete output SHALL be excluded from later turns. Older history SHALL remain browsable when omitted from model context. The app SHALL disclose limited context without requiring a new conversation or implying complete long-term recall.
 
 #### Scenario: Long conversation
 
 - **WHEN** complete history exceeds the configured input bound
 - **THEN** the current message and the newest complete turn pairs that fit are used, older history remains browsable, and limited context is disclosed without asking the owner to create a new conversation
+
+### Requirement: Application-owned SDK conversation state
+
+PostgreSQL SHALL remain the sole durable conversation and attempt authority. The system SHALL not introduce a second SDK session transcript store or provider-managed conversation/response-ID chain. Required intermediate SDK items MAY remain in memory during the active run, subject to ownership and execution limits, but SHALL not become durable raw run or hidden reasoning records.
+
+#### Scenario: Follow-up after a completed SDK run
+
+- **WHEN** the owner sends another message after a successful response
+- **THEN** context is rebuilt from the application-owned transcript without duplicating messages through SDK session writes or replaying raw intermediate run state
 
 ### Requirement: Recoverable conversation interface
 
@@ -92,12 +101,17 @@ The app SHALL open directly to an accessible continuous transcript, history pagi
 
 ### Requirement: Explicit history clearing
 
-The owner SHALL be able to explicitly clear all messages, attempts, and source/activity records through a privacy setting. The same conversation SHALL remain available, empty. Clearing SHALL exclude removed content from reads and future context, reject stale submissions and late output, and explain that local deletion cannot retract content already sent to a provider.
+The owner SHALL be able to clear all messages, attempts, and source/activity records through a privacy setting while retaining the empty conversation. Application version/completion checks SHALL exclude cleared content from reads and future context and reject stale submissions and late SDK output. Cancellation SHALL propagate to the runner where possible. The app SHALL explain that local clearing cannot retract content already sent to a provider.
 
 #### Scenario: Clear during investigation
 
 - **WHEN** the owner clears history while its provider request is running
-- **THEN** local content is removed, the same conversation becomes empty, and late output cannot restore cleared messages
+- **THEN** local content is removed, the same conversation becomes empty, and late output, SDK cleanup, or automatic transcript writes cannot restore cleared messages
+
+#### Scenario: Clear between SDK steps
+
+- **WHEN** local cancellation reaches the runner after one step and before another starts
+- **THEN** no subsequent SDK model or tool operation starts for the cancelled attempt, and a new-version conversation cannot inherit its intermediate state
 
 #### Scenario: Stale tab resubmits after clearing
 

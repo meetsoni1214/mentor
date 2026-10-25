@@ -83,19 +83,14 @@ describe('conversation migration constraints', () => {
       { inputTokens: 10, outputTokens: 5 },
       { inputTokens: 0, outputTokens: 0 },
       { inputTokens: null, outputTokens: null },
+      { inputTokens: null, outputTokens: 5 },
+      { inputTokens: 10, outputTokens: null },
     ];
     for (const counts of expected) {
       const accepted = await repository.submit(submission(), limits);
-      const usage =
-        counts.inputTokens === null || counts.outputTokens === null
-          ? null
-          : {
-              inputTokens: counts.inputTokens,
-              outputTokens: counts.outputTokens,
-            };
       const result = await repository.finish(reference(accepted), {
         ...completed,
-        usage,
+        usage: counts,
       });
       expect(result).toMatchObject(counts);
     }
@@ -324,6 +319,7 @@ const limits: RunLimits = {
   maxContextBytes: 32768,
   maxOutputTokens: 2048,
   maxToolCalls: 2,
+  maxModelCalls: 3,
 };
 const completed: Extract<RunOutcome, { state: 'completed' }> = {
   state: 'completed',
@@ -846,6 +842,14 @@ describe('conversation use case with a fake provider and real persistence', () =
         OPENAI_API_KEY: 'synthetic-server-key',
         OPENAI_CHAT_MODEL: 'synthetic-model',
         AI_DEADLINE_MS: 'Infinity',
+      },
+    },
+    {
+      name: 'invalid model-call allowance',
+      values: {
+        OPENAI_API_KEY: 'synthetic-server-key',
+        OPENAI_CHAT_MODEL: 'synthetic-model',
+        AI_MAX_MODEL_CALLS: '0',
       },
     },
   ])(

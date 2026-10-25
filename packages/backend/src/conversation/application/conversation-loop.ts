@@ -32,14 +32,14 @@ export class ConversationLoop {
     const { limits } = execution;
     if (
       !limits.model.trim() ||
-      !Object.entries(limits).every(
-        ([key, value]) =>
-          key === 'model' ||
-          key === 'allowedTools' ||
-          (typeof value === 'number' &&
-            Number.isSafeInteger(value) &&
-            value > 0),
-      ) ||
+      ![
+        limits.maxMessageBytes,
+        limits.maxContextBytes,
+        limits.maxOutputTokens,
+        limits.maxToolCalls,
+        limits.maxModelCalls,
+        limits.deadlineMs,
+      ].every((value) => Number.isSafeInteger(value) && value > 0) ||
       !limits.allowedTools.every((tool) => tool === 'web_search') ||
       limits.deadlineMs > 300_000 ||
       limits.maxContextBytes < limits.maxMessageBytes
@@ -169,6 +169,8 @@ export class ConversationLoop {
               model: limits.model,
               messages,
               tools: limits.allowedTools,
+              maxContextBytes: limits.maxContextBytes,
+              maxModelCalls: limits.maxModelCalls,
               maxOutputTokens: limits.maxOutputTokens,
               maxToolCalls: limits.maxToolCalls,
               signal: controller.signal,

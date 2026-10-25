@@ -1,6 +1,7 @@
 export { ConversationLoop } from './application/conversation-loop.js';
 export type { ConversationExecution } from './application/conversation-loop.js';
 export { ConversationError } from './domain/conversation.js';
+export { RunBudget, RunBudgetError } from './application/run-budget.js';
 export type {
   Admission,
   AttemptReference,
@@ -20,4 +21,5 @@ export type {
   RunOutcome,
   RunState,
   SourceReference,
+  TokenUsage,
 } from './domain/conversation.js';
