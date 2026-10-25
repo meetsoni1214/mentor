@@ -26,6 +26,7 @@ import {
   conversationTurns,
   conversations,
 } from '@mentor/backend/conversation/schema';
+import { readAIEnvironment } from '@mentor/backend/config/ai';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl || new URL(databaseUrl).pathname !== '/mentor_test') {
@@ -833,6 +834,62 @@ describe('singleton conversation lifecycle', () => {
 });
 
 describe('conversation use case with a fake provider and real persistence', () => {
+  it.each<{ name: string; values: NodeJS.ProcessEnv }>([
+    { name: 'missing provider settings', values: {} },
+    {
+      name: 'missing server key',
+      values: { OPENAI_CHAT_MODEL: 'synthetic-model' },
+    },
+    {
+      name: 'invalid limits',
+      values: {
+        OPENAI_API_KEY: 'synthetic-server-key',
+        OPENAI_CHAT_MODEL: 'synthetic-model',
+        AI_DEADLINE_MS: 'Infinity',
+      },
+    },
+  ])(
+    'preserves history and clearing but admits no runs with $name',
+    async ({ values }) => {
+      const first = await repository.submit(
+        submission({ text: 'Retain this accepted message' }),
+        limits,
+      );
+      await repository.finish(reference(first), completed);
+      const failed = await repository.submit(
+        submission({ text: 'Retain this retryable message' }),
+        limits,
+      );
+      await repository.finish(reference(failed), {
+        state: 'failed',
+        errorCode: 'PROVIDER_ERROR',
+      });
+      const before = await repository.history(ownerId);
+      const config = readAIEnvironment(values);
+      if (config.enabled) throw new Error('Expected disabled fixture');
+      const loop = new ConversationLoop(repository, config);
+      expect(await loop.history(ownerId)).toEqual(before);
+      await expect(loop.submit(submission())).rejects.toMatchObject({
+        code: 'EXECUTION_UNAVAILABLE',
+      });
+      await expect(
+        loop.retry({
+          ownerId,
+          historyVersion: 0,
+          turnId: failed.turn.id,
+          requestId: randomUUID(),
+        }),
+      ).rejects.toMatchObject({ code: 'EXECUTION_UNAVAILABLE' });
+      expect(await loop.history(ownerId)).toEqual(before);
+      expect(await loop.clear(ownerId, 0)).toBe(1);
+      expect(await loop.history(ownerId)).toEqual({
+        historyVersion: 1,
+        turns: [],
+        nextCursor: null,
+      });
+    },
+  );
+
   it('bounds completed model context without discarding retained history', async () => {
     const oldestText = 'An older question. '.repeat(50);
     const oldest = await repository.submit(
@@ -868,15 +925,15 @@ describe('conversation use case with a fake provider and real persistence', () =
     const complete = vi
       .fn<ConversationModel['complete']>()
       .mockResolvedValue(completed);
-    const loop = new ConversationLoop(
-      repository,
-      { complete },
-      {
+    const loop = new ConversationLoop(repository, {
+      enabled: true,
+      model: { complete },
+      limits: {
         ...limits,
         maxMessageBytes: 64,
         maxContextBytes: Buffer.byteLength(JSON.stringify(messages), 'utf8'),
       },
-    );
+    });
     const result = await loop.submit(submission({ text }));
     expect(complete).toHaveBeenCalledTimes(1);
     expect(complete.mock.calls[0]?.[0].messages).toEqual(messages);
@@ -903,7 +960,11 @@ describe('conversation use case with a fake provider and real persistence', () =
     const complete = vi
       .fn<ConversationModel['complete']>()
       .mockReturnValue(pending);
-    const loop = new ConversationLoop(repository, { complete }, limits);
+    const loop = new ConversationLoop(repository, {
+      enabled: true,
+      model: { complete },
+      limits,
+    });
     const input = submission();
     const original = loop.submit(input);
     await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
@@ -923,7 +984,11 @@ describe('conversation use case with a fake provider and real persistence', () =
       .fn<ConversationModel['complete']>()
       .mockRejectedValueOnce(new Error('sensitive provider payload'))
       .mockResolvedValueOnce(completed);
-    const loop = new ConversationLoop(repository, { complete }, limits);
+    const loop = new ConversationLoop(repository, {
+      enabled: true,
+      model: { complete },
+      limits,
+    });
     const first = await loop.submit(submission());
     expect(first.attempt.errorCode).toBe('PROVIDER_ERROR');
     expect(JSON.stringify(first)).not.toContain('sensitive');
@@ -946,7 +1011,11 @@ describe('conversation use case with a fake provider and real persistence', () =
     const complete = vi
       .fn<ConversationModel['complete']>()
       .mockImplementation(() => new Promise(() => {}));
-    const loop = new ConversationLoop(repository, { complete }, limits);
+    const loop = new ConversationLoop(repository, {
+      enabled: true,
+      model: { complete },
+      limits,
+    });
     // Register rejection handling before clearing, avoiding an unhandled rejection.
     const original = loop.submit(submission()).then(
       (value) => value,

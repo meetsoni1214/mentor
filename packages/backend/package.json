@@ -36,6 +36,10 @@
       "types": "./dist/config/environment.d.ts",
       "import": "./dist/config/environment.js"
     },
+    "./config/ai": {
+      "types": "./dist/config/ai.environment.d.ts",
+      "import": "./dist/config/ai.environment.js"
+    },
     "./database": {
       "types": "./dist/database/index.d.ts",
       "import": "./dist/database/index.js"

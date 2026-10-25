@@ -13,6 +13,10 @@ import { contextByteLength, selectContext } from './select-context.js';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
+export type ConversationExecution =
+  | { enabled: false }
+  | { enabled: true; model: ConversationModel; limits: RunLimits };
+
 export class ConversationLoop {
   private readonly active = new Map<
     string,
@@ -21,10 +25,11 @@ export class ConversationLoop {
 
   constructor(
     private readonly repository: ConversationRepository,
-    private readonly model: ConversationModel,
-    private readonly limits: RunLimits,
+    private readonly execution: ConversationExecution,
     private readonly clock: () => Date = () => new Date(),
   ) {
+    if (!execution.enabled) return;
+    const { limits } = execution;
     if (
       !limits.model.trim() ||
       !Object.entries(limits).every(
@@ -59,24 +64,26 @@ export class ConversationLoop {
 
   async submit(input: Submission): Promise<Admission> {
     this.validate(input.ownerId, input.historyVersion, input.requestId);
+    const execution = this.requireExecution();
+    const { limits } = execution;
     if (
       !input.text.trim() ||
-      new TextEncoder().encode(input.text).length >
-        this.limits.maxMessageBytes ||
+      new TextEncoder().encode(input.text).length > limits.maxMessageBytes ||
       contextByteLength([{ role: 'user', text: input.text }]) >
-        this.limits.maxContextBytes
+        limits.maxContextBytes
     ) {
       throw new ConversationError('INVALID_INPUT');
     }
-    const admission = await this.repository.submit(input, this.limits);
-    return this.execute(input.ownerId, admission);
+    const admission = await this.repository.submit(input, limits);
+    return this.execute(input.ownerId, admission, execution);
   }
 
   async retry(input: RetryRequest): Promise<Admission> {
     this.validate(input.ownerId, input.historyVersion, input.requestId);
     if (!uuid.test(input.turnId)) throw new ConversationError('INVALID_INPUT');
-    const admission = await this.repository.retry(input, this.limits);
-    return this.execute(input.ownerId, admission);
+    const execution = this.requireExecution();
+    const admission = await this.repository.retry(input, execution.limits);
+    return this.execute(input.ownerId, admission, execution);
   }
 
   history(
@@ -96,11 +103,22 @@ export class ConversationLoop {
     return version;
   }
 
+  private requireExecution(): Extract<
+    ConversationExecution,
+    { enabled: true }
+  > {
+    if (!this.execution.enabled)
+      throw new ConversationError('EXECUTION_UNAVAILABLE');
+    return this.execution;
+  }
+
   private async execute(
     ownerId: string,
     admission: Admission,
+    execution: Extract<ConversationExecution, { enabled: true }>,
   ): Promise<Admission> {
     if (!admission.execute) return admission;
+    const { model, limits } = execution;
     const ref: AttemptReference = {
       ownerId,
       historyVersion: admission.historyVersion,
@@ -135,7 +153,7 @@ export class ConversationLoop {
       const { messages, contextLimited } = selectContext(
         admission.turn.text,
         history,
-        this.limits.maxContextBytes,
+        limits.maxContextBytes,
       );
       let outcome: RunOutcome;
       if (
@@ -147,12 +165,12 @@ export class ConversationLoop {
       } else {
         try {
           outcome = await Promise.race([
-            this.model.complete({
-              model: this.limits.model,
+            model.complete({
+              model: limits.model,
               messages,
-              tools: this.limits.allowedTools,
-              maxOutputTokens: this.limits.maxOutputTokens,
-              maxToolCalls: this.limits.maxToolCalls,
+              tools: limits.allowedTools,
+              maxOutputTokens: limits.maxOutputTokens,
+              maxToolCalls: limits.maxToolCalls,
               signal: controller.signal,
             }),
             aborted,

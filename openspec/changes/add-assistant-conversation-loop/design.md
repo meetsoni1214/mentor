@@ -64,7 +64,7 @@ Pass application instructions, the current message, and the newest complete user
 
 Use `store: false`; send needed context explicitly rather than provider Conversations or `previous_response_id`. The [official conversation-state guide](https://developers.openai.com/api/docs/guides/conversation-state) documents manual history and response storage controls. This design does not equate `store: false` with zero provider retention. No raw provider response is persisted. Context truncation is explicit and visible without asking the owner to manage sessions, create another conversation, or start over. Long-term recall and automatic summarization remain later work; retained history alone does not guarantee recall of older facts.
 
-Require `AI_ENABLED=true`, a server-only `OPENAI_API_KEY`, and explicit `OPENAI_CHAT_MODEL` to enable execution. Validate configuration with the existing redacted Zod environment pattern. Proposed finite defaults: 8 KiB user text, 32 KiB total serialized input, 2,048 output tokens, 60-second deadline, one owner-wide active run, 20 admitted attempts per UTC day, and at most two built-in tool calls per run. These are conservative starting settings, not assertions about model pricing. Reject incompatible limits clearly. The adapter must verify the pinned SDK supports the required request fields; an incompatible model/tool configuration fails visibly with no silent fallback.
+Enable execution automatically when a server-only `OPENAI_API_KEY`, explicit `OPENAI_CHAT_MODEL`, and finite limits are valid. No separate enable flag is required. Validate configuration with redacted Zod diagnostics; invalid AI settings disable execution without preventing history reads or clearing. Finite defaults: 8 KiB user text, 32 KiB serialized message context, 2,048 output tokens, 60-second deadline, one owner-wide active run, and at most two built-in tool calls per run when available. There is no daily attempt cap. These are conservative starting settings, not assertions about model pricing. Reject incompatible limits clearly. The adapter must verify the pinned SDK supports the required request fields; an incompatible model/tool configuration fails visibly with no silent fallback.
 
 Persist actual returned usage when available, with nullable integer input/output token counts. SDK retries are disabled. Input/output, tool-call, deadline, and concurrency controls bound each run; this slice has no daily attempt cap or monetary budget.
 
@@ -120,7 +120,7 @@ A separately enabled, bounded live smoke check requires existing server credenti
 
 1. Implement in the four task checkpoints and update milestone documentation without changing unrelated owner-auth code or the existing local generated `next-env.d.ts` modification.
 2. Apply new migrations only to the disposable integration database during verification. Existing development data is migrated through the normal documented command, without schema push or volume deletion.
-3. Default AI execution off; read-only history remains usable. Enable only after server model/key/finite-limit configuration and disclosure are in place.
+3. AI execution becomes ready automatically with valid server model/key/finite-limit configuration; missing or invalid settings preserve read-only history. The UI disclosure must be in place before live model submission is exposed.
 4. Roll back to the prior application version with AI disabled; keep additive tables for a forward fix rather than destructively rolling back private history.
 
 ## Open Questions

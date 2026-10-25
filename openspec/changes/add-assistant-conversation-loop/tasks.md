@@ -12,7 +12,7 @@ This change is the current conversation-loop implementation scope. The older `bu
 
 ## 2. Bounded model execution and protected API
 
-- [ ] 2.1 Add redacted server-only AI environment validation, explicit enable/model/key requirements, and finite limits; verify missing/invalid config, disabled execution with readable history, and boundary values without printing secrets or modifying an existing .env.
+- [x] 2.1 Add redacted server-only AI environment validation, automatic readiness from valid model/key configuration, and finite limits; verify missing/invalid config, disabled execution with readable history, and boundary values without printing secrets or modifying an existing .env.
 - [ ] 2.2 Add the pinned official OpenAI SDK and a Responses adapter with store:false, explicit bounded continuous-conversation history, output/deadline limits, disabled SDK retries, and normalized outcomes; verify local HTTP-stub contract tests for successful multi-turn input, context truncation, timeout, refusal, incomplete/malformed output, rate limits, and redacted provider failures without real API calls.
 - [ ] 2.3 Wire the use case to the real model adapter, known-usage recording, and stable failure categories; verify concurrent-run rejection, restart recovery, explicit retries, and configuration/provider failures making no unauthorized calls.
 - [ ] 2.4 Add authenticated assistant status and singleton conversation read/submit/retry/clear-history routes with versioned OpenAPI DTOs and assistant-specific errors, omitting create/list/select endpoints; regenerate using pnpm build:services && pnpm api:generate and verify actual HTTP authorization, ownership, CSRF/Origin, no-store, invalid inputs, idempotent replay, and absence of secrets in responses.

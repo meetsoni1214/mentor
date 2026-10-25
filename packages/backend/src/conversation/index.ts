@@ -1,4 +1,5 @@
 export { ConversationLoop } from './application/conversation-loop.js';
+export type { ConversationExecution } from './application/conversation-loop.js';
 export { ConversationError } from './domain/conversation.js';
 export type {
   Admission,

@@ -2,8 +2,9 @@
 
 Mentor will have one continuous conversation. The owner will not create, name,
 or choose threads. This checkpoint implements its backend persistence and run
-lifecycle. The current web screen and API routes are unchanged. No OpenAI SDK,
-credentials, paid calls, email connection, or background jobs are involved yet.
+lifecycle. The current web screen and API routes are unchanged. A later backend
+checkpoint adds AI configuration and an execution gate, described below. No
+OpenAI SDK, paid calls, email connection, or background jobs are involved yet.
 
 ## Start the review here
 
@@ -36,6 +37,55 @@ the domain and its ports, with no NestJS, HTTP, Drizzle, or provider SDK imports
 The repository and model are interfaces: persistence and model execution can
 change independently of the conversation rules. There is one use-case class,
 not an agent framework or a generic workflow engine.
+
+## AI configuration and disabled execution
+
+Task 2.1 adds `config/ai.environment.ts`, available to server composition through
+`@mentor/backend/config/ai`. It accepts an injected environment for deterministic
+tests and defaults to the server's environment. It does not read or write `.env`
+files, make network calls, or initialize a provider.
+
+Execution becomes ready automatically with a nonempty `OPENAI_API_KEY`, an
+explicit `OPENAI_CHAT_MODEL`, and valid limits. There is no separate enable flag
+or default model. Missing or invalid settings return `{ enabled: false, invalidKeys }`,
+with only the affected configuration key names. Values and raw Zod errors are excluded.
+This keeps a configuration problem from preventing access to stored history.
+
+Enabled configuration contains the server key separately from plain `RunLimits`.
+Only the provider adapter will receive that key. Core use cases and model request
+messages do not need credentials, environment APIs, or configuration readers.
+Never serialize enabled configuration into HTTP responses or logs. Existing lint
+boundaries reject browser/API-client imports of this server-only entry point.
+
+| Environment key        | Default | Accepted integer range |
+| ---------------------- | ------- | ---------------------- |
+| `AI_MAX_MESSAGE_BYTES` | 8,192   | 1–65,536               |
+| `AI_MAX_CONTEXT_BYTES` | 32,768  | 128–262,144            |
+| `AI_MAX_OUTPUT_TOKENS` | 2,048   | 1–32,768               |
+| `AI_DEADLINE_MS`       | 60,000  | 100–300,000            |
+| `AI_MAX_TOOL_CALLS`    | 2       | 1–10                   |
+
+The context budget must also be at least the raw message limit. These are finite
+application guardrails, not guarantees of model compatibility or an exact billing
+cap. The selector checks serialized message bytes; the later provider adapter
+must additionally account for instructions and request overhead. The database
+still permits only one running attempt per owner; no daily attempt cap is added.
+`allowedTools` is empty in this environment reader. Runtime-controlled public-web
+permission and observed activity remain in their later checkpoint.
+
+`ConversationLoop` now receives either `{ enabled: false }` or
+`{ enabled: true, model, limits }`. The disabled branch needs neither model nor
+limits. Submit and retry reject with `EXECUTION_UNAVAILABLE` before repository
+admission, so no user turn or run is added. History reads and versioned clearing
+remain available. Enabled execution retains the existing input checks, replay,
+deadline, cancellation, and conditional completion behavior.
+
+This checkpoint verifies those branches directly with the real repository and
+synthetic configuration. It does not yet wire an OpenAI adapter into Nest, add
+assistant HTTP/status routes, or preserve drafts in a conversation UI. Those
+remain tasks 2.2–2.4 and group 3. Setting environment values alone does not enable
+an interactive conversation in the current app. `.env.example` documents defaults;
+an existing `.env` is left untouched.
 
 ## Follow one message
 
@@ -286,3 +336,28 @@ versioned migrations, and OpenSpec tasks are unchanged; strict OpenSpec validati
 passes. The existing Next.js security advisory still stops the initial build;
 the repeated full gate passes with the warning. An upgrade remains recommended.
 No conversation browser or live-provider acceptance is claimed by this slice.
+
+Initial AI-configuration checkpoint (task 2.1), verified on 2026-10-25 before removal of the enable flag: the incoming
+checkpoint passed lint and 144 unit tests, with 51 recorded integration checks.
+`pnpm check` passes outside the sandbox with 170 unit tests. Added coverage checks
+explicit enablement, missing credentials/model, invalid and inclusive numeric
+bounds, incompatible limits, redacted diagnostics, browser import rejection, and
+the enabled/disabled use-case branches. `pnpm test:integration` passes all 54
+checks, including 28 conversation checks. The three additional real-database
+scenarios cover explicit disablement, missing provider settings, and invalid
+limits: no turn/attempt is admitted, saved history remains readable and unchanged,
+and versioned clearing remains usable. The disposable test container and network
+were removed. No existing `.env`, migration, generated API contract, or dependency
+lockfile was changed, and no OpenAI calls were made. Strict OpenSpec validation
+passes. Task 2.1 is complete; 2.2–2.5 remain open. Existing Next.js 16.4.0 security
+advisory behavior persists: the first full-gate build stops, and its retry passes
+with the warning. An upgrade remains recommended. Provider, HTTP, and browser
+acceptance remain in later checkpoints.
+
+Configuration revision on 2026-10-25: the separate enable switch was removed at
+the owner's request. Valid model/key/limit settings now yield `enabled: true`
+automatically; missing or invalid settings still preserve history access.
+The seven obsolete toggle-specific cases were removed. Lint, strict service/test
+types, all 163 unit tests, and all 54 disposable-database tests pass. Strict
+OpenSpec validation passes. The production build was not rerun for this focused
+configuration revision; its earlier evidence and advisory remain recorded above.

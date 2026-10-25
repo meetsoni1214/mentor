@@ -15,6 +15,7 @@ or `dist/` files through the package name.
 | `conversation/persistence`           | Drizzle conversation repository                                                |
 | `conversation/schema`                | Conversation, turn, and attempt tables                                         |
 | `config`                             | Validated runtime environment readers                                          |
+| `config/ai`                          | Server-only AI readiness, credentials, and finite run limits                   |
 | `database`                           | Database connection types, construction, and migration runner                  |
 | `database/nest`                      | Nest database module and service                                               |
 | `health`                             | Nest health module                                                             |

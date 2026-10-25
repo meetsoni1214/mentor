@@ -94,7 +94,7 @@ function setup() {
     admission,
     repository,
     model,
-    loop: new ConversationLoop(repository, model, limits),
+    loop: new ConversationLoop(repository, { enabled: true, model, limits }),
   };
 }
 
@@ -103,6 +103,58 @@ afterEach(() => {
 });
 
 describe('bounded conversation execution', () => {
+  it('keeps history and clearing available when execution is disabled', async () => {
+    const { input, repository } = setup();
+    const loop = new ConversationLoop(repository, { enabled: false });
+    expect(await loop.history(input.ownerId)).toEqual({
+      historyVersion: 0,
+      turns: [],
+      nextCursor: null,
+    });
+    expect(await loop.clear(input.ownerId, 0)).toBe(1);
+    expect(repository.history).toHaveBeenCalledWith(input.ownerId, undefined);
+    expect(repository.clear).toHaveBeenCalledWith(input.ownerId, 0);
+  });
+
+  it('rejects disabled submission and retry before admission, context, or provider work', async () => {
+    const { input, admission, repository, model } = setup();
+    const loop = new ConversationLoop(repository, { enabled: false });
+    await expect(loop.submit(input)).rejects.toMatchObject({
+      code: 'EXECUTION_UNAVAILABLE',
+    });
+    await expect(
+      loop.retry({
+        ownerId: input.ownerId,
+        historyVersion: 0,
+        turnId: admission.turn.id,
+        requestId: randomUUID(),
+      }),
+    ).rejects.toMatchObject({ code: 'EXECUTION_UNAVAILABLE' });
+    expect(repository.submit).not.toHaveBeenCalled();
+    expect(repository.retry).not.toHaveBeenCalled();
+    expect(repository.context).not.toHaveBeenCalled();
+    expect(repository.finish).not.toHaveBeenCalled();
+    expect(model.complete).not.toHaveBeenCalled();
+  });
+
+  it.each<Partial<RunLimits>>([
+    { maxMessageBytes: 0 },
+    { maxContextBytes: 127 },
+    { maxOutputTokens: Infinity },
+    { maxToolCalls: 1.5 },
+    { deadlineMs: 300001 },
+  ])('retains enabled execution limit validation: %j', (changed) => {
+    const { repository, model } = setup();
+    expect(
+      () =>
+        new ConversationLoop(repository, {
+          enabled: true,
+          model,
+          limits: { ...limits, ...changed },
+        }),
+    ).toThrow('INVALID_INPUT');
+  });
+
   it.each<{ allowedTools: RunLimits['allowedTools'] }>([
     { allowedTools: [] },
     { allowedTools: ['web_search'] },
@@ -110,9 +162,10 @@ describe('bounded conversation execution', () => {
     'passes runtime tool availability without a per-message flag: $allowedTools',
     async ({ allowedTools }) => {
       const { input, repository, model } = setup();
-      const loop = new ConversationLoop(repository, model, {
-        ...limits,
-        allowedTools,
+      const loop = new ConversationLoop(repository, {
+        enabled: true,
+        model,
+        limits: { ...limits, allowedTools },
       });
       await loop.submit(input);
       expect(model.complete.mock.calls[0]?.[0].tools).toEqual(allowedTools);
@@ -126,9 +179,10 @@ describe('bounded conversation execution', () => {
 
   it('applies current runtime permissions on retry rather than permissions stored with a message', async () => {
     const { input, admission, repository, model } = setup();
-    const loop = new ConversationLoop(repository, model, {
-      ...limits,
-      allowedTools: [],
+    const loop = new ConversationLoop(repository, {
+      enabled: true,
+      model,
+      limits: { ...limits, allowedTools: [] },
     });
     await loop.retry({
       ownerId: input.ownerId,

@@ -21,6 +21,7 @@ async function boundaries(filePath: string, code: string) {
 describe('enforced architecture boundaries', () => {
   it.each([
     [web, "import '@mentor/backend/identity';", 'browser'],
+    [web, "import '@mentor/backend/config/ai';", 'browser'],
     [
       web,
       "export * from '../../../../../packages/backend/src/identity/index.js';",

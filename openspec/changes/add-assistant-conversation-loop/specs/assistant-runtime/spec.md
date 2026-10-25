@@ -8,12 +8,17 @@ Run bounded, inspectable assistant work from an owner conversation, using permit
 
 ### Requirement: Backend-owned model execution
 
-The system SHALL execute model requests on the backend using server-held credentials and explicit model configuration. Conversation history SHALL remain application-owned. Provider response storage SHALL be disabled without claiming zero provider retention. Missing configuration SHALL disable new runs while preserving access to the continuous conversation and its history.
+The system SHALL execute model requests on the backend using server-held credentials, an explicit model, and finite limits. Valid configuration SHALL enable execution automatically without an enable flag. Application-owned history SHALL remain readable when missing or invalid configuration disables new runs. Provider response storage SHALL be disabled; this SHALL NOT imply zero provider retention.
 
 #### Scenario: Model configuration is missing
 
-- **WHEN** the owner submits a turn without complete enabled provider configuration
+- **WHEN** the owner submits a turn without complete valid provider configuration
 - **THEN** the app explains that assistant execution is unavailable, preserves the draft, and makes no provider call
+
+#### Scenario: Model configuration is valid
+
+- **WHEN** valid server credentials, an explicit model, and finite limits are configured
+- **THEN** assistant execution is ready without a separate enable flag
 
 ### Requirement: Cloud-processing disclosure
 

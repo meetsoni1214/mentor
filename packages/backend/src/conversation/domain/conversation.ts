@@ -75,6 +75,7 @@ export interface ConversationTurn {
 }
 
 export type ConversationErrorCode =
+  | 'EXECUTION_UNAVAILABLE'
   | 'NOT_FOUND'
   | 'INVALID_INPUT'
   | 'STALE_HISTORY'

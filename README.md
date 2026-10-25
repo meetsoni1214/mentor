@@ -3,7 +3,9 @@
 A personal assistant built incrementally. This first milestone establishes the
 services and development workflow. An administrative command now creates the
 single owner account. Browser sign-in, database sessions, and logout are now
-implemented. Notes, memory, and AI features are later slices.
+implemented. Conversation persistence, context selection, and server-side AI
+configuration are implemented and tested at the backend boundary. The model
+adapter, conversation API/UI, notes, and memory are later slices.
 
 ## Prerequisites
 
@@ -25,6 +27,13 @@ pnpm dev
 
 Copy the environment example only on first setup; preserve an existing `.env`.
 The values in the example are for local development. No OpenAI key is needed.
+
+AI configuration becomes ready automatically with a valid explicit model, server
+key, and limits. Missing or invalid settings keep execution unavailable and report
+only configuration key names. This checkpoint does not connect those settings to a live
+provider or expose a conversation UI. See [conversation configuration](docs/conversation-loop.md#ai-configuration-and-disabled-execution)
+for the limits and current implementation boundary. Preserve an existing `.env`;
+do not copy over it to pick up these optional example values.
 
 | Service           | Address                                   | Purpose                                    |
 | ----------------- | ----------------------------------------- | ------------------------------------------ |
