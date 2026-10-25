@@ -83,7 +83,7 @@ Each new user turn SHALL start from the current message and bounded completed tu
 
 ### Requirement: Application-owned SDK conversation state
 
-PostgreSQL SHALL remain the sole durable conversation and attempt authority. The system SHALL not introduce a second SDK session transcript store or provider-managed conversation/response-ID chain. Required intermediate SDK items MAY remain in memory during the active run, subject to ownership and execution limits, but SHALL not become durable raw run or hidden reasoning records.
+PostgreSQL SHALL remain the sole durable conversation and attempt authority. The system SHALL not introduce a second SDK session transcript store or provider-managed conversation/response-ID chain. Required intermediate SDK items MAY remain in memory during the active run, under the SDK's normal execution behavior and application deadline, but SHALL not become durable raw run or hidden reasoning records.
 
 #### Scenario: Follow-up after a completed SDK run
 

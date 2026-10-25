@@ -7,13 +7,17 @@ implemented with local verification. The active change is
 `add-assistant-conversation-loop`: one continuous conversation per owner, with
 no thread creation or selection. Group 1, conversation persistence and run
 lifecycle, and the four architecture follow-ups are implemented. The current
-review checkpoint is task 2.2a: framework-independent whole-run budgets and
-model-port limits, including redacted model-call configuration. History remains
-readable/clearable while execution is disabled. Tests use an injected fake provider;
-the budget policy is ready for enforcement at the later SDK request boundary.
-The OpenAI adapter, API composition and
-protected conversation endpoints, UI, and public-web investigation remain later
-checkpoints. Stop after a verified focused slice for review; commit when requested.
+review checkpoint is tasks 2.2a–2.2c: the simplified, pinned Agents SDK/Responses
+adapter using normal SDK execution, cancellation, explicit privacy/retry settings,
+and local HTTP-stub verification. The stricter budget policy and request subclass
+were removed at the owner's request. Use the SDK default iteration limit and
+standard per-call output setting; do not reintroduce cumulative budgets or hooks.
+History remains readable/clearable
+while execution is disabled. Application/database tests use an injected fake;
+adapter tests use the actual SDK and official client with non-stub traffic denied.
+The adapter is not composed into the API yet. API composition and protected
+conversation endpoints (tasks 2.3–2.5), UI, and public-web investigation remain
+later checkpoints. Stop after this verified SDK slice for review; commit when requested.
 The older `build-personal-knowledge-assistant` change remains
 a broader historical roadmap, not the next implementation scope.
 

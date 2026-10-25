@@ -1,10 +1,12 @@
-# The conversation loop: first review checkpoint
+# The conversation loop: SDK review checkpoint
 
 Mentor will have one continuous conversation. The owner will not create, name,
 or choose threads. This checkpoint implements its backend persistence and run
-lifecycle, server-only AI configuration, and the task 2.2a budget policy described
-below. The current web screen and API routes are unchanged. No
-OpenAI SDK, paid calls, email connection, or background jobs are involved yet.
+lifecycle, server-only AI configuration, and a standard Agents SDK adapter verified
+against a local HTTP stub. The adapter is not yet wired into
+the API. The current web screen and API routes are unchanged. Verification uses
+synthetic credentials and responses; no paid calls, email connection, or
+background jobs are involved.
 
 ## Start the review here
 
@@ -31,6 +33,10 @@ Read these files in order:
 7. `tests/integration/conversation.test.ts` exercises those rules with real
    PostgreSQL and a synthetic provider. Unit tests use a fake clock to check
    deadlines, omitted context, and provider failures.
+8. `adapters/openai-conversation.model.ts` uses the standard SDK Responses model,
+   one Mentor agent, and a runner, then maps SDK results to application outcomes.
+9. `tests/unit/openai-conversation-model.test.ts` runs the actual pinned SDK and
+   official client against `tests/fixtures/responses-stub.ts`.
 
 Domain code has no application or adapter imports. Application code depends on
 the domain and its ports, with no NestJS, HTTP, Drizzle, or provider SDK imports.
@@ -52,7 +58,7 @@ with only the affected configuration key names. Values and raw Zod errors are ex
 This keeps a configuration problem from preventing access to stored history.
 
 Enabled configuration contains the server key separately from plain `RunLimits`.
-Only the provider adapter will receive that key. Core use cases and model request
+Only the provider adapter receives that key. Core use cases and model request
 messages do not need credentials, environment APIs, or configuration readers.
 Never serialize enabled configuration into HTTP responses or logs. Existing lint
 boundaries reject browser/API-client imports of this server-only entry point.
@@ -64,12 +70,12 @@ boundaries reject browser/API-client imports of this server-only entry point.
 | `AI_MAX_OUTPUT_TOKENS` | 2,048   | 1–32,768               |
 | `AI_DEADLINE_MS`       | 60,000  | 100–300,000            |
 | `AI_MAX_TOOL_CALLS`    | 2       | 1–10                   |
-| `AI_MAX_MODEL_CALLS`   | 3       | 1–10                   |
 
 The context budget must also be at least the raw message limit. These are finite
 application guardrails, not guarantees of model compatibility or an exact billing
-cap. The selector checks serialized message bytes; the later provider adapter
-must additionally account for instructions and request overhead. The database
+cap. The selector checks initial serialized transcript bytes. The SDK manages
+request serialization and intermediate context; there is no complete request-byte
+check in the adapter. The database
 still permits only one running attempt per owner; no daily attempt cap is added.
 `allowedTools` is empty in this environment reader. Runtime-controlled public-web
 permission and observed activity remain in their later checkpoint.
@@ -84,51 +90,82 @@ deadline, cancellation, and conditional completion behavior.
 This checkpoint verifies those branches directly with the real repository and
 synthetic configuration. It does not yet wire an OpenAI adapter into Nest, add
 assistant HTTP/status routes, or preserve drafts in a conversation UI. Those
-remain tasks 2.2b–2.4 and group 3. Setting environment values alone does not enable
+remain tasks 2.3–2.4 and group 3. Setting environment values alone does not enable
 an interactive conversation in the current app. `.env.example` documents defaults;
 an existing `.env` is left untouched.
 
-## Whole-run budgets (task 2.2a)
+## Standard Agents SDK adapter (tasks 2.2a–2.2c)
 
-`ConversationModel.complete` represents an entire attempt. Its contract now
-receives `maxModelCalls` and `maxContextBytes` as well as the shared output-token
-and hosted-tool allowances. These allowances do not reset at each SDK iteration.
-For example, after a response uses 30 of 100 output tokens and both permitted
-hosted searches, the next request can use at most 70 output tokens and must omit
-tools. That request counts as another model call even if it uses no tools.
+The backend pins `@openai/agents` **0.21.0** and `openai` **7.43.0**. The SDK's
+client dependency is `^7.2.0`; both resolve to the pinned official client. Root
+SDK/client dependencies support contract tests. Undici **7.24.3** lets those tests
+deny non-stub connections.
 
-`application/run-budget.ts` supplies the framework-independent `RunBudget`
-policy. A future adapter constructs one per attempt, calls `beginModelCall` at
-each actual request boundary, and calls `recordModelResult` for every response,
-including unsuccessful ones with available usage. It returns remaining output
-and hosted-tool allowances, counts model calls separately, and raises a redacted
-`RunBudgetError` with code `LIMIT_EXCEEDED` on exhaustion or an observed overage.
-It prevents overlapping requests and duplicate accounting. A fresh explicit retry
-gets a new budget. This class does not implement a runner, retry requests, or
-register tools.
+`@mentor/backend/conversation/model` exports `OpenAIConversationModel`. It creates
+an unmodified `OpenAIResponsesModel`, one Mentor `Agent`, and a `Runner`. SDK
+imports remain in the adapter; application/domain code and the browser do not
+import the SDK. The default endpoint is explicitly `https://api.openai.com/v1`.
+Transport overrides allow a localhost stub in tests. Construction sends no request.
 
-Input bounds apply to the complete serialized UTF-8 request input, including
-application instructions, tool definitions, JSON overhead, and required in-run
-items. `selectContext` accepts an optional complete-input measurement function
-so the adapter can reserve its actual initial overhead while selecting whole
-history pairs. It always preserves the current message. The adapter must then
-check the complete serialized input through `beginModelCall` before every request;
-an oversized current message or required continuation stops execution rather
-than being removed to force another call. The existing use-case selector still
-uses transcript bytes until the SDK adapter supplies its actual serialization.
+```text
+ConversationModel.complete: explicit model, selected messages, settings, signal
+    --> standard SDK Responses model + Mentor Agent + Runner
+    --> SDK serializes requests and manages model/tool iterations
+    --> SDK final output and reported usage
+    --> normalized application outcome; discard raw SDK state
+```
 
-Known input/output usage is summed separately. Missing, malformed, or unsafe
-counts remain null, never zero or a partial sum reported as a complete total.
-Missing output usage blocks another model request because its remaining allowance
-is unknown. Unknown input usage alone does not prevent continuation with known
-output usage. Unknown hosted-tool counts also block continuation. A zero remaining
-hosted-tool allowance permits further model calls only with tools omitted.
+At the owner's request, the custom RunBudget policy and Responses request subclass
+were removed. There is no configurable model-call allowance, cumulative output or
+hosted-tool counter, extra initial-context trimming, request-byte enforcement,
+strict raw-response schema, or custom final-answer byte cap. The adapter forwards
+the application's selected transcript and lets the SDK manage intermediate items.
 
-This checkpoint adds policy and port contracts, tested without an SDK or network.
-Tasks 2.2b–2.2c must still enforce them through the actual SDK/provider boundary,
-verify storage/tracing/retry/cancellation controls, and map normalized outcomes.
-Failed-attempt usage persistence and use-case composition remain task 2.3. These
-limits bound individual attempts; they do not establish a daily or monetary cap.
+The SDK's default iteration limit is ten in pinned version 0.21.0; the adapter does
+not pass `maxTurns`. `AI_MAX_OUTPUT_TOKENS` goes directly to the normal SDK
+`maxTokens` setting on each model call. A second call receives the same setting;
+it does not subtract earlier usage. The application still bounds the initial
+transcript, allows one active attempt per owner, and aborts at its persisted
+deadline. The initial transcript bound excludes instructions, tool definitions,
+SDK serialization overhead, and intermediate results. There is no whole-run token
+or hosted-tool guarantee. `AI_MAX_TOOL_CALLS` remains reserved for the later
+per-request search configuration; production has no registered tools now.
+
+Privacy and retry settings remain explicit:
+
+- `store: false` on the agent's model settings, without an SDK session or
+  provider-managed conversation/response-ID chain.
+- Official client `maxRetries: 0` and SDK `retry.maxRetries: 0`.
+- Global tracing disabled, empty trace processors, and runner tracing disabled
+  with sensitive data excluded.
+- SDK sensitive logging disabled programmatically and official-client logging off.
+
+Tracing/logging controls are process-wide. `store: false` does not promise zero
+provider retention. The official [running-agents guide](https://developers.openai.com/api/docs/guides/agents/running-agents)
+and [model guide](https://developers.openai.com/api/docs/guides/agents/models)
+describe the SDK loop and standard model settings. Dependency upgrades must rerun
+the contract tests.
+
+The adapter returns the SDK's `finalOutput` when it is nonempty text. SDK refusals,
+incomplete output, iteration-limit exceptions, provider failures, and cancellation
+map to stable application error codes without exposing exception text or raw SDK
+state. `LIMIT_EXCEEDED` now describes the SDK iteration-limit exception. There is
+no additional raw-response validation layer.
+
+Usage comes from the SDK's aggregate `Usage` object, including exception state
+when the SDK supplies it. The SDK may normalize absent provider counts to zero;
+we accept that behavior and treat these as SDK-reported metrics, not audited
+provider totals. Missing usage does not stop another SDK step. When no SDK usage
+is available, the outcome leaves it unavailable. Persistence of unsuccessful
+usage remains task 2.3.
+
+The contract suite uses the actual SDK/client and a localhost HTTP stub with a
+synthetic key. It verifies context, privacy settings, no retries, SDK results and
+errors, per-call output configuration, the default iteration limit, cancellation,
+and SDK usage. Synthetic tools force multiple steps only in tests. Fetch and
+Undici guards detect/deny non-stub traffic, including code that captured native
+fetch before setup. Interception stays active through trace flushing and SDK
+shutdown. A restricted sandbox may require permission to bind localhost.
 
 ## Follow one message
 
@@ -172,7 +209,7 @@ through admission, retry/replay, completion, or history results. The mapper
 rejects inconsistent state/nullable fields and unknown error codes with a fixed
 error that contains no stored content. Completed context pairs with a missing
 answer also fail explicitly. These checks supplement database constraints;
-they do not replace them or implement the later provider-response validation.
+they supplement the SDK adapter's outcome/error mapping.
 
 For example, a provider failure followed by an explicit retry produces:
 
@@ -213,8 +250,8 @@ attempt's original key can inspect its state without starting more work.
 
 There is no daily attempt limit or daily usage counter in this slice. Per-run
 input/output, tool-call, deadline, and concurrency limits remain. Limits are
-injected values here; server environment configuration and live-provider
-enablement belong to checkpoint 2.
+injected values here. Server configuration and the SDK adapter are implemented;
+composing them into the application/API remains task 2.3.
 
 ## Expiry and interruption
 
@@ -237,12 +274,12 @@ paid work. Reliable unattended execution will need the later worker slice.
 
 User messages have no investigation flag. Server-controlled `allowedTools`
 settings supply available tools to the model port; the assistant decides whether
-an available tool is useful. In the later OpenAI adapter, permitted public-web
+an available tool is useful. In the later investigation checkpoint, permitted public-web
 search will be optional rather than forced on every message. Runtime limits
 still apply, and observed attempt activity records what actually happened.
 Retries apply current tool permissions rather than restoring old permissions.
-This checkpoint tests the port with a fake provider; actual web search remains
-in the later model/tool adapter checkpoint.
+The production SDK adapter currently rejects nonempty tool settings. Actual web
+search remains group 4; the SDK contract tests use synthetic tools only.
 
 Migration `0004_remove_turn_investigation.sql` removes the historical per-turn
 column and recalculates request fingerprints from text alone, preserving
@@ -282,9 +319,9 @@ Admission and completion transactions are unchanged, and model calls still run
 outside those transactions. The selector remains private to the module; no new
 service, injected strategy, or package entry point is needed.
 
-This checkpoint bounds the messages passed to the model port. Checkpoint 2 must
-also account for provider instructions and other request overhead when applying
-the final adapter input bound. Long-term memory, historical retrieval, and
+The use case bounds the initial transcript passed to the model port. SDK
+serialization overhead and later intermediate context follow the SDK's normal
+behavior without an extra adapter byte check. Long-term memory, historical retrieval, and
 automatic summarization are not implemented. Stored history alone is not a
 promise that the model can recall every older fact.
 
@@ -329,8 +366,9 @@ boundaries, final-state protection, retry policy, bounded context, aborting an
 unresponsive provider, invalid input, and sanitized failures.
 
 There is no conversation browser acceptance or live-provider verification in this
-checkpoint because the conversation HTTP adapter, UI, and OpenAI adapter are not
-implemented. Later checkpoints add those checks before claiming the complete
+checkpoint because the conversation HTTP adapter and UI are not implemented.
+The SDK adapter has local stub verification only. Later checkpoints add the
+remaining checks before claiming the complete
 conversation experience works.
 
 Recorded on 2026-10-25: formatting, lint, strict type checking, and all 30 unit
@@ -418,26 +456,24 @@ separate advisories: `js-yaml` (moderate), `zod`, `body-parser`, and `multer`
 Next.js advisory notes above describe historical checkpoints and are superseded
 by this verification.
 
-Task 2.2a, verified on 2026-10-25: the model port carries complete-input and
-model-call limits, and `AI_MAX_MODEL_CALLS` defaults to three with accepted integer
-bounds 1–10. Framework-independent budget tests cover shared output/tool allowances,
-separate counters, known/unknown usage, overages, and complete serialized UTF-8
-input checks, including oversized required continuation. The context selector's
-measurement callback reserves initial instructions and serialization overhead.
-Formatting, lint, strict types, and all 199 unit tests pass through `pnpm check`.
-That command's production build hits the existing sandbox TypeScript
-`--showConfig` parsing failure; a separate `pnpm build` passes outside the sandbox.
-`pnpm test:integration` passes all 55 checks with Docker access outside the sandbox,
-including invalid model-call configuration preserving history/clearing and
-independently nullable token counts surviving persistence and migration.
-The disposable container and network were removed. Strict OpenSpec validation
-passes. Existing planning edits and the generated development type references
-are preserved. No existing `.env`, dependencies, migrations, or generated API
-contracts changed; no OpenAI calls were made. Task 2.2a is complete; SDK enforcement
-and network contract verification remain tasks 2.2b–2.2c.
+SDK simplification on 2026-10-25: the owner requested normal SDK behavior and
+removal of the stricter budget implementation. The earlier whole-run budget and
+custom request-hook verification is historical and superseded by this revision.
+The active implementation and limitations are documented above.
 
-Review follow-up uses `modelRequestPending` and `newestFirstHistory` to make state
-and ordering explicit, and trims comments to explain reasons. Before committing,
-formatting, lint, strict service/test types, all 199 unit tests, and strict
-OpenSpec validation pass again. The earlier production-build and integration
-results above were not rerun for this naming/comment cleanup.
+The revised checkpoint passes `pnpm check`: formatting, lint, strict types,
+all 194 unit/contract tests, and a successful production build. The localhost SDK
+tests verify its default ten-iteration limit, unchanged per-call output setting,
+SDK-reported usage, contextual follow-up, cancellation, redacted failures, and
+privacy settings, with no non-stub traffic during execution, trace flushing, or
+shutdown. The removed policy, request subclass, model-call setting, selector
+measurement callback, and their stricter-budget tests have no remaining source
+references.
+
+`pnpm test:integration` passes all 54 disposable PostgreSQL checks; its container
+and network were removed. Strict OpenSpec validation passes. No existing `.env`,
+development database, migration, or generated API contract changed. The temporary
+build-generated Next.js type references are restored to their incoming values.
+Tasks 2.2a–2.2c now describe and verify the simplified implementation. API
+composition, conversation UI, and production tools remain later checkpoints.
+Verification used synthetic inputs and a local stub; no live OpenAI call was made.

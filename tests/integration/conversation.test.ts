@@ -319,7 +319,6 @@ const limits: RunLimits = {
   maxContextBytes: 32768,
   maxOutputTokens: 2048,
   maxToolCalls: 2,
-  maxModelCalls: 3,
 };
 const completed: Extract<RunOutcome, { state: 'completed' }> = {
   state: 'completed',
@@ -842,14 +841,6 @@ describe('conversation use case with a fake provider and real persistence', () =
         OPENAI_API_KEY: 'synthetic-server-key',
         OPENAI_CHAT_MODEL: 'synthetic-model',
         AI_DEADLINE_MS: 'Infinity',
-      },
-    },
-    {
-      name: 'invalid model-call allowance',
-      values: {
-        OPENAI_API_KEY: 'synthetic-server-key',
-        OPENAI_CHAT_MODEL: 'synthetic-model',
-        AI_MAX_MODEL_CALLS: '0',
       },
     },
   ])(

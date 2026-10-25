@@ -6,8 +6,6 @@ export interface ConversationModel {
     model: string;
     messages: ModelMessage[];
     tools: ReadonlyArray<'web_search'>;
-    maxContextBytes: number;
-    maxModelCalls: number;
     maxOutputTokens: number;
     maxToolCalls: number;
     signal: AbortSignal;

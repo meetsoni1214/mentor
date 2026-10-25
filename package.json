@@ -37,15 +37,18 @@
     "db:migrate": "pnpm build:services && node --env-file-if-exists=.env packages/backend/dist/database/migrate.js"
   },
   "devDependencies": {
-    "@mentor/backend": "workspace:*",
     "@eslint/js": "^9.39.4",
+    "@mentor/backend": "workspace:*",
+    "@openai/agents": "0.21.0",
     "@types/node": "^24.13.3",
     "concurrently": "^9.2.1",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
+    "openai": "7.43.0",
     "prettier": "^3.8.3",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.59.3",
+    "undici": "7.24.3",
     "vitest": "^4.1.11"
   }
 }

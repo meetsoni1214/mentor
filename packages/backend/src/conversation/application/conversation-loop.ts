@@ -37,7 +37,6 @@ export class ConversationLoop {
         limits.maxContextBytes,
         limits.maxOutputTokens,
         limits.maxToolCalls,
-        limits.maxModelCalls,
         limits.deadlineMs,
       ].every((value) => Number.isSafeInteger(value) && value > 0) ||
       !limits.allowedTools.every((tool) => tool === 'web_search') ||
@@ -169,8 +168,6 @@ export class ConversationLoop {
               model: limits.model,
               messages,
               tools: limits.allowedTools,
-              maxContextBytes: limits.maxContextBytes,
-              maxModelCalls: limits.maxModelCalls,
               maxOutputTokens: limits.maxOutputTokens,
               maxToolCalls: limits.maxToolCalls,
               signal: controller.signal,

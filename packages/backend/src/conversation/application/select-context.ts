@@ -8,10 +8,6 @@ export function selectContext(
   text: string,
   newestFirstHistory: readonly CompletedTurn[],
   maxContextBytes: number,
-  // Instructions and wire-format overhead must also fit the input budget.
-  measureInput: (
-    messages: readonly ModelMessage[],
-  ) => number = contextByteLength,
 ): { messages: ModelMessage[]; contextLimited: boolean } {
   let messages: ModelMessage[] = [{ role: 'user', text }];
   let used = 0;
@@ -21,7 +17,7 @@ export function selectContext(
       { role: 'assistant', text: pair.answer },
       ...messages,
     ];
-    if (used === 100 || measureInput(candidate) > maxContextBytes) break;
+    if (used === 100 || contextByteLength(candidate) > maxContextBytes) break;
     messages = candidate;
     used += 1;
   }

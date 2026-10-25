@@ -18,7 +18,6 @@ const limits: RunLimits = {
   maxContextBytes: 200,
   maxOutputTokens: 100,
   maxToolCalls: 2,
-  maxModelCalls: 3,
 };
 const output: Extract<RunOutcome, { state: 'completed' }> = {
   state: 'completed',
@@ -104,19 +103,6 @@ afterEach(() => {
 });
 
 describe('bounded conversation execution', () => {
-  it('passes complete outgoing-input and whole-run budgets to the model port', async () => {
-    const { input, loop, model } = setup();
-    await loop.submit(input);
-    expect(model.complete).toHaveBeenCalledWith(
-      expect.objectContaining({
-        maxContextBytes: 200,
-        maxModelCalls: 3,
-        maxOutputTokens: 100,
-        maxToolCalls: 2,
-      }),
-    );
-  });
-
   it('keeps history and clearing available when execution is disabled', async () => {
     const { input, repository } = setup();
     const loop = new ConversationLoop(repository, { enabled: false });
@@ -156,9 +142,6 @@ describe('bounded conversation execution', () => {
     { maxContextBytes: 127 },
     { maxOutputTokens: Infinity },
     { maxToolCalls: 1.5 },
-    { maxModelCalls: 0 },
-    { maxModelCalls: NaN },
-    { maxModelCalls: 1.5 },
     { deadlineMs: 300001 },
   ])('retains enabled execution limit validation: %j', (changed) => {
     const { repository, model } = setup();

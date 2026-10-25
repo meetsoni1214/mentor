@@ -4,6 +4,8 @@ export type RunErrorCode =
   | 'REFUSED'
   | 'INCOMPLETE'
   | 'INVALID_RESPONSE'
+  | 'RATE_LIMITED'
+  | 'LIMIT_EXCEEDED'
   | 'INTERRUPTED';
 
 export interface SourceReference {
@@ -30,8 +32,12 @@ export type RunOutcome =
       usage: TokenUsage | null;
       contextLimited: boolean;
     }
-  | { state: 'failed'; errorCode: Exclude<RunErrorCode, 'INTERRUPTED'> }
-  | { state: 'interrupted'; errorCode: 'INTERRUPTED' };
+  | {
+      state: 'failed';
+      errorCode: Exclude<RunErrorCode, 'INTERRUPTED'>;
+      usage?: TokenUsage;
+    }
+  | { state: 'interrupted'; errorCode: 'INTERRUPTED'; usage?: TokenUsage };
 
 interface RunAttemptDetails {
   id: string;

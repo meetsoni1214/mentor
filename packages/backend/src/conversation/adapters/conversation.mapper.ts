@@ -81,6 +81,8 @@ export function toRunAttempt(row: RunAttemptRow): RunAttempt {
         case 'REFUSED':
         case 'INCOMPLETE':
         case 'INVALID_RESPONSE':
+        case 'RATE_LIMITED':
+        case 'LIMIT_EXCEEDED':
           return {
             ...details,
             state: 'failed',

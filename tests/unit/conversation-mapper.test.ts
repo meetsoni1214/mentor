@@ -146,19 +146,23 @@ describe('conversation persistence mapping', () => {
     },
   );
 
-  it.each(['PROVIDER_ERROR', 'REFUSED', 'INCOMPLETE', 'INVALID_RESPONSE'])(
-    'preserves the known failure code %s',
-    (errorCode) => {
-      expect(
-        toRunAttempt({
-          ...runningRow(),
-          state: 'failed',
-          finishedAt,
-          errorCode,
-        }),
-      ).toMatchObject({ state: 'failed', errorCode });
-    },
-  );
+  it.each([
+    'PROVIDER_ERROR',
+    'REFUSED',
+    'INCOMPLETE',
+    'INVALID_RESPONSE',
+    'RATE_LIMITED',
+    'LIMIT_EXCEEDED',
+  ])('preserves the known failure code %s', (errorCode) => {
+    expect(
+      toRunAttempt({
+        ...runningRow(),
+        state: 'failed',
+        finishedAt,
+        errorCode,
+      }),
+    ).toMatchObject({ state: 'failed', errorCode });
+  });
 
   it('maps selected context fields and rejects a completed pair with no answer', () => {
     expect(

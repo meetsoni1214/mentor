@@ -27,7 +27,7 @@ The system SHALL use the TypeScript OpenAI Agents SDK with Responses and one Men
 #### Scenario: Several model steps for one request
 
 - **WHEN** a permitted SDK run requires more than one model step
-- **THEN** those steps belong to the same admitted attempt, share its execution limits, and produce at most one completed answer
+- **THEN** those steps belong to the same admitted attempt, use SDK execution behavior and the application deadline, and produce at most one completed answer
 
 #### Scenario: Required SDK controls are unsupported
 
@@ -43,39 +43,29 @@ Before first model submission, the app SHALL explain that the current message an
 - **WHEN** the owner first uses the assistant
 - **THEN** the app explains cloud processing without requiring a versioned acknowledgement or blocking submission on one
 
-### Requirement: Finite run admission
+### Requirement: Standard SDK execution controls
 
-Application code SHALL bound input, total output, model/tool calls, wall-clock time, and concurrency. Call and output allowances SHALL be shared across SDK iterations. Each outgoing input, including instructions and required intermediate items, SHALL fit its serialized byte limit. SDK and client provider retries SHALL be disabled. These limits SHALL not be described as an exact monetary cap.
+Application code SHALL retain message/initial-transcript bounds, the attempt deadline, and owner concurrency checks. The adapter SHALL use the unmodified pinned SDK Responses model and default runner iteration limit. It SHALL pass the configured output-token setting per model call and SHALL NOT add custom request hooks, complete-request byte enforcement, cumulative token/tool/model-call budgets, or a custom answer-byte cap. Client and SDK automatic retries SHALL remain disabled.
 
-#### Scenario: Concurrent submissions
+#### Scenario: SDK iteration limit
 
-- **WHEN** simultaneous distinct submissions compete to start work in the conversation
-- **THEN** at most one is admitted while an attempt is running and rejected submissions make no provider call
+- **WHEN** the SDK reaches its default iteration limit
+- **THEN** the adapter maps its exception to a stable limit failure without publishing a partial answer
+
+#### Scenario: Several model calls
+
+- **WHEN** a test-only tool causes another SDK model call
+- **THEN** the same per-call output setting is supplied without deducting earlier usage, and the SDK manages intermediate context
+
+#### Scenario: Application context selection
+
+- **WHEN** a new turn's completed history exceeds the initial transcript limit
+- **THEN** the application selects the newest complete pairs that fit, keeps older history browsable, and does not claim that the selected-transcript limit bounds the entire SDK wire payload
 
 #### Scenario: Execution deadline
 
-- **WHEN** a run exceeds its configured deadline
-- **THEN** the application aborts the provider request, records an interrupted attempt, and prevents late publication
-
-#### Scenario: Budget exhausted between model steps
-
-- **WHEN** a run has exhausted its model-call or output allowance, or another step cannot fit its required input within the configured bound
-- **THEN** no further model call starts, a stable limit-exceeded failure is recorded, and partial output is not published as a completed answer
-
-#### Scenario: Hosted tool allowance is exhausted
-
-- **WHEN** observed hosted tool activity has consumed the run's tool allowance
-- **THEN** subsequent requests offer no tools and the allowance is not reset by another SDK iteration
-
-#### Scenario: Usage cannot establish a remaining allowance
-
-- **WHEN** a model step returns missing or malformed usage required to establish the remaining output allowance
-- **THEN** no additional model call starts, unknown usage is not counted as zero, and incomplete usage totals remain explicitly unavailable
-
-#### Scenario: Cancellation between model steps
-
-- **WHEN** the attempt is cancelled or its deadline elapses before the next SDK step
-- **THEN** no new model or tool operation starts, and late SDK completion cannot publish an answer
+- **WHEN** the application deadline signal aborts a run
+- **THEN** cancellation reaches the SDK and the application records interruption and prevents late publication
 
 ### Requirement: Assistant-selected read-only investigation
 
@@ -133,14 +123,19 @@ The owner SHALL be able to inspect run status, model identifier, observed tool a
 - **WHEN** the provider returns an error containing sensitive request details
 - **THEN** the app shows a stable failure category and logs only redacted operational metadata
 
-### Requirement: Aggregate run usage
+### Requirement: SDK-reported run usage
 
-Available usage SHALL be aggregated across actual model calls, including unsuccessful attempts where known. Unknown totals SHALL remain nullable rather than being replaced with zero or a partial sum presented as a complete total. Intermediate SDK state SHALL not be persisted as hidden reasoning or raw run payloads.
+The adapter SHALL use the SDK's aggregate usage as provided and SHALL NOT introduce independent budget accounting. SDK normalization of missing provider counts to zero SHALL be documented. When no SDK usage is available, the application SHALL retain null. Missing usage SHALL NOT independently block continuation. Raw SDK state and hidden reasoning SHALL not be persisted.
 
-#### Scenario: Multi-call run usage
+#### Scenario: Multi-call SDK usage
 
-- **WHEN** an attempt contains several model calls with complete usage records
-- **THEN** its reported input/output usage includes all those calls rather than only the final answer's call
+- **WHEN** the SDK returns usage for several calls
+- **THEN** the adapter maps its aggregate counts into the application outcome
+
+#### Scenario: Provider omits usage
+
+- **WHEN** the SDK normalizes missing provider counts to zero
+- **THEN** the adapter accepts that SDK behavior without treating the resulting metrics as independently audited provider totals
 
 ### Requirement: Explicit SDK tracing privacy
 

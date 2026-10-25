@@ -8,30 +8,6 @@ const current = {
 } satisfies ModelMessage;
 
 describe('conversation context selection', () => {
-  it('reserves application instructions and serialization overhead during initial selection', () => {
-    const history = [
-      { text: 'Recent', answer: 'Recent answer' },
-      { text: 'Old', answer: 'Old answer' },
-    ];
-    const serialize = (messages: readonly ModelMessage[]) =>
-      JSON.stringify({ instructions: 'Mentor 🌱', input: messages });
-    const messages: ModelMessage[] = [
-      { role: 'user', text: 'Recent' },
-      { role: 'assistant', text: 'Recent answer' },
-      current,
-    ];
-    const exactBytes = Buffer.byteLength(serialize(messages), 'utf8');
-    const measure = (candidate: readonly ModelMessage[]) =>
-      Buffer.byteLength(serialize(candidate), 'utf8');
-    expect(selectContext(current.text, history, exactBytes, measure)).toEqual({
-      messages,
-      contextLimited: true,
-    });
-    expect(
-      selectContext(current.text, history, exactBytes - 1, measure),
-    ).toEqual({ messages: [current], contextLimited: true });
-  });
-
   it('retains the current message when there is no completed history', () => {
     expect(selectContext(current.text, [], 1024)).toEqual({
       messages: [current],
