@@ -74,6 +74,12 @@ It is tested directly with real PostgreSQL and an injected fake provider; it has
 no HTTP or UI integration yet. See [the conversation-loop walkthrough](conversation-loop.md)
 for its request flow, concurrency rules, and review order.
 
+Backend consumers now use explicit package subpaths instead of one root export.
+Feature core, concrete adapters, schemas, and framework integration have separate
+entry points. ESLint checks dependency direction and cross-module access during
+`pnpm lint` and `pnpm check`; see [module boundaries](module-boundaries.md) for
+the supported imports and the shared-schema exception.
+
 ## Follow a request
 
 1. The web page links to `/api/v1/health/ready`.

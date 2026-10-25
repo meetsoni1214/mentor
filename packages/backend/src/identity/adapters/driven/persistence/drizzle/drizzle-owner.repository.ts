@@ -1,4 +1,4 @@
-import type { DatabaseConnection } from '../../../../../database/database.js';
+import type { DatabaseConnection } from '../../../../../database/index.js';
 import type { OwnerProvisioningRepository } from '../../../../application/ports/owner-provisioning.repository.js';
 import { owners } from './owner.schema.js';
 

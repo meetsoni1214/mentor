@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   readDatabaseEnvironment,
   readServiceEnvironment,
-} from '@mentor/backend';
+} from '@mentor/backend/config';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule } from '@nestjs/swagger';

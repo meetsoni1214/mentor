@@ -1,4 +1,4 @@
-import { PUBLIC_ROUTE } from '@mentor/backend';
+import { PUBLIC_ROUTE } from '@mentor/backend/http';
 import {
   ForbiddenException,
   Inject,

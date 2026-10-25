@@ -9,26 +9,23 @@ import {
   it,
   vi,
 } from 'vitest';
-import {
-  createDatabase,
-  migrateDatabase,
-  readDatabaseEnvironment,
-} from '@mentor/backend';
-import { owners } from '../../packages/backend/src/identity/adapters/driven/persistence/drizzle/owner.schema.js';
-import { DrizzleConversationRepository } from '../../packages/backend/src/conversation/adapters/drizzle-conversation.repository.js';
-import { ConversationLoop } from '../../packages/backend/src/conversation/application/conversation-loop.js';
+import { createDatabase, migrateDatabase } from '@mentor/backend/database';
+import { readDatabaseEnvironment } from '@mentor/backend/config';
+import { owners } from '@mentor/backend/identity/schema';
+import { DrizzleConversationRepository } from '@mentor/backend/conversation/persistence';
+import { ConversationLoop } from '@mentor/backend/conversation';
 import type {
   Admission,
+  ConversationModel,
   RunLimits,
+  RunOutcome,
   Submission,
-} from '../../packages/backend/src/conversation/application/conversation.contracts.js';
-import type { ConversationModel } from '../../packages/backend/src/conversation/application/ports/conversation.model.js';
-import type { RunOutcome } from '../../packages/backend/src/conversation/domain/conversation.js';
+} from '@mentor/backend/conversation';
 import {
   conversationAttempts,
   conversationTurns,
   conversations,
-} from '../../packages/backend/src/conversation/adapters/conversation.schema.js';
+} from '@mentor/backend/conversation/schema';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl || new URL(databaseUrl).pathname !== '/mentor_test') {

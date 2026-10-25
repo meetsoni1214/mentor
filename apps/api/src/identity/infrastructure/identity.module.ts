@@ -1,12 +1,11 @@
 import {
   Argon2PasswordHasher,
-  DatabaseModule,
-  DatabaseService,
-  DrizzleSessionRepository,
   RandomSessionTokens,
-  Sessions,
-  readAuthEnvironment,
-} from '@mentor/backend';
+} from '@mentor/backend/identity/crypto';
+import { DatabaseModule, DatabaseService } from '@mentor/backend/database/nest';
+import { DrizzleSessionRepository } from '@mentor/backend/identity/persistence';
+import { Sessions } from '@mentor/backend/identity';
+import { readAuthEnvironment } from '@mentor/backend/config';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AccessGuard } from '../adapters/driving/http/access.guard.js';

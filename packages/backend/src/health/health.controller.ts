@@ -10,7 +10,7 @@ import {
   ApiServiceUnavailableResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { DatabaseService } from '../database/database.service.js';
+import { DatabaseService } from '../database/nest.js';
 import { PublicRoute } from '../http/public-route.js';
 
 export const SERVICE_NAME = Symbol('SERVICE_NAME');

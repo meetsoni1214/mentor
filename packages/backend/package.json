@@ -4,9 +4,53 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+    "./identity": {
+      "types": "./dist/identity/index.d.ts",
+      "import": "./dist/identity/index.js"
+    },
+    "./identity/crypto": {
+      "types": "./dist/identity/crypto.d.ts",
+      "import": "./dist/identity/crypto.js"
+    },
+    "./identity/persistence": {
+      "types": "./dist/identity/persistence.d.ts",
+      "import": "./dist/identity/persistence.js"
+    },
+    "./identity/schema": {
+      "types": "./dist/identity/schema.d.ts",
+      "import": "./dist/identity/schema.js"
+    },
+    "./conversation": {
+      "types": "./dist/conversation/index.d.ts",
+      "import": "./dist/conversation/index.js"
+    },
+    "./conversation/persistence": {
+      "types": "./dist/conversation/persistence.d.ts",
+      "import": "./dist/conversation/persistence.js"
+    },
+    "./conversation/schema": {
+      "types": "./dist/conversation/adapters/conversation.schema.d.ts",
+      "import": "./dist/conversation/adapters/conversation.schema.js"
+    },
+    "./config": {
+      "types": "./dist/config/environment.d.ts",
+      "import": "./dist/config/environment.js"
+    },
+    "./database": {
+      "types": "./dist/database/index.d.ts",
+      "import": "./dist/database/index.js"
+    },
+    "./database/nest": {
+      "types": "./dist/database/nest.d.ts",
+      "import": "./dist/database/nest.js"
+    },
+    "./health": {
+      "types": "./dist/health/health.module.d.ts",
+      "import": "./dist/health/health.module.js"
+    },
+    "./http": {
+      "types": "./dist/http/public-route.d.ts",
+      "import": "./dist/http/public-route.js"
     }
   },
   "scripts": {

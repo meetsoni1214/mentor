@@ -1,21 +1,22 @@
 import { createHash } from 'node:crypto';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { createDatabase, migrateDatabase } from '@mentor/backend/database';
+import { readDatabaseEnvironment } from '@mentor/backend/config';
 import {
-  createDatabase,
-  migrateDatabase,
-  readDatabaseEnvironment,
-} from '@mentor/backend';
-import { Argon2PasswordHasher } from '../../packages/backend/src/identity/adapters/driven/crypto/argon2-password.hasher.js';
-import { DrizzleSessionRepository } from '../../packages/backend/src/identity/adapters/driven/persistence/drizzle/drizzle-session.repository.js';
-import { DrizzleOwnerRepository } from '../../packages/backend/src/identity/adapters/driven/persistence/drizzle/drizzle-owner.repository.js';
-import { RandomSessionTokens } from '../../packages/backend/src/identity/adapters/driven/crypto/random-session.tokens.js';
-import { ProvisionOwner } from '../../packages/backend/src/identity/application/provision-owner.js';
-import { Sessions } from '../../packages/backend/src/identity/application/sessions.js';
+  Argon2PasswordHasher,
+  RandomSessionTokens,
+} from '@mentor/backend/identity/crypto';
 import {
+  DrizzleSessionRepository,
+  DrizzleOwnerRepository,
+} from '@mentor/backend/identity/persistence';
+import {
+  ProvisionOwner,
+  Sessions,
   OwnerAlreadyExistsError,
   InvalidCredentialsError,
   LoginThrottledError,
-} from '../../packages/backend/src/identity/domain/errors/identity.errors.js';
+} from '@mentor/backend/identity';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl || new URL(databaseUrl).pathname !== '/mentor_test') {

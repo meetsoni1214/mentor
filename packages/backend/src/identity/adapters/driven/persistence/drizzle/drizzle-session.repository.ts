@@ -1,5 +1,5 @@
 import { and, eq, gt, lte, sql } from 'drizzle-orm';
-import type { DatabaseConnection } from '../../../../../database/database.js';
+import type { DatabaseConnection } from '../../../../../database/index.js';
 import type { ActiveSession } from '../../../../domain/models/session.js';
 import type { SessionRepository } from '../../../../application/ports/session.repository.js';
 import {

@@ -1,9 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-  createDatabase,
-  migrateDatabase,
-  readDatabaseEnvironment,
-} from '@mentor/backend';
+import { createDatabase, migrateDatabase } from '@mentor/backend/database';
+import { readDatabaseEnvironment } from '@mentor/backend/config';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl || new URL(databaseUrl).pathname !== '/mentor_test') {

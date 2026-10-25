@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import prettier from 'eslint-config-prettier';
 import tseslint from 'typescript-eslint';
+import architecture from './scripts/eslint/architecture.mjs';
 
 export default tseslint.config(
   {
@@ -19,6 +20,11 @@ export default tseslint.config(
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    files: ['apps/**/*.{ts,tsx,mjs}', 'packages/**/*.ts', 'tests/**/*.ts'],
+    plugins: { architecture },
+    rules: { 'architecture/import-boundaries': 'error' },
+  },
   {
     files: ['**/*.mjs'],
     languageOptions: {

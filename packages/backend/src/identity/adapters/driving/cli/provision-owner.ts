@@ -1,5 +1,5 @@
 import { readDatabaseEnvironment } from '../../../../config/environment.js';
-import { createDatabase } from '../../../../database/database.js';
+import { createDatabase } from '../../../../database/index.js';
 import { Argon2PasswordHasher } from '../../driven/crypto/argon2-password.hasher.js';
 import { DrizzleOwnerRepository } from '../../driven/persistence/drizzle/drizzle-owner.repository.js';
 import { OwnerAlreadyExistsError } from '../../../domain/errors/identity.errors.js';

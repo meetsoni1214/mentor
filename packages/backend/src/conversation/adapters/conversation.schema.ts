@@ -13,7 +13,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { owners } from '../../identity/adapters/driven/persistence/drizzle/owner.schema.js';
+import { owners } from '../../identity/schema.js';
 import type {
   RunActivity,
   RunErrorCode,

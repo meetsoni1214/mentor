@@ -2,10 +2,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   InvalidCredentialsError,
   LoginThrottledError,
-  PublicRoute,
   loginCredentials,
-} from '@mentor/backend';
-import type { ActiveSession } from '@mentor/backend';
+} from '@mentor/backend/identity';
+import { PublicRoute } from '@mentor/backend/http';
+import type { ActiveSession } from '@mentor/backend/identity';
 import {
   Body,
   Controller,

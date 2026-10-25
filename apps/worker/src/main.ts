@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import {
   readDatabaseEnvironment,
   readServiceEnvironment,
-} from '@mentor/backend';
+} from '@mentor/backend/config';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { WorkerModule } from './worker.module.js';

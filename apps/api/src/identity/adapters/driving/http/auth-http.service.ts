@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { Sessions } from '@mentor/backend';
-import type { ActiveSession } from '@mentor/backend';
+import { Sessions } from '@mentor/backend/identity';
+import type { ActiveSession } from '@mentor/backend/identity';
 import { Inject, Injectable } from '@nestjs/common';
 import { AUTH_HTTP_CONFIG } from './auth-http.config.js';
 import type { AuthHttpConfig } from './auth-http.config.js';

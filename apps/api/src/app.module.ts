@@ -1,4 +1,4 @@
-import { HealthModule } from '@mentor/backend';
+import { HealthModule } from '@mentor/backend/health';
 import { Module } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
 import { IdentityModule } from './identity/infrastructure/identity.module.js';

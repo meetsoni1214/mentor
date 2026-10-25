@@ -1,5 +1,5 @@
 import { readDatabaseEnvironment } from '../../../../config/environment.js';
-import { createDatabase } from '../../../../database/database.js';
+import { createDatabase } from '../../../../database/index.js';
 import { Argon2PasswordHasher } from '../../driven/crypto/argon2-password.hasher.js';
 import { DrizzleOwnerPasswordResetRepository } from '../../driven/persistence/drizzle/drizzle-owner-password-reset.repository.js';
 import { OwnerNotFoundError } from '../../../domain/errors/identity.errors.js';
