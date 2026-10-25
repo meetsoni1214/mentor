@@ -53,6 +53,10 @@ conversation's persistence and run lifecycle. Domain types and rules live in
 `domain/`; use-case coordination and contracts live in `application/`, with
 repository/model ports in `application/ports/`. Adapters implement those ports
 and depend inward on the application and domain.
+Conversation admission policies own replay, conflict, history-version, and
+concurrency decisions. The Drizzle adapter loads their inputs and evaluates them
+under its database lock before persisting changes; the policies have no ORM or
+framework dependencies.
 It is tested directly with real PostgreSQL and an injected fake provider; it has
 no HTTP or UI integration yet. See [the conversation-loop walkthrough](conversation-loop.md)
 for its request flow, concurrency rules, and review order.

@@ -549,6 +549,88 @@ describe('singleton conversation lifecycle', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
+  it('keeps submission and retry keys distinct while replaying older accepted work', async () => {
+    const input = submission();
+    const accepted = await repository.submit(input, limits);
+    const failure: RunOutcome = {
+      state: 'failed',
+      errorCode: 'PROVIDER_ERROR',
+    };
+    await repository.finish(reference(accepted), failure);
+    const retryInput = {
+      ownerId,
+      historyVersion: 0,
+      turnId: accepted.turn.id,
+      requestId: randomUUID(),
+    };
+    const retried = await repository.retry(retryInput, limits);
+    await repository.finish(reference(retried), failure);
+    const newer = await repository.submit(submission(), limits);
+
+    expect(await repository.submit(input, limits)).toMatchObject({
+      execute: false,
+      turn: { id: accepted.turn.id },
+      attempt: { id: retried.attempt.id },
+    });
+    expect(await repository.retry(retryInput, limits)).toMatchObject({
+      execute: false,
+      attempt: { id: retried.attempt.id },
+    });
+    await Promise.all(
+      [
+        repository.submit(
+          submission({ requestId: retryInput.requestId }),
+          limits,
+        ),
+        repository.retry({ ...retryInput, requestId: input.requestId }, limits),
+        repository.retry({ ...retryInput, turnId: newer.turn.id }, limits),
+      ].map((request) =>
+        expect(request).rejects.toMatchObject({
+          code: 'IDEMPOTENCY_CONFLICT',
+        }),
+      ),
+    );
+    expect(await connection.db.select().from(conversationTurns)).toHaveLength(
+      2,
+    );
+    expect(
+      await connection.db.select().from(conversationAttempts),
+    ).toHaveLength(3);
+  });
+
+  it('admits only one competing fresh retry key', async () => {
+    const accepted = await repository.submit(submission(), limits);
+    await repository.finish(reference(accepted), {
+      state: 'failed',
+      errorCode: 'PROVIDER_ERROR',
+    });
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () =>
+        repository.retry(
+          {
+            ownerId,
+            historyVersion: 0,
+            turnId: accepted.turn.id,
+            requestId: randomUUID(),
+          },
+          limits,
+        ),
+      ),
+    );
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    for (const result of results) {
+      if (result.status === 'rejected')
+        expect(result.reason).toMatchObject({ code: 'NOT_RETRYABLE' });
+    }
+    const attempts = await connection.db.select().from(conversationAttempts);
+    expect(attempts).toHaveLength(2);
+    expect(
+      attempts.filter((attempt) => attempt.state === 'running'),
+    ).toHaveLength(1);
+  });
+
   it('accepts sequential attempts without a daily counter, including after clearing and restart', async () => {
     for (let index = 0; index < 25; index++) {
       const accepted = await repository.submit(submission(), limits);

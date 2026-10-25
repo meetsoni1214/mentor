@@ -11,15 +11,19 @@ Read these files in order:
 
 1. `packages/backend/src/conversation/domain/conversation.ts` defines the
    domain types, errors, completion rule, and latest-turn-only retry rule.
-2. `packages/backend/src/conversation/application/conversation.contracts.ts`
+2. `packages/backend/src/conversation/domain/admission-policy.ts` owns
+   history-version checks, submission replay/conflict decisions, retry-key
+   replay, and the rule against starting another concurrent attempt.
+3. `packages/backend/src/conversation/application/conversation.contracts.ts`
    defines use-case inputs, execution settings, and history/result shapes.
-3. `packages/backend/src/conversation/application/ports/` defines the repository
+4. `packages/backend/src/conversation/application/ports/` defines the repository
    and model interfaces the application depends on.
-4. `packages/backend/src/conversation/application/conversation-loop.ts` coordinates
+5. `packages/backend/src/conversation/application/conversation-loop.ts` coordinates
    admission, bounded context, provider invocation, timeout, and completion.
-5. `packages/backend/src/conversation/adapters/drizzle-conversation.repository.ts`
-   implements the repository port with atomic persistence and concurrency rules.
-6. `tests/integration/conversation.test.ts` exercises those rules with real
+6. `packages/backend/src/conversation/adapters/drizzle-conversation.repository.ts`
+   loads stored facts, evaluates domain policies under the owner lock, and
+   implements atomic persistence through the repository port.
+7. `tests/integration/conversation.test.ts` exercises those rules with real
    PostgreSQL and a synthetic provider. Unit tests use a fake clock to check
    deadlines, omitted context, and provider failures.
 
@@ -81,6 +85,15 @@ expired attempts, checks duplicate keys, and rejects another active run. It then
 commits the turn and attempt. The owner lock serializes these
 steps across tabs and API processes. A partial unique index independently prevents
 two running attempts in the same singleton conversation.
+
+The adapter owns the SQL, lock, and transaction. Framework-independent domain
+functions own replay, conflict, and busy decisions. Policy evaluation remains
+inside the locked transaction: moving it before the lock would allow competing
+requests to decide using outdated state. Unit tests exercise those decisions
+without a database; integration tests establish that concurrent requests still
+admit only one attempt. Replays remain readable while another attempt runs,
+including retries accepted before a newer message, and preserve conflict errors
+when submission and retry keys are mixed.
 
 There is no transaction or connection held during model execution. A second
 distinct submission while an attempt is running returns BUSY. A replay of that
@@ -194,3 +207,12 @@ sandboxed Next.js process cannot parse TypeScript's configuration output.
 also emits a dependency-security advisory; the first invocation stops for the
 notice and the subsequent invocation completes with the warning. This checkpoint
 does not upgrade dependencies or establish that the advisory has been resolved.
+
+Architecture follow-up, also verified on 2026-10-25: admission decisions now live
+in framework-independent domain functions and remain evaluated under the existing
+database lock. `pnpm check` passes outside the sandbox with 49 unit tests.
+`pnpm test:integration` passes all 48 checks, including 22 conversation checks.
+The additional database cases verify competing fresh retry keys and replay of
+older accepted submissions/retries while a newer attempt runs, including
+submission/retry key conflicts. Strict OpenSpec validation passes. The existing
+sandbox build limitation and Next.js dependency-security advisory remain.

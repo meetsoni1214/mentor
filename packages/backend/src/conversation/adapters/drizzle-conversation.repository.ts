@@ -16,6 +16,12 @@ import type {
 import type { ConversationRepository } from '../application/ports/conversation.repository.js';
 import type { RunOutcome } from '../domain/conversation.js';
 import {
+  assertHistoryVersion,
+  assertNoRunningAttempt,
+  decideSubmission,
+  replayRetry,
+} from '../domain/admission-policy.js';
+import {
   conversationAttempts as attempts,
   conversationTurns as turns,
   conversations,
@@ -69,10 +75,6 @@ export class DrizzleConversationRepository implements ConversationRepository {
     return created;
   }
 
-  private assertVersion(actual: number, expected: number): void {
-    if (actual !== expected) throw new ConversationError('STALE_HISTORY');
-  }
-
   private async reconcile(
     tx: Transaction,
     conversationId: string,
@@ -90,10 +92,10 @@ export class DrizzleConversationRepository implements ConversationRepository {
       );
   }
 
-  private async assertIdle(
+  private async hasRunningAttempt(
     tx: Transaction,
     conversationId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const [active] = await tx
       .select({ id: attempts.id })
       .from(attempts)
@@ -104,13 +106,13 @@ export class DrizzleConversationRepository implements ConversationRepository {
         ),
       )
       .limit(1);
-    if (active) throw new ConversationError('BUSY');
+    return active !== undefined;
   }
 
   async submit(input: Submission, limits: RunLimits): Promise<Admission> {
     return this.locked(input.ownerId, async (tx, now) => {
       const conversation = await this.resolve(tx, input.ownerId);
-      this.assertVersion(conversation.historyVersion, input.historyVersion);
+      assertHistoryVersion(conversation.historyVersion, input.historyVersion);
       await this.reconcile(tx, conversation.id, now);
       const [existing] = await tx
         .select()
@@ -121,35 +123,41 @@ export class DrizzleConversationRepository implements ConversationRepository {
             eq(turns.requestId, input.requestId),
           ),
         );
-      if (existing) {
-        if (existing.text !== input.text)
-          throw new ConversationError('IDEMPOTENCY_CONFLICT');
+      const [keyCollision] = existing
+        ? []
+        : await tx
+            .select({ id: attempts.id })
+            .from(attempts)
+            .where(
+              and(
+                eq(attempts.conversationId, conversation.id),
+                eq(attempts.requestId, input.requestId),
+              ),
+            )
+            .limit(1);
+      const decision = decideSubmission(input.text, {
+        existingTurn: existing ?? null,
+        requestIdInUse: keyCollision !== undefined,
+        hasRunningAttempt:
+          !existing &&
+          !keyCollision &&
+          (await this.hasRunningAttempt(tx, conversation.id)),
+      });
+      if (decision.kind === 'replay') {
         const [attempt] = await tx
           .select()
           .from(attempts)
-          .where(eq(attempts.turnId, existing.id))
+          .where(eq(attempts.turnId, decision.turn.id))
           .orderBy(desc(attempts.attemptNumber))
           .limit(1);
         if (!attempt) throw new Error('Accepted turn has no attempt');
         return {
           execute: false,
           historyVersion: conversation.historyVersion,
-          turn: existing,
+          turn: decision.turn,
           attempt,
         };
       }
-      const [keyCollision] = await tx
-        .select({ id: attempts.id })
-        .from(attempts)
-        .where(
-          and(
-            eq(attempts.conversationId, conversation.id),
-            eq(attempts.requestId, input.requestId),
-          ),
-        )
-        .limit(1);
-      if (keyCollision) throw new ConversationError('IDEMPOTENCY_CONFLICT');
-      await this.assertIdle(tx, conversation.id);
       const [turn] = await tx
         .insert(turns)
         .values({
@@ -191,7 +199,7 @@ export class DrizzleConversationRepository implements ConversationRepository {
   async retry(input: RetryRequest, limits: RunLimits): Promise<Admission> {
     return this.locked(input.ownerId, async (tx, now) => {
       const conversation = await this.resolve(tx, input.ownerId);
-      this.assertVersion(conversation.historyVersion, input.historyVersion);
+      assertHistoryVersion(conversation.historyVersion, input.historyVersion);
       await this.reconcile(tx, conversation.id, now);
       const [turn] = await tx
         .select()
@@ -212,15 +220,13 @@ export class DrizzleConversationRepository implements ConversationRepository {
             eq(attempts.requestId, input.requestId),
           ),
         );
-      if (existing) {
-        // Initial submission identifiers are not retry identifiers.
-        if (existing.turnId !== turn.id || existing.attemptNumber === 1)
-          throw new ConversationError('IDEMPOTENCY_CONFLICT');
+      const replay = replayRetry(turn.id, existing ?? null);
+      if (replay) {
         return {
           execute: false,
           historyVersion: conversation.historyVersion,
           turn,
-          attempt: existing,
+          attempt: replay,
         };
       }
       const [latestTurn] = await tx
@@ -238,7 +244,7 @@ export class DrizzleConversationRepository implements ConversationRepository {
       if (!latestTurn || !latestAttempt)
         throw new Error('Accepted turn unavailable');
       assertRetryable(turn.id, latestTurn.id, latestAttempt.state);
-      await this.assertIdle(tx, conversation.id);
+      assertNoRunningAttempt(await this.hasRunningAttempt(tx, conversation.id));
       const [attempt] = await tx
         .insert(attempts)
         .values({
@@ -326,7 +332,7 @@ export class DrizzleConversationRepository implements ConversationRepository {
         .from(conversations)
         .where(eq(conversations.ownerId, ref.ownerId));
       if (!conversation) throw new ConversationError('NOT_FOUND');
-      this.assertVersion(conversation.historyVersion, ref.historyVersion);
+      assertHistoryVersion(conversation.historyVersion, ref.historyVersion);
       const rows = await tx
         .select({ text: turns.text, answer: attempts.answer })
         .from(turns)
@@ -358,7 +364,7 @@ export class DrizzleConversationRepository implements ConversationRepository {
         .where(eq(conversations.ownerId, ownerId));
       const historyVersion = conversation?.historyVersion ?? 0;
       if (options.cursor) {
-        this.assertVersion(historyVersion, options.cursor.historyVersion);
+        assertHistoryVersion(historyVersion, options.cursor.historyVersion);
         if (
           !Number.isSafeInteger(options.cursor.beforeSequence) ||
           options.cursor.beforeSequence < 1
@@ -410,7 +416,7 @@ export class DrizzleConversationRepository implements ConversationRepository {
   async clear(ownerId: string, expectedVersion: number): Promise<number> {
     return this.locked(ownerId, async (tx) => {
       const conversation = await this.resolve(tx, ownerId);
-      this.assertVersion(conversation.historyVersion, expectedVersion);
+      assertHistoryVersion(conversation.historyVersion, expectedVersion);
       await tx.delete(turns).where(eq(turns.conversationId, conversation.id));
       const historyVersion = conversation.historyVersion + 1;
       await tx
