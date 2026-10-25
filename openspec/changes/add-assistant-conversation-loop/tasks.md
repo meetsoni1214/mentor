@@ -1,0 +1,42 @@
+# Tasks
+
+This change is the current conversation-loop implementation scope. The older `build-personal-knowledge-assistant` change remains a broader historical roadmap. Unmet tasks there stay open. Each group is a reviewable commit checkpoint; document actual evidence and limitations as work progresses.
+
+## 1. Conversation state and run lifecycle
+
+- [ ] 1.1 Add framework-independent conversation, turn, attempt, source/activity, and repository/model port types under packages/backend; verify strict service compilation and focused unit tests of allowed state transitions and latest-turn-only retries.
+- [ ] 1.2 Add Drizzle schemas and a versioned migration for conversations, idempotent creation/submission/attempt keys, dependent messages/results, disclosure acknowledgement, and aggregate daily admissions; verify fresh disposable-database migration, rerun safety, uniqueness, foreign keys, cascade deletion, and update the existing migration-count assertion.
+- [ ] 1.3 Implement atomic admission, same-key replay/conflict detection, owner-wide and per-conversation concurrency, ordered turns, and explicit retries using an injected provider fake; verify concurrent real-database tests admit once, reserve once, never duplicate messages, and reject old/completed-turn retries.
+- [ ] 1.4 Implement deadline reconciliation, conditional completion, owner-filtered paginated history, and deletion; verify fake-clock unit tests plus real-database timeout/completion, deletion/completion, and retry races cannot publish stale output or resurrect content.
+- [ ] 1.5 Begin docs/conversation-loop.md with the state/data flow and documented recovery limits; update AGENTS.md's milestone to the current slice; verify the examples match the implemented backend and create a focused commit after relevant unit and disposable-database checks pass.
+
+## 2. Bounded model execution and protected API
+
+- [ ] 2.1 Add redacted server-only AI environment validation, explicit enable/model/key requirements, finite limits, and current-version disclosure acknowledgement; verify missing/invalid config, disabled execution with readable history, acknowledgement enforcement, and boundary values without printing secrets or modifying an existing .env.
+- [ ] 2.2 Add the pinned official OpenAI SDK and a Responses adapter with store:false, explicit bounded same-thread history, output/deadline limits, disabled SDK retries, and normalized outcomes; verify local HTTP-stub contract tests for successful multi-turn input, context truncation, timeout, refusal, incomplete/malformed output, rate limits, and redacted provider failures without real API calls.
+- [ ] 2.3 Wire the use case to the real model adapter, atomic UTC daily admission reservations, known-usage recording, and stable failure categories; verify simultaneous last-admission requests, restart persistence, uncertain failures retaining reservations, and configuration/provider failures making no unauthorized calls.
+- [ ] 2.4 Add authenticated assistant status/disclosure and conversation create/list/read/submit/retry/delete routes with versioned OpenAPI DTOs and assistant-specific errors; regenerate using pnpm build:services && pnpm api:generate and verify actual HTTP authorization, ownership, CSRF/Origin, no-store, invalid inputs, idempotent replay, and absence of secrets in responses.
+- [ ] 2.5 Extend docs/conversation-loop.md, README.md, and .env.example with the request path, disclosure, required model configuration, finite defaults, UTC reset, and foreground-recovery limits; run pnpm check and pnpm test:integration, confirm generated contracts have no unexplained drift, and create a focused verified commit.
+
+## 3. In-app conversation workspace
+
+- [ ] 3.1 Add a generated-client-backed frontend conversation API with runtime validation and generalized expired-session handling; verify late responses after logout/deletion cannot repopulate private query state and no backend package is imported into the browser.
+- [ ] 3.2 Replace the signed-in placeholder with responsive thread navigation, ordered transcript, composer, first-use disclosure, bounded-context notice, and run details; verify keyboard use, readable status announcements, empty/loading/config-disabled states, and phone/desktop layout without horizontal overflow.
+- [ ] 3.3 Implement draft preservation, submission-key reconciliation, polling while running, explicit retry, and conversation deletion; verify browser acceptance with a synthetic provider for a contextual follow-up, reload during work, dropped POST response, temporary API failure, interrupted run, and deletion during generation.
+- [ ] 3.4 Extend auth browser acceptance to session expiry/logout while conversation requests are in flight; verify sign-in recovery does not resubmit, private caches/drafts clear, browser local/session storage has no transcript, and existing sign-in/logout behavior still works.
+- [ ] 3.5 Document the in-app walkthrough and browser evidence in docs/conversation-loop.md, distinguishing accepted from unsent drafts and fixture output from live output; run relevant checks and create a focused verified commit.
+
+## 4. Read-only investigation and complete-loop acceptance
+
+- [ ] 4.1 Add the per-turn Investigate public sources control and external-query disclosure, passing only the built-in web_search tool when selected with finite max_tool_calls and actual-search enforcement; verify adapter request fixtures contain no tools when disabled and selected investigation cannot silently claim a search without observed activity.
+- [ ] 4.2 Normalize provider-observed search activity and citation annotations into bounded persisted records; render answer text safely with separately validated HTTP(S) source links and no raw HTML or promoted invented links; verify unsafe URLs, malformed annotations, unknown output shapes, and fabricated sources are rejected or labelled honestly.
+- [ ] 4.3 Add synthetic Railway-notice and adversarial email/page fixtures; verify conversation continuation, distinction between public evidence and unknown account exposure, no fabricated monitoring/rotation claims, and no write-capable tools or credential access despite embedded instructions. Document that fixture enforcement tests do not establish universal model truthfulness.
+- [ ] 4.4 Run pnpm check, pnpm test:integration, and integrated phone/desktop browser acceptance through conversation, investigation, source inspection, refresh/recovery, deletion, and auth loss; record actual results and unavailable checks, keep unverified tasks open, and create a focused verified commit.
+- [ ] 4.5 Provide an opt-in live smoke command using configured credentials/model and bounded synthetic requests; verify ordinary tests never call OpenAI, document the command and limits, and record the exact live model/results if run or clearly record that live verification remains unavailable. Never treat stubbed search as live evidence.
+
+## Workflow follow-up
+
+- Present the proposal, two capability specs, design, and tasks for review. The proposal workflow ends at that checkpoint; implementation uses openspec-apply-change for this named change after the user's next implementation instruction.
+- During apply, use these task groups as reviewable commit checkpoints; do not expand into email observation, long-term personal memory, action execution, or the older roadmap's remaining groups.
+- Before archive, reconcile overlapping conversation capability ownership and milestone ordering with the older roadmap; do not mark its retrieval, streaming, export, or background work complete based on this narrower change.
+- Archive only after implemented behavior, available verification, limitations, and the requested review are recorded.
