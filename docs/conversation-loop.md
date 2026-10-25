@@ -361,3 +361,16 @@ The seven obsolete toggle-specific cases were removed. Lint, strict service/test
 types, all 163 unit tests, and all 54 disposable-database tests pass. Strict
 OpenSpec validation passes. The production build was not rerun for this focused
 configuration revision; its earlier evidence and advisory remain recorded above.
+
+Next.js security follow-up, verified on 2026-10-25: upgraded the web dependency
+and lockfile from Next.js 16.4.0 to 16.4.3, including the matching environment and
+SWC packages. This includes the fixes from the
+[October 14 security update](https://nextjs.org/blog/nextjs-security-update-october-14-2026).
+`pnpm check` passes outside the sandbox with 163 unit tests and a successful
+production build without the previous security warning. `pnpm test:integration`
+passes all 54 checks; its disposable database and network were removed afterward.
+`pnpm audit --prod` reports no Next.js advisory, but exits nonzero for four
+separate advisories: `js-yaml` (moderate), `zod`, `body-parser`, and `multer`
+(high). Those dependencies remain unchanged by this focused update. The earlier
+Next.js advisory notes above describe historical checkpoints and are superseded
+by this verification.
