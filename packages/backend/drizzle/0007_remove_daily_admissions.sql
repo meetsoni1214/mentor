@@ -1,0 +1,1 @@
+DROP TABLE "assistant_daily_admissions" CASCADE;

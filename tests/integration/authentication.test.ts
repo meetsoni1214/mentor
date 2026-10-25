@@ -53,7 +53,7 @@ describe('database-backed owner sessions', () => {
   });
   beforeEach(async () => {
     now = start;
-    await connection.pool.query('truncate sessions, owners, login_throttle');
+    await connection.pool.query('truncate owners, login_throttle cascade');
     await connection.pool.query(
       'insert into owners (email, password_hash) values ($1, $2)',
       [credentials.email, await passwords.hash(credentials.password)],

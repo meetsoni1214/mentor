@@ -154,7 +154,7 @@ describe('actual API authentication boundary', () => {
     api = await start(origin);
   });
   beforeEach(async () => {
-    await connection.pool.query('truncate sessions, owners, login_throttle');
+    await connection.pool.query('truncate owners, login_throttle cascade');
     await connection.pool.query(
       'insert into owners (email, password_hash) values ($1, $2)',
       [

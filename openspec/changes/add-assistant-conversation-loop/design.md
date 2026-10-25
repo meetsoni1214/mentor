@@ -21,7 +21,7 @@ Add `packages/backend/src/conversation/` with application types/use cases and re
 Use the official OpenAI Node SDK with the Responses API rather than an agent framework. One provider request can perform bounded built-in web investigation. The useful boundary is the assistant request/result port, not a generic graph, multi-agent coordinator, or plugin registry. Future email-triggered runs can reuse the port while adding their own durable execution policy.
 
 ```text
-Owner message + explicit investigation setting
+Owner message + server-controlled available tools
     --> authenticated NestJS endpoint
     --> atomic admission + persisted turn/attempt
     --> bounded context assembly
@@ -37,20 +37,18 @@ The owner always opens the same conversation. There is no create, select, rename
 
 Add a versioned migration using the existing migration journal. Proposed records:
 
-| Record                     | Contents and constraints                                                                                                             |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Conversation               | UUID, unique owner foreign key, history version, timestamps; no title or user-managed lifecycle                                      |
-| Turn                       | UUID, conversation, owner-scoped submission key, input digest, original user text, investigation flag, ordered sequence              |
-| Run attempt                | UUID, turn, attempt key, state, start/deadline/finish, model, final answer, stable error category, context-limited flag, known usage |
-| Source/activity            | Attempt foreign key, validated citation metadata and observed public tool activity; no raw reasoning payload                         |
-| Daily admission            | Owner plus UTC date, atomically reserved attempt count; survives API restarts                                                        |
-| Disclosure acknowledgement | Owner and disclosure version, with acknowledgement timestamp                                                                         |
+| Record                     | Contents and constraints                                                                                                                                    |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Conversation               | UUID, unique owner foreign key, history version, timestamps; no title or user-managed lifecycle                                                             |
+| Turn                       | UUID, conversation, owner-scoped submission key, original user text, ordered sequence                                                                       |
+| Run attempt                | UUID, turn, attempt key, state, start/deadline/finish, model, final answer, stable error category, context-limited flag, nullable input/output token counts |
+| Source/activity            | Attempt foreign key, validated citation metadata and observed public tool activity; no raw reasoning payload                                                |
 
-Use foreign keys/cascades, unique submission/attempt keys, and owner-filtered reads. Submissions, retries, and clear-history requests carry the history version they observed; stale versions return a recoverable 409 before changing state or making a provider call. Store only a completed attempt's answer as future assistant context. Keep old failed attempts inspectable. Do not log request input digests as a substitute for redaction.
+Use foreign keys/cascades, unique submission/attempt keys, and owner-filtered reads. Submissions, retries, and clear-history requests carry the history version they observed; stale versions return a recoverable 409 before changing state or making a provider call. Store only a completed attempt's answer as future assistant context. Keep old failed attempts inspectable. Compare stored text directly on matching submission keys; no input fingerprint is stored.
 
-Owner-row locking serializes admission across API processes: enforce the global owner concurrency bound, daily allowance, and one active run per conversation atomically. Transactions end before provider calls. Admission also verifies current acknowledgement and provider configuration. UUID/digest conflicts return 409 without model work. A repeated matching key returns its original attempt state without reserving another admission, even when today's allowance is exhausted.
+Owner-row locking serializes admission across API processes: enforce the global owner concurrency bound and one active run per conversation atomically. Transactions end before provider calls. Admission also verifies provider configuration. Reusing a submission UUID with different text returns 409 without model work. A repeated matching key returns its original attempt state without starting another run.
 
-Retry is explicit, only for the most recent failed/interrupted turn, with a new idempotent attempt key. It reuses the original input and investigation choice. A completed turn or an older failed turn cannot be retried after newer turns exist; the UI invites a new message instead. This avoids inserting a new answer into the middle of context history.
+Retry is explicit, only for the most recent failed/interrupted turn, with a new idempotent attempt key. It reuses the original input while applying current runtime permissions and limits. A completed turn or an older failed turn cannot be retried after newer turns exist; the UI invites a new message instead. This avoids inserting a new answer into the middle of context history.
 
 ### 3. Foreground execution with persisted recovery
 
@@ -68,11 +66,11 @@ Use `store: false`; send needed context explicitly rather than provider Conversa
 
 Require `AI_ENABLED=true`, a server-only `OPENAI_API_KEY`, and explicit `OPENAI_CHAT_MODEL` to enable execution. Validate configuration with the existing redacted Zod environment pattern. Proposed finite defaults: 8 KiB user text, 32 KiB total serialized input, 2,048 output tokens, 60-second deadline, one owner-wide active run, 20 admitted attempts per UTC day, and at most two built-in tool calls per run. These are conservative starting settings, not assertions about model pricing. Reject incompatible limits clearly. The adapter must verify the pinned SDK supports the required request fields; an incompatible model/tool configuration fails visibly with no silent fallback.
 
-Daily attempt reservations are conservative: failed/uncertain provider calls keep their admission, and SDK retries are disabled. Persist actual returned usage when available. The local controls bound calls and output; they do not implement the older roadmap's shared daily token reservations or promise an exact monetary ceiling. Show remaining admissions and the UTC reset time. A later shared API/worker usage design is required before unattended work.
+Persist actual returned usage when available, with nullable integer input/output token counts. SDK retries are disabled. Input/output, tool-call, deadline, and concurrency controls bound each run; this slice has no daily attempt cap or monetary budget.
 
 ### 5. Public-web investigation is the first tool
 
-Default each new turn to investigation disabled. Enabling the visible Investigate public sources control is explicit permission for that turn to use the provider's built-in `web_search`; it is not permission to read email or mutate accounts. Give the model only this read-only tool, with a finite `max_tool_calls`, output limit, and deadline. Requests without the selection contain no tools. Investigation-enabled requests require an actual search, or end with an honest unavailable/incomplete result; they cannot silently claim verification from model knowledge.
+Keep tool availability in server-controlled runtime settings (`allowedTools`), independent of submitted messages. When public-web access is permitted, offer the built-in `web_search` tool and let the model choose whether it is needed, with a finite `max_tool_calls`, output limit, and deadline. Do not force a search on every request and do not expose a per-turn investigation flag or toggle. When unavailable, omit the tool entirely. Only observed tool activity can support a claim that a search occurred; permission to search does not establish that it happened. Email access and external writes remain outside the available tool set.
 
 The [official web-search guide](https://developers.openai.com/api/docs/guides/tools-web-search) documents the tool, search activity, and citation annotations. Use those structured output items to normalize sources/activity. Do not implement custom URL fetching, arbitrary execution, or a generic function dispatcher in this change. The adapter rejects unexpected output types needed for unsupported capabilities instead of dispatching them.
 
@@ -84,14 +82,13 @@ Add these versioned routes, with generated request/result DTOs and the existing 
 
 | Method/path                                      | Behavior                                                                                                                                                                               |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET `/api/v1/assistant/status`                   | Enabled state, disclosure version/acknowledgement, limits and remaining admissions; no secrets                                                                                         |
-| POST `/api/v1/assistant/disclosure`              | Persist acknowledgement of the current version                                                                                                                                         |
+| GET `/api/v1/assistant/status`                   | Enabled state and execution limits; no secrets                                                                                         |
 | GET `/api/v1/conversation`                       | Automatically resolve the owner's single transcript; return history version and cursor-paginated turns, attempt status, activity and sources; absent state is an empty transcript      |
-| POST `/api/v1/conversation/turns`                | Submit text, submission UUID, observed history version, and investigation selection; initialize singleton state if needed, execute once or replay existing state                       |
+| POST `/api/v1/conversation/turns`                | Submit text, submission UUID, observed history version; initialize singleton state if needed, execute once or replay existing state                                                    |
 | POST `/api/v1/conversation/turns/{turnId}/retry` | Explicit idempotent attempt for the latest retryable turn, checking observed history version                                                                                           |
 | DELETE `/api/v1/conversation/history`            | Clear all messages and dependent content with expected history version in the JSON body; retain the singleton and increment version; reject stale repeats without deleting newer input |
 
-No model work occurs from GET requests. GET reconciliation can terminalize expired attempts but cannot resume paid work. Mutations require existing Origin/CSRF checks. Missing/non-owned turn IDs return 404. History cursors include the history version; stale cursors return a recoverable conflict rather than mixing pre-clear and post-clear pages. Add conflict/assistant-specific errors to the existing stable envelope; distinguish busy, daily limit, provider unavailable, refusal, incomplete, invalid response, and interrupted attempts without leaking raw provider errors. Do not reuse the sign-in-specific 429 message for assistant limits.
+No model work occurs from GET requests. GET reconciliation can terminalize expired attempts but cannot resume paid work. Mutations require existing Origin/CSRF checks. Missing/non-owned turn IDs return 404. History cursors include the history version; stale cursors return a recoverable conflict rather than mixing pre-clear and post-clear pages. Add conflict/assistant-specific errors to the existing stable envelope; distinguish busy, provider unavailable, refusal, incomplete, invalid response, and interrupted attempts without leaking raw provider errors. Do not reuse the sign-in-specific 429 message for assistant limits.
 
 ### 7. In-app presentation and privacy
 
@@ -101,21 +98,21 @@ Visual thesis: a calm writing workspace using the existing warm background, gree
 
 Use TanStack Query and generated API types, with runtime validation at frontend boundaries. A text draft stays in memory until admission is known; uncertain submissions keep their original key and reconcile through the same idempotent operation or restored history. Do not store private drafts or transcripts in browser local/session storage. Refresh restores accepted text from the backend; it does not promise recovery of an unsent in-memory draft. History pagination and privacy settings must retain keyboard focus, readable status announcements, and the composer within the mobile viewport. There is no thread sidebar, conversation picker, title, or New conversation button.
 
-First-run disclosure covers selected content, cloud processing, local history, and provider-retention limits. Investigation adds a concise disclosure about derived public-search queries; enabling it must not silently add unrelated owner data to search queries. Acknowledge the version on the backend. Clear history is an explicit destructive privacy action. Under the owner lock, atomically increment history version and remove turns, attempts, and dependent sources/activity, retaining the same singleton conversation row. Abort local work where possible. Completion checks both the attempt state and captured history version, so late writes cannot restore removed content. Version checks also prevent old tabs from replaying cleared input or repeating a clear against newer messages. Refresh stale tabs to the current empty or updated history, without automatically resubmitting. Clearing cannot revoke content already sent externally. Keep aggregate daily admission counts and disclosure acknowledgement without retaining cleared message content.
+An informational notice covers selected content, cloud processing, local history, and provider-retention limits. The notice includes assistant-selected public-web search and derived queries; tool availability must not silently add unrelated owner data to search queries. No persisted acknowledgement or submission gate is required. Clear history is an explicit destructive privacy action. Under the owner lock, atomically increment history version and remove turns, attempts, and dependent sources/activity, retaining the same singleton conversation row. Abort local work where possible. Completion checks both the attempt state and captured history version, so late writes cannot restore removed content. Version checks also prevent old tabs from replaying cleared input or repeating a clear against newer messages. Refresh stale tabs to the current empty or updated history, without automatically resubmitting. Clearing cannot revoke content already sent externally.
 
 ### 8. Verification and learning checkpoints
 
 Use injected provider fakes for normal tests and a local HTTP provider stub for adapter tests. No default test makes paid requests. Extend the existing disposable PostgreSQL integration suite; update its fixed expected migration count when adding the migration. Cover real HTTP authorization and CSRF, concurrent/idempotent admission, deadline races, history-clear races, stale-tab replays, singleton first-use concurrency, retry ordering, and limit persistence across API restart.
 
-Browser acceptance uses synthetic content on phone/desktop: sign in, acknowledge disclosure, send a message, continue with a context-dependent follow-up, refresh during work, recover a failed attempt, inspect activity/sources, clear history while work is running, verify old tabs cannot replay cleared input, and expire/logout during a request. Also return on a later date/change topic without creating or selecting a thread; overflow model context while retaining older browsable history. Include adversarial fixtures for invented action claims, unsafe links, prompt injection, refusal, incomplete responses, and unknown output shapes. Deterministic checks verify enforcement and output handling; they do not prove all generated claims are true.
+Browser acceptance uses synthetic content on phone/desktop: sign in, send a message, continue with a context-dependent follow-up, refresh during work, recover a failed attempt, inspect activity/sources, clear history while work is running, verify old tabs cannot replay cleared input, and expire/logout during a request. Also return on a later date/change topic without creating or selecting a thread; overflow model context while retaining older browsable history. Include adversarial fixtures for invented action claims, unsafe links, prompt injection, refusal, incomplete responses, and unknown output shapes. Deterministic checks verify enforcement and output handling; they do not prove all generated claims are true.
 
 A separately enabled, bounded live smoke check requires existing server credentials, explicit model/limits, and synthetic input. Record the exact model, one multi-turn discussion, and one public investigation. If configuration is absent, report the live gap; do not add secrets or claim model-quality verification from fixtures. Document the flow and each limitation in `docs/conversation-loop.md` during implementation, and make focused verified commits.
 
 ## Risks / Trade-offs
 
 - Foreground requests can be lost on process failure: persisted deadlines expose interruption; explicit retry may incur another charge. Durable unattended execution is a later slice.
-- A daily attempt cap is coarse: combine it with bounded input/output/tool calls and show usage; do not describe it as a dollar budget.
-- Search queries can reveal details from a pasted message: make investigation explicit, constrain instructions to relevant public facts, and disclose the external query path.
+- Per-run limits do not cap total daily spending; daily usage limits are deferred.
+- Search queries can reveal details from a pasted message: disclose assistant-selected public-web search, constrain instructions to relevant public facts, and keep search permission in runtime settings rather than a per-message toggle.
 - Provider-attributed content can still be wrong: show sources and uncertainty, preserve evidence distinctions, and evaluate representative scenarios.
 - Earlier roadmap artifacts overlap: this change controls the current slice; reconcile capability ownership before archive and leave unmet older tasks open.
 

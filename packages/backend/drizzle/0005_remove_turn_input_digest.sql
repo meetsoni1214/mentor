@@ -1,0 +1,1 @@
+ALTER TABLE "conversation_turns" DROP COLUMN "input_digest";

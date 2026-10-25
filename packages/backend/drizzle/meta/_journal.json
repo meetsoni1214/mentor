@@ -22,6 +22,48 @@
       "when": 1791914364099,
       "tag": "0002_owner_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792910955309,
+      "tag": "0003_conversation_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792914019573,
+      "tag": "0004_remove_turn_investigation",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792914401422,
+      "tag": "0005_remove_turn_input_digest",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792915531792,
+      "tag": "0006_attempt_token_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792920672216,
+      "tag": "0007_remove_daily_admissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792920875472,
+      "tag": "0008_remove_disclosure_acknowledgements",
+      "breakpoints": true
     }
   ]
 }

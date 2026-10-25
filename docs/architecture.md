@@ -48,6 +48,15 @@ The same module now owns session use cases. API controllers and guards adapt
 HTTP requests; the frontend calls the generated client and stores session state
 in TanStack Query. See [sign-in](sign-in.md) for the complete path.
 
+The next module, `packages/backend/src/conversation`, implements one continuous
+conversation's persistence and run lifecycle. Domain types and rules live in
+`domain/`; use-case coordination and contracts live in `application/`, with
+repository/model ports in `application/ports/`. Adapters implement those ports
+and depend inward on the application and domain.
+It is tested directly with real PostgreSQL and an injected fake provider; it has
+no HTTP or UI integration yet. See [the conversation-loop walkthrough](conversation-loop.md)
+for its request flow, concurrency rules, and review order.
+
 ## Follow a request
 
 1. The web page links to `/api/v1/health/ready`.

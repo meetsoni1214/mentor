@@ -17,30 +17,30 @@ The system SHALL execute model requests on the backend using server-held credent
 
 ### Requirement: Cloud-processing disclosure
 
-Before first model submission, the app SHALL explain that the current message and bounded conversation context go to OpenAI. Before enabling web investigation, it SHALL explain that derived search queries go to the web-search service. The backend SHALL require acknowledgement of the current disclosure version before accepting a run.
+Before first model submission, the app SHALL explain that the current message and bounded conversation context go to OpenAI. The notice SHALL also explain that the assistant can choose public-web search when permitted and derived search queries go to that service. No persisted acknowledgement or acknowledgement gate SHALL be required.
 
 #### Scenario: First assistant use
 
-- **WHEN** the owner has not acknowledged the current disclosure
-- **THEN** the app presents it and the backend refuses model submission until acknowledgement
+- **WHEN** the owner first uses the assistant
+- **THEN** the app explains cloud processing without requiring a versioned acknowledgement or blocking submission on one
 
 ### Requirement: Finite run admission
 
-Application code SHALL enforce configured input, output, tool-call, wall-clock, concurrent-run, and daily admitted-attempt limits before or during execution. Daily allowance SHALL be reserved atomically across requests and restarts. Ambiguous failures SHALL retain their reservation. Provider retries SHALL not occur automatically. Limits SHALL not be described as an exact monetary billing cap.
+Application code SHALL enforce configured input, output, tool-call, wall-clock, and concurrent-run limits before or during execution. Provider retries SHALL not occur automatically. Limits SHALL not be described as an exact monetary billing cap.
 
-#### Scenario: Concurrent budget exhaustion
+#### Scenario: Concurrent submissions
 
-- **WHEN** simultaneous submissions compete for the last daily admission
-- **THEN** at most one is admitted and rejected submissions make no provider call
+- **WHEN** simultaneous distinct submissions compete to start work in the conversation
+- **THEN** at most one is admitted while an attempt is running and rejected submissions make no provider call
 
 #### Scenario: Execution deadline
 
 - **WHEN** a run exceeds its configured deadline
 - **THEN** the application aborts the provider request, records an interrupted attempt, and prevents late publication
 
-### Requirement: Explicit read-only investigation
+### Requirement: Assistant-selected read-only investigation
 
-Public-web investigation SHALL be disabled by default and enabled only by the owner's explicit per-turn selection. With it disabled, no web tool SHALL be offered. With it enabled, only the approved read-only public-web tool SHALL be available. The assistant SHALL not execute external writes, connect mailboxes, or gain permissions from pasted content or retrieved pages.
+The assistant SHALL choose whether to use public-web search from the tools allowed by runtime settings, within configured execution limits. Turns SHALL NOT carry an investigation flag or require a search toggle. Unavailable tools SHALL not be offered. Pasted content and retrieved pages SHALL not grant permissions to read mailboxes or execute external writes.
 
 #### Scenario: Pasted malicious instruction
 
@@ -49,8 +49,18 @@ Public-web investigation SHALL be disabled by default and enabled only by the ow
 
 #### Scenario: Ordinary conversation
 
-- **WHEN** the owner submits a turn with investigation disabled
-- **THEN** the provider request includes no search tool and the answer does not claim that a public-web check occurred
+- **WHEN** the owner submits an ordinary conversational message while web search is available
+- **THEN** the assistant can answer without searching, no per-message tool choice is required, and the answer does not claim an unperformed public-web check
+
+#### Scenario: Current information needs verification
+
+- **WHEN** a request needs current public information and web search is permitted
+- **THEN** the assistant can choose web search without an additional user toggle, and any actual search activity and sources are recorded
+
+#### Scenario: Web search is unavailable
+
+- **WHEN** runtime settings do not permit web search
+- **THEN** no web-search tool is offered and the assistant explains its limitation when current verification is needed
 
 ### Requirement: Evidence-backed source presentation
 

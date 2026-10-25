@@ -1,0 +1,1 @@
+DROP TABLE "assistant_disclosure_acknowledgements" CASCADE;

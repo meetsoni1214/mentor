@@ -31,11 +31,18 @@ describe('database bootstrap on a fresh PostgreSQL instance', () => {
     expect(result.rows[0]?.distance).toBe(0);
   });
 
+  it('has no deferred assistant bookkeeping tables', async () => {
+    const result = await connection.pool.query<{ name: string }>(
+      "select table_name as name from information_schema.tables where table_schema='public' and table_name in ('assistant_daily_admissions', 'assistant_disclosure_acknowledgements')",
+    );
+    expect(result.rows).toEqual([]);
+  });
+
   it('records the migration once and permits a second migration run', async () => {
     await migrateDatabase(connection);
     const result = await connection.pool.query<{ count: number }>(
       'select count(*)::integer as count from drizzle.__drizzle_migrations',
     );
-    expect(result.rows[0]?.count).toBe(3);
+    expect(result.rows[0]?.count).toBe(9);
   });
 });

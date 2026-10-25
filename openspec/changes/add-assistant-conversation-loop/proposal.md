@@ -8,9 +8,9 @@ Mentor's owner wants an assistant that investigates important developments and h
 
 - Add one authenticated, continuous conversation per owner, available automatically on sign-in, with idempotent turns, visible run states, and explicit retry after failure or interruption. No conversation creation, selection, naming, or thread list is exposed.
 - Add a backend-owned, bounded assistant runtime and an OpenAI Responses adapter. PostgreSQL owns conversation history; model requests use `store: false` and bounded context.
-- Support read-only public-web investigation when the owner explicitly enables it for a turn. Show actual search activity and provider-backed source links; pasted email remains conversation input, never permission to act.
+- Let the assistant choose when to use read-only public-web search from the tools permitted by runtime settings, without a per-message flag or toggle. Show actual search activity and provider-backed source links; pasted email remains conversation input, never permission to act.
 - Add a responsive conversation workspace with paginated message history, a draft-preserving composer, run activity, source links, and an explicit Clear history setting. Returning another day or changing topic continues the same conversation.
-- Keep credentials server-side; disclose cloud processing before first submission; enforce configured time, input/output, tool-call, concurrency, and daily admission limits.
+- Keep credentials server-side; disclose cloud processing before first submission; enforce configured time, input/output, tool-call, and concurrency limits.
 - Deliver small verified checkpoints: conversation state and run lifecycle; model integration; in-app conversation; read-only investigation and acceptance.
 
 This change is the next implementation priority. It takes the conversation foundation ahead of the capture/search sequence in `build-personal-knowledge-assistant`. That older change remains a historical roadmap, not authorization to implement its remaining groups. Its overlapping conversation work must be reconciled before either change is archived; this change does not claim to implement library retrieval, personal memory, or proactivity.

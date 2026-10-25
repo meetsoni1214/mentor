@@ -2,11 +2,15 @@
 
 ## Current milestone
 
-The bootstrap and owner-account creation code are in place. The currently
-approved slice adds browser sign-in, database sessions, expiry, logout, and their
-request protections. The user wants small steps. Credential reset and later
-product features require the next instruction. The larger OpenSpec change
-remains the future roadmap.
+Bootstrap, owner provisioning/password recovery, and browser authentication are
+implemented with local verification. The active change is
+`add-assistant-conversation-loop`: one continuous conversation per owner, with
+no thread creation or selection. The current review checkpoint implements only
+group 1, conversation persistence and run lifecycle, using an injected fake
+provider in tests. Model integration, protected conversation endpoints, UI, and
+public-web investigation are later checkpoints. Stop after a verified focused
+commit for review. The older `build-personal-knowledge-assistant` change remains
+a broader historical roadmap, not the next implementation scope.
 
 ## Architecture
 
