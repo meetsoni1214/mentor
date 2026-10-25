@@ -6,22 +6,22 @@ Mentor's owner wants an assistant that investigates important developments and h
 
 ## What Changes
 
-- Add authenticated, persistent text conversations, idempotent turns, visible run states, and explicit retry after failure or interruption.
+- Add one authenticated, continuous conversation per owner, available automatically on sign-in, with idempotent turns, visible run states, and explicit retry after failure or interruption. No conversation creation, selection, naming, or thread list is exposed.
 - Add a backend-owned, bounded assistant runtime and an OpenAI Responses adapter. PostgreSQL owns conversation history; model requests use `store: false` and bounded context.
 - Support read-only public-web investigation when the owner explicitly enables it for a turn. Show actual search activity and provider-backed source links; pasted email remains conversation input, never permission to act.
-- Add a responsive conversation workspace with thread history, a draft-preserving composer, run activity, source links, and conversation deletion.
+- Add a responsive conversation workspace with paginated message history, a draft-preserving composer, run activity, source links, and an explicit Clear history setting. Returning another day or changing topic continues the same conversation.
 - Keep credentials server-side; disclose cloud processing before first submission; enforce configured time, input/output, tool-call, concurrency, and daily admission limits.
 - Deliver small verified checkpoints: conversation state and run lifecycle; model integration; in-app conversation; read-only investigation and acceptance.
 
 This change is the next implementation priority. It takes the conversation foundation ahead of the capture/search sequence in `build-personal-knowledge-assistant`. That older change remains a historical roadmap, not authorization to implement its remaining groups. Its overlapping conversation work must be reconciled before either change is archived; this change does not claim to implement library retrieval, personal memory, or proactivity.
 
-Out of scope: mailbox OAuth/sync, unsolicited/background observation, attention inbox policy, external notifications, arbitrary URL fetching or browser control, write-capable tools, action approvals/execution, cross-thread personal memory, note/image capture, embeddings, library search, and multi-agent orchestration. The first loop can discuss a pasted security notice and investigate public evidence; it cannot establish account exposure without connected account evidence or rotate credentials.
+Out of scope: multiple conversations or automatic topic/day segmentation, mailbox OAuth/sync, unsolicited/background observation, attention inbox policy, external notifications, arbitrary URL fetching or browser control, write-capable tools, action approvals/execution, long-term personal memory or automatic history summarization, note/image capture, embeddings, library search, and multi-agent orchestration. The first loop can discuss a pasted security notice and investigate public evidence; it cannot establish account exposure without connected account evidence or rotate credentials. Preserving history does not mean every message fits in each model request; context limits are managed internally without asking the owner to start over.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `assistant-conversation`: Owner-scoped conversations, turns, context, lifecycle, history, recovery, and deletion.
+- `assistant-conversation`: One continuous owner-scoped conversation, turns, context, lifecycle, message history, recovery, and history clearing.
 - `assistant-runtime`: Bounded model runs, explicit read-only web investigation, evidence presentation, cloud-processing disclosure, and honest capability boundaries.
 
 ### Modified Capabilities
