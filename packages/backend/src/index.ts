@@ -13,12 +13,12 @@ export {
   Sessions,
   InvalidCredentialsError,
   LoginThrottledError,
-} from './identity/application/sessions.js';
-export type { ActiveSession } from './identity/application/sessions.js';
-export { loginCredentials } from './identity/application/credentials.js';
-export { Argon2PasswordHasher } from './identity/adapters/argon2-password.hasher.js';
-export { DrizzleSessionRepository } from './identity/adapters/drizzle-session.repository.js';
-export { RandomSessionTokens } from './identity/adapters/random-session.tokens.js';
+} from './identity/index.js';
+export type { ActiveSession } from './identity/index.js';
+export { loginCredentials } from './identity/index.js';
+export { Argon2PasswordHasher } from './identity/adapters/driven/crypto/argon2-password.hasher.js';
+export { DrizzleSessionRepository } from './identity/adapters/driven/persistence/drizzle/drizzle-session.repository.js';
+export { RandomSessionTokens } from './identity/adapters/driven/crypto/random-session.tokens.js';
 export { ConversationLoop } from './conversation/application/conversation-loop.js';
 export { ConversationError } from './conversation/domain/conversation.js';
 export type {

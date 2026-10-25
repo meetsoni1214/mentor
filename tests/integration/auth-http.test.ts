@@ -8,7 +8,7 @@ import {
   migrateDatabase,
   readDatabaseEnvironment,
 } from '@mentor/backend';
-import { Argon2PasswordHasher } from '../../packages/backend/src/identity/adapters/argon2-password.hasher.js';
+import { Argon2PasswordHasher } from '../../packages/backend/src/identity/adapters/driven/crypto/argon2-password.hasher.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl || new URL(databaseUrl).pathname !== '/mentor_test') {

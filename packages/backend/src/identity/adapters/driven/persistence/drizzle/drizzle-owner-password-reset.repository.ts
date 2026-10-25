@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
-import type { DatabaseConnection } from '../../database/database.js';
-import type { OwnerPasswordResetRepository } from '../application/reset-owner-password.js';
+import type { DatabaseConnection } from '../../../../../database/database.js';
+import type { OwnerPasswordResetRepository } from '../../../../application/ports/owner-password-reset.repository.js';
 import { owners } from './owner.schema.js';
 import { loginThrottle, sessions } from './session.schema.js';
 

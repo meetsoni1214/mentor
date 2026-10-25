@@ -34,17 +34,21 @@ delete the owner row to reset a password; use the reset command below.
 ## Follow the code
 
 1. `package.json` builds backend code and runs
-   `packages/backend/src/identity/cli/provision-owner.ts` with the root `.env`.
+   `packages/backend/src/identity/adapters/driving/cli/provision-owner.ts` with the root `.env`.
 2. The CLI checks whether an owner exists, reads hidden input, and validates it
-   with `cli/credentials.ts`.
+   with `adapters/driving/cli/credentials.ts`.
 3. `application/provision-owner.ts` checks again, calls a password-hashing port,
    and asks the repository to create the account. It imports neither NestJS nor
    Drizzle.
-4. `adapters/argon2-password.hasher.ts` uses Node's Argon2id implementation with
+4. `adapters/driven/crypto/argon2-password.hasher.ts` uses Node's Argon2id implementation with
    a random 16-byte salt and a 32-byte result. It stores a PHC string containing
    the algorithm, version, cost parameters, salt, and hash.
-5. `adapters/drizzle-owner.repository.ts` inserts the owner and returns whether
+5. `adapters/driven/persistence/drizzle/drizzle-owner.repository.ts` inserts the owner and returns whether
    it succeeded. The CLI always closes its database pool.
+
+The CLI is a driving adapter and composition entry point: it selects concrete
+hashing and persistence adapters, while the use case depends only on ports.
+See [identity boundaries](identity-architecture.md) for the module layout.
 
 The `owners` table has a UUID, email, password hash, creation timestamp, and a
 single-owner slot. The slot must be `true` and unique. These database constraints

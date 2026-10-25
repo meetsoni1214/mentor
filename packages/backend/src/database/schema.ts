@@ -1,4 +1,4 @@
-export { owners } from '../identity/adapters/owner.schema.js';
+export { owners } from '../identity/adapters/driven/persistence/drizzle/owner.schema.js';
 export {
   conversations,
   conversationTurns,
@@ -7,4 +7,4 @@ export {
 export {
   sessions,
   loginThrottle,
-} from '../identity/adapters/session.schema.js';
+} from '../identity/adapters/driven/persistence/drizzle/session.schema.js';

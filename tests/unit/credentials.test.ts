@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loginCredentials } from '../../packages/backend/src/identity/application/credentials.js';
-import { ownerCredentials } from '../../packages/backend/src/identity/cli/credentials.js';
+import { ownerCredentials } from '../../packages/backend/src/identity/adapters/driving/cli/credentials.js';
 
 describe('owner password policy', () => {
   it('accepts nine characters and rejects eight', () => {

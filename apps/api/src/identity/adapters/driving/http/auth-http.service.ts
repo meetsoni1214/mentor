@@ -1,15 +1,10 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import {
-  DatabaseService,
-  Argon2PasswordHasher,
-  DrizzleSessionRepository,
-  RandomSessionTokens,
-  Sessions,
-  readAuthEnvironment,
-} from '@mentor/backend';
+import { Sessions } from '@mentor/backend';
 import type { ActiveSession } from '@mentor/backend';
 import { Inject, Injectable } from '@nestjs/common';
+import { AUTH_HTTP_CONFIG } from './auth-http.config.js';
+import type { AuthHttpConfig } from './auth-http.config.js';
 
 export interface AuthenticatedRequest extends IncomingMessage {
   authSession?: ActiveSession;
@@ -17,22 +12,17 @@ export interface AuthenticatedRequest extends IncomingMessage {
 
 @Injectable()
 export class AuthHttpService {
-  readonly config = readAuthEnvironment();
-  readonly sessions: Sessions;
   private readonly csrfSecret = randomBytes(32);
-  private readonly sessionCookie = `${this.config.secureCookies ? '__Host-' : ''}mentor-session`;
-  private readonly csrfCookie = `${this.config.secureCookies ? '__Host-' : ''}mentor-csrf`;
+  private readonly sessionCookie: string;
+  private readonly csrfCookie: string;
 
-  constructor(@Inject(DatabaseService) database: DatabaseService) {
-    this.sessions = new Sessions(
-      new DrizzleSessionRepository(database.db),
-      new Argon2PasswordHasher(),
-      new RandomSessionTokens(),
-      {
-        idleMs: this.config.SESSION_IDLE_SECONDS * 1000,
-        absoluteMs: this.config.SESSION_ABSOLUTE_SECONDS * 1000,
-      },
-    );
+  constructor(
+    @Inject(Sessions) readonly sessions: Sessions,
+    @Inject(AUTH_HTTP_CONFIG) readonly config: AuthHttpConfig,
+  ) {
+    const prefix = config.secureCookies ? '__Host-' : '';
+    this.sessionCookie = `${prefix}mentor-session`;
+    this.csrfCookie = `${prefix}mentor-csrf`;
   }
 
   private cookie(request: IncomingMessage, name: string): string | null {

@@ -1,14 +1,15 @@
 import { and, eq, gt, lte, sql } from 'drizzle-orm';
-import type { DatabaseConnection } from '../../database/database.js';
-import type {
-  ActiveSession,
-  SessionRepository,
-} from '../application/sessions.js';
+import type { DatabaseConnection } from '../../../../../database/database.js';
+import type { ActiveSession } from '../../../../domain/models/session.js';
+import type { SessionRepository } from '../../../../application/ports/session.repository.js';
+import {
+  loginAttemptPolicy,
+  loginRetryAfterSeconds,
+} from '../../../../domain/policies/login-policy.js';
 import { owners } from './owner.schema.js';
 import { loginThrottle, sessions } from './session.schema.js';
 
-const attemptLimit = 5;
-const windowMs = 15 * 60 * 1000;
+const { attemptLimit, windowMs } = loginAttemptPolicy;
 
 export class DrizzleSessionRepository implements SessionRepository {
   constructor(private readonly db: DatabaseConnection['db']) {}
@@ -39,15 +40,7 @@ export class DrizzleSessionRepository implements SessionRepository {
       })
       .returning();
     if (!budget) throw new Error('Login budget unavailable');
-    return budget.attempts <= attemptLimit
-      ? 0
-      : Math.max(
-          1,
-          Math.ceil(
-            (budget.windowStartedAt.getTime() + windowMs - now.getTime()) /
-              1000,
-          ),
-        );
+    return loginRetryAfterSeconds(budget, now);
   }
 
   async create(

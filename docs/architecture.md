@@ -48,6 +48,16 @@ The same module now owns session use cases. API controllers and guards adapt
 HTTP requests; the frontend calls the generated client and stores session state
 in TanStack Query. See [sign-in](sign-in.md) for the complete path.
 
+Identity is the first module organized with explicit domain models/errors/policy,
+application ports and use cases, driving CLI/HTTP adapters, and driven
+Drizzle/crypto adapters. API-specific adapters and Nest composition remain in
+`apps/api/src/identity`; shared use cases and adapters remain in
+`packages/backend/src/identity`. The API imports `IdentityModule`, whose provider
+factory constructs the plain `Sessions` class and registers the global guard.
+See [identity boundaries](identity-architecture.md) for the reference layout and
+the atomic login-throttle boundary. Other modules retain their existing layouts
+until their own review checkpoints.
+
 The next module, `packages/backend/src/conversation`, implements one continuous
 conversation's persistence and run lifecycle. Domain types and rules live in
 `domain/`; use-case coordination and contracts live in `application/`, with

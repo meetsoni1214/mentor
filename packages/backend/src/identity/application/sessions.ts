@@ -1,56 +1,21 @@
-export interface OwnerCredentials {
-  id: string;
-  email: string;
-  passwordHash: string;
-}
-
-export interface ActiveSession {
-  owner: { id: string; email: string };
-  expiresAt: Date;
-  idleExpiresAt: Date;
-}
-
-export interface SessionRepository {
-  findOwner(): Promise<OwnerCredentials | null>;
-  reserveLoginAttempt(now: Date): Promise<number>;
-  create(input: {
-    ownerId: string;
-    expectedPasswordHash: string;
-    tokenHash: string;
-    previousTokenHash: string | null;
-    now: Date;
-    expiresAt: Date;
-  }): Promise<boolean>;
-  touchActive(
-    tokenHash: string,
-    now: Date,
-    idleMs: number,
-  ): Promise<ActiveSession | null>;
-  revoke(tokenHash: string): Promise<void>;
-}
-
-export interface PasswordVerifier {
-  verify(password: string, hash: string | null): Promise<boolean>;
-}
-
-export interface SessionTokens {
-  generate(): string;
-  digest(token: string): string;
-}
-
-export class InvalidCredentialsError extends Error {}
-export class LoginThrottledError extends Error {
-  constructor(readonly retryAfterSeconds: number) {
-    super('Too many sign-in attempts.');
-  }
-}
+import {
+  InvalidCredentialsError,
+  LoginThrottledError,
+} from '../domain/errors/identity.errors.js';
+import type {
+  ActiveSession,
+  SessionLifetime,
+} from '../domain/models/session.js';
+import type { SessionRepository } from './ports/session.repository.js';
+import type { PasswordVerifier } from './ports/password-hasher.js';
+import type { SessionTokens } from './ports/session-tokens.js';
 
 export class Sessions {
   constructor(
     private readonly repository: SessionRepository,
     private readonly passwords: PasswordVerifier,
     private readonly tokens: SessionTokens,
-    private readonly lifetime: { idleMs: number; absoluteMs: number },
+    private readonly lifetime: SessionLifetime,
     private readonly clock: () => Date = () => new Date(),
   ) {}
 

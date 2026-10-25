@@ -1,20 +1,6 @@
-export interface OwnerProvisioningRepository {
-  exists(): Promise<boolean>;
-  createIfAbsent(owner: {
-    email: string;
-    passwordHash: string;
-  }): Promise<boolean>;
-}
-
-export interface PasswordHasher {
-  hash(password: string): Promise<string>;
-}
-
-export class OwnerAlreadyExistsError extends Error {
-  constructor() {
-    super('An owner already exists. This command never replaces credentials.');
-  }
-}
+import { OwnerAlreadyExistsError } from '../domain/errors/identity.errors.js';
+import type { OwnerProvisioningRepository } from './ports/owner-provisioning.repository.js';
+import type { PasswordHasher } from './ports/password-hasher.js';
 
 export class ProvisionOwner {
   constructor(

@@ -32,8 +32,8 @@
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",
     "db:generate": "pnpm --filter @mentor/backend db:generate",
-    "owner:reset-password": "pnpm build:services && node --env-file-if-exists=.env packages/backend/dist/identity/cli/reset-owner-password.js",
-    "owner:create": "pnpm build:services && node --env-file-if-exists=.env packages/backend/dist/identity/cli/provision-owner.js",
+    "owner:reset-password": "pnpm build:services && node --env-file-if-exists=.env packages/backend/dist/identity/adapters/driving/cli/reset-owner-password.js",
+    "owner:create": "pnpm build:services && node --env-file-if-exists=.env packages/backend/dist/identity/adapters/driving/cli/provision-owner.js",
     "db:migrate": "pnpm build:services && node --env-file-if-exists=.env packages/backend/dist/database/migrate.js"
   },
   "devDependencies": {

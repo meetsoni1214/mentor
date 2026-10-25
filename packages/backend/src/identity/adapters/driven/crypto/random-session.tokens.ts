@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { SessionTokens } from '../application/sessions.js';
+import type { SessionTokens } from '../../../application/ports/session-tokens.js';
 
 export class RandomSessionTokens implements SessionTokens {
   generate(): string {

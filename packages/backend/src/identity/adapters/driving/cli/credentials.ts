@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { loginCredentials } from '../application/credentials.js';
+import { loginCredentials } from '../../../application/credentials.js';
 
 export const ownerCredentials = loginCredentials
   .extend({

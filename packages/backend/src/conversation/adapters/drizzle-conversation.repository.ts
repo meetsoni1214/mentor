@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, lt, lte, sql } from 'drizzle-orm';
 import type { DatabaseConnection } from '../../database/database.js';
-import { owners } from '../../identity/adapters/owner.schema.js';
+import { owners } from '../../identity/adapters/driven/persistence/drizzle/owner.schema.js';
 import {
   assertRetryable,
   canFinish,

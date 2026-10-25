@@ -1,11 +1,9 @@
-import { readDatabaseEnvironment } from '../../config/environment.js';
-import { createDatabase } from '../../database/database.js';
-import { Argon2PasswordHasher } from '../adapters/argon2-password.hasher.js';
-import { DrizzleOwnerPasswordResetRepository } from '../adapters/drizzle-owner-password-reset.repository.js';
-import {
-  OwnerNotFoundError,
-  ResetOwnerPassword,
-} from '../application/reset-owner-password.js';
+import { readDatabaseEnvironment } from '../../../../config/environment.js';
+import { createDatabase } from '../../../../database/database.js';
+import { Argon2PasswordHasher } from '../../driven/crypto/argon2-password.hasher.js';
+import { DrizzleOwnerPasswordResetRepository } from '../../driven/persistence/drizzle/drizzle-owner-password-reset.repository.js';
+import { OwnerNotFoundError } from '../../../domain/errors/identity.errors.js';
+import { ResetOwnerPassword } from '../../../application/reset-owner-password.js';
 import { ownerCredentials } from './credentials.js';
 import { PromptCancelledError, readResetCredentials } from './hidden-prompt.js';
 

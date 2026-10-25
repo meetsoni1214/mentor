@@ -1,5 +1,5 @@
-import type { DatabaseConnection } from '../../database/database.js';
-import type { OwnerProvisioningRepository } from '../application/provision-owner.js';
+import type { DatabaseConnection } from '../../../../../database/database.js';
+import type { OwnerProvisioningRepository } from '../../../../application/ports/owner-provisioning.repository.js';
 import { owners } from './owner.schema.js';
 
 export class DrizzleOwnerRepository implements OwnerProvisioningRepository {

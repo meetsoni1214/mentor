@@ -1,20 +1,7 @@
-import type { PasswordHasher } from './provision-owner.js';
+import { OwnerNotFoundError } from '../domain/errors/identity.errors.js';
 import { loginCredentials } from './credentials.js';
-
-export interface OwnerPasswordResetRepository {
-  resetPasswordAndRevokeSessions(
-    email: string,
-    passwordHash: string,
-  ): Promise<boolean>;
-}
-
-export class OwnerNotFoundError extends Error {
-  constructor() {
-    super(
-      'No owner matches that email. Check the email or run pnpm owner:create for initial setup.',
-    );
-  }
-}
+import type { OwnerPasswordResetRepository } from './ports/owner-password-reset.repository.js';
+import type { PasswordHasher } from './ports/password-hasher.js';
 
 export class ResetOwnerPassword {
   constructor(

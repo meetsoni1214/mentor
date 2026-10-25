@@ -1,6 +1,8 @@
 import { argon2, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { PasswordHasher } from '../application/provision-owner.js';
-import type { PasswordVerifier } from '../application/sessions.js';
+import type {
+  PasswordHasher,
+  PasswordVerifier,
+} from '../../../application/ports/password-hasher.js';
 
 // OWASP's Argon2id minimum: 19 MiB, two passes, one lane.
 const parameters = { memory: 19_456, passes: 2, parallelism: 1, tagLength: 32 };

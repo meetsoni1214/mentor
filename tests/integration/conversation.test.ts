@@ -14,7 +14,7 @@ import {
   migrateDatabase,
   readDatabaseEnvironment,
 } from '@mentor/backend';
-import { owners } from '../../packages/backend/src/identity/adapters/owner.schema.js';
+import { owners } from '../../packages/backend/src/identity/adapters/driven/persistence/drizzle/owner.schema.js';
 import { DrizzleConversationRepository } from '../../packages/backend/src/conversation/adapters/drizzle-conversation.repository.js';
 import { ConversationLoop } from '../../packages/backend/src/conversation/application/conversation-loop.js';
 import type {

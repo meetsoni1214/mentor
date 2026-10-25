@@ -21,13 +21,20 @@ destination of the frontend proxy.
 
 ## Follow a login
 
+`apps/api/src/identity/infrastructure/identity.module.ts` constructs the shared
+`Sessions` use case and registers authentication's controller and global guard.
+It validates runtime configuration once and supplies it through Nest providers.
+The HTTP service receives the use case and cookie/Origin settings; it does not
+construct database or crypto adapters. See [identity boundaries](identity-architecture.md)
+for the full module map.
+
 1. `apps/web/src/features/auth/auth-screen.tsx` requests the current session.
    A 401 shows the login form; network/server failures show a retry state.
 2. `login-form.tsx` collects credentials. Passwords stay out of query caches,
    browser storage, URLs, and logs. A successful request clears the form.
 3. `auth-api.ts` obtains a CSRF token and submits JSON credentials using the
    OpenAPI-generated client. Next.js proxies `/api/v1/*` to NestJS.
-4. `apps/api/src/identity/access.guard.ts` checks the exact browser Origin and
+4. `apps/api/src/identity/adapters/driving/http/access.guard.ts` checks the exact browser Origin and
    CSRF signature for mutations, including login. Login is explicitly public;
    other API routes require a database session unless marked public.
 5. `auth.controller.ts` validates credentials, then invokes the shared `Sessions`

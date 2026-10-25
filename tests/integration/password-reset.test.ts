@@ -4,18 +4,16 @@ import {
   migrateDatabase,
   readDatabaseEnvironment,
 } from '@mentor/backend';
-import { Argon2PasswordHasher } from '../../packages/backend/src/identity/adapters/argon2-password.hasher.js';
-import { DrizzleOwnerPasswordResetRepository } from '../../packages/backend/src/identity/adapters/drizzle-owner-password-reset.repository.js';
-import { DrizzleSessionRepository } from '../../packages/backend/src/identity/adapters/drizzle-session.repository.js';
+import { Argon2PasswordHasher } from '../../packages/backend/src/identity/adapters/driven/crypto/argon2-password.hasher.js';
+import { DrizzleOwnerPasswordResetRepository } from '../../packages/backend/src/identity/adapters/driven/persistence/drizzle/drizzle-owner-password-reset.repository.js';
+import { DrizzleSessionRepository } from '../../packages/backend/src/identity/adapters/driven/persistence/drizzle/drizzle-session.repository.js';
+import { ResetOwnerPassword } from '../../packages/backend/src/identity/application/reset-owner-password.js';
+import { Sessions } from '../../packages/backend/src/identity/application/sessions.js';
+import { RandomSessionTokens } from '../../packages/backend/src/identity/adapters/driven/crypto/random-session.tokens.js';
 import {
   OwnerNotFoundError,
-  ResetOwnerPassword,
-} from '../../packages/backend/src/identity/application/reset-owner-password.js';
-import {
   InvalidCredentialsError,
-  Sessions,
-} from '../../packages/backend/src/identity/application/sessions.js';
-import { RandomSessionTokens } from '../../packages/backend/src/identity/adapters/random-session.tokens.js';
+} from '../../packages/backend/src/identity/domain/errors/identity.errors.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl || new URL(databaseUrl).pathname !== '/mentor_test') {
