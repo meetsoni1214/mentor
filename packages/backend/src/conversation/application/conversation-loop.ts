@@ -9,10 +9,9 @@ import type {
 import type { ConversationModel } from './ports/conversation.model.js';
 import type { ConversationRepository } from './ports/conversation.repository.js';
 import type { RunOutcome } from '../domain/conversation.js';
+import { contextByteLength, selectContext } from './select-context.js';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-const bytes = (value: unknown) =>
-  new TextEncoder().encode(JSON.stringify(value)).length;
 
 export class ConversationLoop {
   private readonly active = new Map<
@@ -64,7 +63,8 @@ export class ConversationLoop {
       !input.text.trim() ||
       new TextEncoder().encode(input.text).length >
         this.limits.maxMessageBytes ||
-      bytes([{ role: 'user', text: input.text }]) > this.limits.maxContextBytes
+      contextByteLength([{ role: 'user', text: input.text }]) >
+        this.limits.maxContextBytes
     ) {
       throw new ConversationError('INVALID_INPUT');
     }
@@ -132,23 +132,11 @@ export class ConversationLoop {
         ref,
         admission.turn.sequence,
       );
-      let messages: Array<{ role: 'user' | 'assistant'; text: string }> = [
-        { role: 'user', text: admission.turn.text },
-      ];
-      let used = 0;
-      // Repository returns the newest complete pairs first; keep a contiguous suffix.
-      for (const pair of history) {
-        const candidate: typeof messages = [
-          { role: 'user', text: pair.text },
-          { role: 'assistant', text: pair.answer },
-          ...messages,
-        ];
-        if (used === 100 || bytes(candidate) > this.limits.maxContextBytes)
-          break;
-        messages = candidate;
-        used += 1;
-      }
-      const contextLimited = used < history.length;
+      const { messages, contextLimited } = selectContext(
+        admission.turn.text,
+        history,
+        this.limits.maxContextBytes,
+      );
       let outcome: RunOutcome;
       if (
         controller.signal.aborted ||

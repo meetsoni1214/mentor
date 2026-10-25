@@ -70,6 +70,8 @@ framework dependencies.
 Explicit persistence mappers return application turns and state-specific run
 attempts, excluding database-only columns. State-dependent answer, error, and
 finish fields are checked at that boundary and represented by a domain union.
+The pure `application/select-context.ts` function owns bounded message selection;
+the conversation loop retains provider coordination, deadlines, and cancellation.
 It is tested directly with real PostgreSQL and an injected fake provider; it has
 no HTTP or UI integration yet. See [the conversation-loop walkthrough](conversation-loop.md)
 for its request flow, concurrency rules, and review order.

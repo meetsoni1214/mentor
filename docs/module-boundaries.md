@@ -65,7 +65,8 @@ those tables. Adding a forwarding service would not remove this coupling.
 
 This checkpoint changes exports and import paths only. It preserves SQL,
 migrations, transaction boundaries, HTTP contracts, and use-case behavior.
-Conversation context selection remains the next architecture slice; provider,
+The subsequent [context-selection slice](conversation-loop.md#retained-history-and-model-context)
+extracts a pure application function within these same boundaries. Provider,
 HTTP, and UI integration remain later feature work.
 
 ## Review and verification

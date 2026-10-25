@@ -18,8 +18,10 @@ Read these files in order:
    defines use-case inputs, execution settings, and history/result shapes.
 4. `packages/backend/src/conversation/application/ports/` defines the repository
    and model interfaces the application depends on.
-5. `packages/backend/src/conversation/application/conversation-loop.ts` coordinates
-   admission, bounded context, provider invocation, timeout, and completion.
+5. `packages/backend/src/conversation/application/select-context.ts` selects
+   bounded model messages without persistence, clocks, or provider dependencies.
+   `application/conversation-loop.ts` coordinates admission, context loading,
+   selection, provider invocation, timeout, and completion.
 6. `packages/backend/src/conversation/adapters/drizzle-conversation.repository.ts`
    loads stored facts, evaluates domain policies under the owner lock, and
    implements atomic persistence through the repository port.
@@ -44,6 +46,7 @@ Submission: owner, request UUID, history version, text
     --> ConversationLoop.submit
     --> repository.submit: commit user turn + running attempt
     --> repository.context: recent completed turn pairs
+    --> selectContext: chronological bounded messages + omission flag
     --> injected ConversationModel.complete, outside any transaction
     --> repository.finish: save outcome only if still current and in time
     --> return persisted attempt
@@ -164,6 +167,28 @@ that fit its serialized UTF-8 byte limit, up to 100 pairs. It always retains the
 current message. Failed and interrupted partial output is excluded. Omission sets
 `contextLimited`; it never starts another conversation or deletes old messages.
 
+`application/select-context.ts` owns that selection as a pure function. It accepts
+the current text, completed pairs ordered newest first, and the byte budget. It
+returns `{ messages, contextLimited }` without changing its inputs. Each pair is
+included whole, and selection stops at the first pair that cannot fit; it does
+not skip that pair to include smaller older ones. The selected messages are sent
+in chronological order, ending with the current user message. `ModelMessage` in
+the application contracts gives selection and the model port the same shape.
+
+The repository still loads at most 101 completed pairs: 100 usable pairs plus
+one to detect omission at the cap. The use case shares the selector's serialized
+byte calculation when validating a new submission. For example, a message with
+many quotes can fit its raw text limit but exceed the context limit once JSON
+escaping and message fields are included; it is rejected before admission.
+
+`ConversationLoop` retains deadline checks, abort handling, provider-error
+normalization, and persistence. Selection's omission flag is combined with the
+provider's own `contextLimited` flag before saving a completed response. Retry
+selects context around the original accepted user text through the same path.
+Admission and completion transactions are unchanged, and model calls still run
+outside those transactions. The selector remains private to the module; no new
+service, injected strategy, or package entry point is needed.
+
 This checkpoint bounds the messages passed to the model port. Checkpoint 2 must
 also account for provider instructions and other request overhead when applying
 the final adapter input bound. Long-term memory, historical retrieval, and
@@ -245,3 +270,19 @@ SQL constraints. The temporary database is removed afterward. Generated API
 contracts and versioned migrations have no changes; strict OpenSpec validation
 passes. The existing sandbox build limitation and Next.js security advisory
 remain. Conversation HTTP/UI/provider acceptance still belongs to later groups.
+
+Context-selection follow-up, verified on 2026-10-25: the starting checkpoint
+passed lint and 130 unit tests; its recorded integration baseline was 50 checks.
+`selectContext` now owns the same selection algorithm as a pure application
+function. `pnpm check` passes outside the sandbox with 144 unit tests, including
+exact UTF-8/JSON byte boundaries, whole-pair selection, ordering, unchanged inputs,
+the 100-pair cap, retry selection, and preservation of provider omission flags.
+`pnpm test:integration` passes all 51 checks, including 25 conversation checks.
+The new real-database scenario verifies bounded model messages, exclusion of
+failed turns, full retained history, and the persisted omission flag. Existing
+deadline, abort, replay, clear-history, and transaction checks still pass. The
+temporary database and network were removed afterward. Generated API contracts,
+versioned migrations, and OpenSpec tasks are unchanged; strict OpenSpec validation
+passes. The existing Next.js security advisory still stops the initial build;
+the repeated full gate passes with the warning. An upgrade remains recommended.
+No conversation browser or live-provider acceptance is claimed by this slice.

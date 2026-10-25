@@ -833,6 +833,68 @@ describe('singleton conversation lifecycle', () => {
 });
 
 describe('conversation use case with a fake provider and real persistence', () => {
+  it('bounds completed model context without discarding retained history', async () => {
+    const oldestText = 'An older question. '.repeat(50);
+    const oldest = await repository.submit(
+      submission({ text: oldestText }),
+      limits,
+    );
+    await repository.finish(reference(oldest), completed);
+    const failed = await repository.submit(
+      submission({ text: 'A failed question' }),
+      limits,
+    );
+    await repository.finish(reference(failed), {
+      state: 'failed',
+      errorCode: 'PROVIDER_ERROR',
+    });
+    const recentText = 'A recent question 🌱';
+    const recentAnswer = 'A recent answer with "quotes".';
+    const recent = await repository.submit(
+      submission({ text: recentText }),
+      limits,
+    );
+    await repository.finish(reference(recent), {
+      ...completed,
+      answer: recentAnswer,
+    });
+
+    const text = 'The current question';
+    const messages = [
+      { role: 'user', text: recentText },
+      { role: 'assistant', text: recentAnswer },
+      { role: 'user', text },
+    ];
+    const complete = vi
+      .fn<ConversationModel['complete']>()
+      .mockResolvedValue(completed);
+    const loop = new ConversationLoop(
+      repository,
+      { complete },
+      {
+        ...limits,
+        maxMessageBytes: 64,
+        maxContextBytes: Buffer.byteLength(JSON.stringify(messages), 'utf8'),
+      },
+    );
+    const result = await loop.submit(submission({ text }));
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(complete.mock.calls[0]?.[0].messages).toEqual(messages);
+    expect(result.attempt).toMatchObject({
+      state: 'completed',
+      contextLimited: true,
+    });
+    const history = await loop.history(ownerId);
+    expect(history.turns.map((turn) => turn.text)).toEqual([
+      oldestText,
+      'A failed question',
+      recentText,
+      text,
+    ]);
+    expect(history.turns[1]?.attempts[0]?.state).toBe('failed');
+    expect(history.turns[3]?.attempts[0]?.contextLimited).toBe(true);
+  });
+
   it('invokes the provider once for competing submissions and stores the final response', async () => {
     let release!: (outcome: RunOutcome) => void;
     const pending = new Promise<RunOutcome>((resolve) => {

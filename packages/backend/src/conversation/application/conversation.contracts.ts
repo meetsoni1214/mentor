@@ -52,3 +52,8 @@ export interface CompletedTurn {
   text: string;
   answer: string;
 }
+
+export interface ModelMessage {
+  role: 'user' | 'assistant';
+  text: string;
+}

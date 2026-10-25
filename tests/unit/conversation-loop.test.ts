@@ -166,6 +166,42 @@ describe('bounded conversation execution', () => {
     expect(repository.context).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])(
+    'preserves the provider contextLimited flag: %s',
+    async (contextLimited) => {
+      const { input, loop, model, repository } = setup();
+      model.complete.mockResolvedValue({ ...output, contextLimited });
+      await loop.submit(input);
+      expect(repository.finish.mock.calls[0]?.[1]).toMatchObject({
+        state: 'completed',
+        contextLimited,
+      });
+    },
+  );
+
+  it('selects context for a retry using the original accepted text', async () => {
+    const { input, loop, model, repository, admission } = setup();
+    repository.context.mockResolvedValue([
+      { text: 'Recent question', answer: 'Recent answer' },
+      { text: 'Old'.repeat(100), answer: 'Older answer' },
+    ]);
+    await loop.retry({
+      ownerId: input.ownerId,
+      historyVersion: 0,
+      turnId: admission.turn.id,
+      requestId: randomUUID(),
+    });
+    expect(model.complete.mock.calls[0]?.[0].messages).toEqual([
+      { role: 'user', text: 'Recent question' },
+      { role: 'assistant', text: 'Recent answer' },
+      { role: 'user', text: admission.turn.text },
+    ]);
+    expect(repository.finish.mock.calls[0]?.[1]).toMatchObject({
+      state: 'completed',
+      contextLimited: true,
+    });
+  });
+
   it('aborts at the deadline even when a provider ignores cancellation, without retrying', async () => {
     vi.useFakeTimers();
     const { input, loop, repository, model, admission } = setup();
@@ -242,6 +278,8 @@ describe('bounded conversation execution', () => {
       { text: ' ' },
       { text: 'a'.repeat(129) },
       { text: '🌱'.repeat(33) },
+      // The text fits maxMessageBytes, but its JSON escapes exceed the context bound.
+      { text: '"'.repeat(100) },
       { requestId: 'not-a-uuid' },
       { historyVersion: -1 },
     ]) {

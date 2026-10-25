@@ -17,6 +17,8 @@ export interface ConversationRepository {
     ref: AttemptReference,
     outcome: RunOutcome,
   ): Promise<RunAttempt | null>;
+  // Newest completed pairs first, with one extra pair beyond the 100-pair cap
+  // so selection can report that older context was omitted.
   context(
     ref: AttemptReference,
     beforeSequence: number,

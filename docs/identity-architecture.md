@@ -103,7 +103,7 @@ persistence, and schemas have separate entry points; the former root export has
 been removed. [Module boundaries](module-boundaries.md) documents the exports and
 lint enforcement added in the later architecture checkpoint. Conversation mapping
 and state-specific types are covered in [the conversation walkthrough](conversation-loop.md).
-Context-selection refactoring remains a later slice.
+The conversation walkthrough also describes the subsequent pure context selector.
 
 ## Verification record
 
