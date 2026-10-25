@@ -9,12 +9,19 @@ import {
 import type {
   Admission,
   AttemptReference,
+  CompletedTurn,
+  ConversationHistory,
   RetryRequest,
   RunLimits,
   Submission,
 } from '../application/conversation.contracts.js';
 import type { ConversationRepository } from '../application/ports/conversation.repository.js';
-import type { RunOutcome } from '../domain/conversation.js';
+import type { RunAttempt, RunOutcome } from '../domain/conversation.js';
+import {
+  toCompletedTurn,
+  toConversationTurn,
+  toRunAttempt,
+} from './conversation.mapper.js';
 import {
   assertHistoryVersion,
   assertNoRunningAttempt,
@@ -136,7 +143,7 @@ export class DrizzleConversationRepository implements ConversationRepository {
             )
             .limit(1);
       const decision = decideSubmission(input.text, {
-        existingTurn: existing ?? null,
+        existingTurn: existing ? toConversationTurn(existing) : null,
         requestIdInUse: keyCollision !== undefined,
         hasRunningAttempt:
           !existing &&
@@ -155,7 +162,7 @@ export class DrizzleConversationRepository implements ConversationRepository {
           execute: false,
           historyVersion: conversation.historyVersion,
           turn: decision.turn,
-          attempt,
+          attempt: toRunAttempt(attempt),
         };
       }
       const [turn] = await tx
@@ -190,8 +197,8 @@ export class DrizzleConversationRepository implements ConversationRepository {
       return {
         execute: true,
         historyVersion: conversation.historyVersion,
-        turn,
-        attempt,
+        turn: toConversationTurn(turn),
+        attempt: toRunAttempt(attempt),
       };
     });
   }
@@ -220,12 +227,15 @@ export class DrizzleConversationRepository implements ConversationRepository {
             eq(attempts.requestId, input.requestId),
           ),
         );
-      const replay = replayRetry(turn.id, existing ?? null);
+      const replay = replayRetry(
+        turn.id,
+        existing ? toRunAttempt(existing) : null,
+      );
       if (replay) {
         return {
           execute: false,
           historyVersion: conversation.historyVersion,
-          turn,
+          turn: toConversationTurn(turn),
           attempt: replay,
         };
       }
@@ -262,13 +272,16 @@ export class DrizzleConversationRepository implements ConversationRepository {
       return {
         execute: true,
         historyVersion: conversation.historyVersion,
-        turn,
-        attempt,
+        turn: toConversationTurn(turn),
+        attempt: toRunAttempt(attempt),
       };
     });
   }
 
-  async finish(ref: AttemptReference, outcome: RunOutcome) {
+  async finish(
+    ref: AttemptReference,
+    outcome: RunOutcome,
+  ): Promise<RunAttempt | null> {
     return this.locked(ref.ownerId, async (tx, now) => {
       const [conversation] = await tx
         .select()
@@ -283,7 +296,9 @@ export class DrizzleConversationRepository implements ConversationRepository {
       );
       const [current] = await tx.select().from(attempts).where(condition);
       if (!current) return null;
-      if (!canFinish(current.state, current.deadlineAt, now)) return current;
+      const currentAttempt = toRunAttempt(current);
+      if (!canFinish(currentAttempt.state, currentAttempt.deadlineAt, now))
+        return currentAttempt;
       const [finished] = await tx
         .update(attempts)
         .set(
@@ -312,7 +327,7 @@ export class DrizzleConversationRepository implements ConversationRepository {
           ),
         )
         .returning();
-      if (finished) return finished;
+      if (finished) return toRunAttempt(finished);
       // The deadline can pass between reading the database clock and UPDATE.
       const clock = await tx.execute<{ now: string }>(
         sql`select clock_timestamp() as now`,
@@ -321,11 +336,14 @@ export class DrizzleConversationRepository implements ConversationRepository {
       if (!timestamp) throw new Error('Database clock unavailable');
       await this.reconcile(tx, conversation.id, new Date(timestamp));
       const [interrupted] = await tx.select().from(attempts).where(condition);
-      return interrupted ?? null;
+      return interrupted ? toRunAttempt(interrupted) : null;
     });
   }
 
-  async context(ref: AttemptReference, beforeSequence: number) {
+  async context(
+    ref: AttemptReference,
+    beforeSequence: number,
+  ): Promise<CompletedTurn[]> {
     return this.locked(ref.ownerId, async (tx) => {
       const [conversation] = await tx
         .select()
@@ -346,14 +364,14 @@ export class DrizzleConversationRepository implements ConversationRepository {
         )
         .orderBy(desc(turns.sequence))
         .limit(101);
-      return rows.map((row) => ({ text: row.text, answer: row.answer ?? '' }));
+      return rows.map(toCompletedTurn);
     });
   }
 
   async history(
     ownerId: string,
     options: Parameters<ConversationRepository['history']>[1] = {},
-  ) {
+  ): Promise<ConversationHistory> {
     const limit = options.limit ?? 20;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
       throw new ConversationError('INVALID_INPUT');
@@ -402,8 +420,10 @@ export class DrizzleConversationRepository implements ConversationRepository {
       return {
         historyVersion,
         turns: page.map((turn) => ({
-          ...turn,
-          attempts: records.filter((attempt) => attempt.turnId === turn.id),
+          ...toConversationTurn(turn),
+          attempts: records
+            .filter((attempt) => attempt.turnId === turn.id)
+            .map(toRunAttempt),
         })),
         nextCursor:
           rows.length > limit && page[0]

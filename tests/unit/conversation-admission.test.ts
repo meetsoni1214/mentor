@@ -20,29 +20,55 @@ const turn: ConversationTurn = {
 };
 
 function retryAttempt(state: RunState = 'running'): RunAttempt {
-  return {
+  const details = {
     id: 'attempt-2',
     turnId: turn.id,
     requestId: 'retry-1',
     attemptNumber: 2,
     model: 'fake-model',
-    state,
     startedAt: turn.createdAt,
     deadlineAt: new Date('2026-10-25T12:01:00Z'),
-    finishedAt: state === 'running' ? null : new Date('2026-10-25T12:00:30Z'),
-    answer: state === 'completed' ? 'A saved answer' : null,
-    errorCode:
-      state === 'failed'
-        ? 'PROVIDER_ERROR'
-        : state === 'interrupted'
-          ? 'INTERRUPTED'
-          : null,
     sources: [],
     activity: [],
     inputTokens: null,
     outputTokens: null,
     contextLimited: false,
   };
+  const finishedAt = new Date('2026-10-25T12:00:30Z');
+  switch (state) {
+    case 'running':
+      return {
+        ...details,
+        state,
+        finishedAt: null,
+        answer: null,
+        errorCode: null,
+      };
+    case 'completed':
+      return {
+        ...details,
+        state,
+        finishedAt,
+        answer: 'A saved answer',
+        errorCode: null,
+      };
+    case 'failed':
+      return {
+        ...details,
+        state,
+        finishedAt,
+        answer: null,
+        errorCode: 'PROVIDER_ERROR',
+      };
+    case 'interrupted':
+      return {
+        ...details,
+        state,
+        finishedAt,
+        answer: null,
+        errorCode: 'INTERRUPTED',
+      };
+  }
 }
 
 describe('conversation admission policy', () => {

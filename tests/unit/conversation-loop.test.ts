@@ -78,6 +78,7 @@ function setup() {
       ...admission.attempt,
       state: 'completed',
       answer: output.answer,
+      errorCode: null,
       finishedAt: now,
     }),
     history: vi
@@ -172,6 +173,7 @@ describe('bounded conversation execution', () => {
     repository.finish.mockResolvedValue({
       ...admission.attempt,
       state: 'interrupted',
+      answer: null,
       errorCode: 'INTERRUPTED',
       finishedAt: admission.attempt.deadlineAt,
     });

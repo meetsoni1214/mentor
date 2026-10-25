@@ -1,4 +1,4 @@
-export type RunState = 'running' | 'completed' | 'failed' | 'interrupted';
+export type RunState = RunAttempt['state'];
 export type RunErrorCode =
   | 'PROVIDER_ERROR'
   | 'REFUSED'
@@ -33,24 +33,38 @@ export type RunOutcome =
   | { state: 'failed'; errorCode: Exclude<RunErrorCode, 'INTERRUPTED'> }
   | { state: 'interrupted'; errorCode: 'INTERRUPTED' };
 
-export interface RunAttempt {
+interface RunAttemptDetails {
   id: string;
   turnId: string;
   requestId: string;
   attemptNumber: number;
   model: string;
-  state: RunState;
   startedAt: Date;
   deadlineAt: Date;
-  finishedAt: Date | null;
-  answer: string | null;
-  errorCode: RunErrorCode | null;
   sources: SourceReference[];
   activity: RunActivity[];
   inputTokens: number | null;
   outputTokens: number | null;
   contextLimited: boolean;
 }
+
+export type RunAttempt = RunAttemptDetails &
+  (
+    | { state: 'running'; finishedAt: null; answer: null; errorCode: null }
+    | { state: 'completed'; finishedAt: Date; answer: string; errorCode: null }
+    | {
+        state: 'failed';
+        finishedAt: Date;
+        answer: null;
+        errorCode: Exclude<RunErrorCode, 'INTERRUPTED'>;
+      }
+    | {
+        state: 'interrupted';
+        finishedAt: Date;
+        answer: null;
+        errorCode: 'INTERRUPTED';
+      }
+  );
 
 export interface ConversationTurn {
   id: string;

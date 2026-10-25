@@ -67,6 +67,9 @@ Conversation admission policies own replay, conflict, history-version, and
 concurrency decisions. The Drizzle adapter loads their inputs and evaluates them
 under its database lock before persisting changes; the policies have no ORM or
 framework dependencies.
+Explicit persistence mappers return application turns and state-specific run
+attempts, excluding database-only columns. State-dependent answer, error, and
+finish fields are checked at that boundary and represented by a domain union.
 It is tested directly with real PostgreSQL and an injected fake provider; it has
 no HTTP or UI integration yet. See [the conversation-loop walkthrough](conversation-loop.md)
 for its request flow, concurrency rules, and review order.

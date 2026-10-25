@@ -371,6 +371,107 @@ describe('singleton conversation lifecycle', () => {
     });
   });
 
+  it('returns application models across admission, replay, retry, completion and history', async () => {
+    const input = submission();
+    const accepted = await repository.submit(input, limits);
+    const replay = await repository.submit(input, limits);
+    const failed = await repository.finish(reference(accepted), {
+      state: 'failed',
+      errorCode: 'PROVIDER_ERROR',
+    });
+    const unchanged = await repository.finish(reference(accepted), completed);
+    const retryInput = {
+      ownerId,
+      historyVersion: 0,
+      turnId: accepted.turn.id,
+      requestId: randomUUID(),
+    };
+    const retry = await repository.retry(retryInput, limits);
+    const retryReplay = await repository.retry(retryInput, limits);
+    const finished = await repository.finish(reference(retry), completed);
+    const next = await repository.submit(submission(), limits);
+    expect(
+      await repository.context(reference(next), next.turn.sequence),
+    ).toEqual([{ text: input.text, answer: completed.answer }]);
+    await expire(next);
+    const interrupted = await repository.finish(reference(next), completed);
+    const history = await repository.history(ownerId);
+
+    for (const turn of [
+      accepted.turn,
+      replay.turn,
+      retry.turn,
+      retryReplay.turn,
+      next.turn,
+    ]) {
+      expect(turn).not.toHaveProperty('conversationId');
+    }
+    for (const turn of history.turns) {
+      expect(turn).not.toHaveProperty('conversationId');
+      for (const attempt of turn.attempts)
+        expect(attempt).not.toHaveProperty('conversationId');
+    }
+    for (const attempt of [
+      accepted.attempt,
+      replay.attempt,
+      failed,
+      unchanged,
+      retry.attempt,
+      retryReplay.attempt,
+      finished,
+      interrupted,
+    ]) {
+      expect(attempt).not.toBeNull();
+      expect(attempt).not.toHaveProperty('conversationId');
+    }
+    expect(accepted.attempt).toMatchObject({
+      state: 'running',
+      finishedAt: null,
+      answer: null,
+      errorCode: null,
+    });
+    expect(failed).toMatchObject({
+      state: 'failed',
+      finishedAt: expect.any(Date),
+      answer: null,
+      errorCode: 'PROVIDER_ERROR',
+    });
+    expect(unchanged).toEqual(failed);
+    expect(finished).toMatchObject({
+      state: 'completed',
+      finishedAt: expect.any(Date),
+      answer: completed.answer,
+      errorCode: null,
+    });
+    expect(interrupted).toMatchObject({
+      state: 'interrupted',
+      finishedAt: expect.any(Date),
+      answer: null,
+      errorCode: 'INTERRUPTED',
+    });
+  });
+
+  it('rejects an unrecognized stored error code without exposing its contents', async () => {
+    const input = submission();
+    const accepted = await repository.submit(input, limits);
+    // The existing outcome constraint requires a code but does not enumerate it.
+    await connection.pool.query(
+      "update conversation_attempts set state='failed', finished_at=clock_timestamp(), error_code=$1 where id=$2",
+      ['private stored diagnostic', accepted.attempt.id],
+    );
+    await Promise.all(
+      [
+        repository.history(ownerId),
+        repository.submit(input, limits),
+        repository.finish(reference(accepted), completed),
+      ].map((result) =>
+        expect(result).rejects.toThrow(
+          new Error('Invalid stored conversation record'),
+        ),
+      ),
+    );
+  });
+
   it('admits concurrent first-use once and keeps a single conversation and attempt', async () => {
     const input = submission();
     const results = await Promise.all(

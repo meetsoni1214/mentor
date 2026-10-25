@@ -23,6 +23,8 @@ Read these files in order:
 6. `packages/backend/src/conversation/adapters/drizzle-conversation.repository.ts`
    loads stored facts, evaluates domain policies under the owner lock, and
    implements atomic persistence through the repository port.
+   `adapters/conversation.mapper.ts` explicitly maps stored rows to application
+   turns/attempts and validates each attempt's state-dependent fields.
 7. `tests/integration/conversation.test.ts` exercises those rules with real
    PostgreSQL and a synthetic provider. Unit tests use a fake clock to check
    deadlines, omitted context, and provider failures.
@@ -61,6 +63,20 @@ the same sequence of turns.
 A turn contains the original user message. An attempt records one effort to
 answer it, including its model, deadline, status, final answer or fixed error
 code, nullable integer `inputTokens` and `outputTokens` counts, and normalized source/activity metadata. Unknown counts stay null; known zero counts stay zero. Database checks reject negative counts. The model port can return a grouped usage object, which the repository maps into these two columns.
+
+`RunAttempt` is a discriminated union. Running attempts have no answer, finish
+timestamp, or error. Completed attempts require an answer and finish timestamp
+and have no error. Failed/interrupted attempts require a finish timestamp and
+their appropriate error code, and have no answer. Checking `state` therefore
+narrows these fields for callers without assertions or casts.
+
+Persistence mappers enumerate the application fields instead of returning rows
+directly. The stored `conversationId` and future internal columns do not escape
+through admission, retry/replay, completion, or history results. The mapper
+rejects inconsistent state/nullable fields and unknown error codes with a fixed
+error that contains no stored content. Completed context pairs with a missing
+answer also fail explicitly. These checks supplement database constraints;
+they do not replace them or implement the later provider-response validation.
 
 For example, a provider failure followed by an explicit retry produces:
 
@@ -216,3 +232,16 @@ The additional database cases verify competing fresh retry keys and replay of
 older accepted submissions/retries while a newer attempt runs, including
 submission/retry key conflicts. Strict OpenSpec validation passes. The existing
 sandbox build limitation and Next.js dependency-security advisory remain.
+
+Persistence-boundary follow-up, verified on 2026-10-25: the starting checkpoint
+had 66 passing unit tests and 48 passing database/HTTP tests. Explicit row
+mappers now cover every repository result, and `RunAttempt` has state-specific
+answer/error/finish fields. `pnpm check` passes outside the sandbox with 93 unit
+tests, including malformed-record rejection and compile-time field-narrowing
+checks. `pnpm test:integration` passes all 50 checks, including 24 conversation
+checks. The added database scenarios exercise mapped results across the run
+lifecycle and safe rejection of a stored error code not enumerated by existing
+SQL constraints. The temporary database is removed afterward. Generated API
+contracts and versioned migrations have no changes; strict OpenSpec validation
+passes. The existing sandbox build limitation and Next.js security advisory
+remain. Conversation HTTP/UI/provider acceptance still belongs to later groups.

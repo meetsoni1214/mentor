@@ -100,7 +100,8 @@ Origin/CSRF, cookies, global authorization, and restart behavior.
 
 The root backend export remains compatible with existing consumers. Package-wide
 export restrictions and automated import-boundary enforcement are later slices,
-as are conversation mapping/state types and context-selection refactoring.
+as is context-selection refactoring. Conversation mapping and state-specific
+types are covered by the next checkpoint in [the conversation walkthrough](conversation-loop.md).
 
 ## Verification record
 
