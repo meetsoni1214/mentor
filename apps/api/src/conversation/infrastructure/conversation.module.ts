@@ -6,6 +6,10 @@ import type { AIEnvironment } from '@mentor/backend/config/ai';
 import type { DatabaseConnection } from '@mentor/backend/database';
 import { DatabaseModule, DatabaseService } from '@mentor/backend/database/nest';
 import { Module } from '@nestjs/common';
+import {
+  AssistantController,
+  ConversationController,
+} from '../adapters/driving/http/conversation.controller.js';
 
 // Transport overrides are trusted composition inputs for local contract tests,
 // never environment settings or request parameters.
@@ -28,6 +32,7 @@ export function createConversationLoop(
 
 @Module({
   imports: [DatabaseModule],
+  controllers: [AssistantController, ConversationController],
   providers: [
     {
       provide: ConversationLoop,

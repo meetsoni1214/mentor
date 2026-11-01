@@ -1,3 +1,4 @@
+import { submitTurn, retryTurn } from '../fixtures/conversation-commands.js';
 import { randomUUID } from 'node:crypto';
 import type { ServerResponse } from 'node:http';
 import {
@@ -144,7 +145,8 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     const loop = compose();
     expect(stub.requests).toHaveLength(0);
     stub.enqueue(response('We discussed gardens.'));
-    const first = await loop.submit(
+    const first = await submitTurn(
+      loop,
       submission({ text: 'Let us discuss gardens.' }),
     );
     expect(first.attempt).toMatchObject({
@@ -154,7 +156,10 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
       outputTokens: 7,
     });
     stub.enqueue(response('A contextual follow-up'));
-    await compose().submit(submission({ text: 'What were we discussing?' }));
+    await submitTurn(
+      compose(),
+      submission({ text: 'What were we discussing?' }),
+    );
     expect(stub.requests).toHaveLength(2);
     const request = stub.requests[1]!.body;
     expect(JSON.stringify(request.input)).toContain('We discussed gardens.');
@@ -180,22 +185,22 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     stub.replies.push((res) => {
       held = res;
     });
-    const original = loop.submit(input);
+    const original = submitTurn(loop, input);
     try {
       await vi.waitFor(() => expect(stub.requests).toHaveLength(1));
       const replays = await Promise.all(
-        Array.from({ length: 4 }, () => other.submit(input)),
+        Array.from({ length: 4 }, () => submitTurn(other, input)),
       );
       expect(
         replays.every(
           (replay) => !replay.execute && replay.attempt.state === 'running',
         ),
       ).toBe(true);
-      await expect(other.submit(submission())).rejects.toMatchObject({
+      await expect(submitTurn(other, submission())).rejects.toMatchObject({
         code: 'BUSY',
       });
       await expect(
-        other.submit({ ...input, text: 'Changed payload' }),
+        submitTurn(other, { ...input, text: 'Changed payload' }),
       ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
       expect(stub.requests).toHaveLength(1);
     } finally {
@@ -204,7 +209,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
         .end(JSON.stringify(response()));
       await original;
     }
-    expect((await other.submit(input)).attempt.state).toBe('completed');
+    expect((await submitTurn(other, input)).attempt.state).toBe('completed');
     expect(stub.requests).toHaveLength(1);
     expect(await connection.db.select().from(conversationTurns)).toHaveLength(
       1,
@@ -221,7 +226,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
       { error: { message: 'PRIVATE synthetic-test-key', type: 'api_error' } },
       503,
     );
-    const first = await loop.submit(input);
+    const first = await submitTurn(loop, input);
     expect(first.attempt).toMatchObject({
       state: 'failed',
       errorCode: 'PROVIDER_ERROR',
@@ -229,7 +234,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
       inputTokens: null,
       outputTokens: null,
     });
-    expect((await loop.submit(input)).execute).toBe(false);
+    expect((await submitTurn(loop, input)).execute).toBe(false);
     expect(stub.requests).toHaveLength(1);
     stub.enqueue(response('Retried answer'));
     const retryInput = {
@@ -238,13 +243,13 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
       turnId: first.turn.id,
       requestId: randomUUID(),
     };
-    const retry = await loop.retry(retryInput);
+    const retry = await retryTurn(loop, retryInput);
     expect(retry.attempt).toMatchObject({
       state: 'completed',
       attemptNumber: 2,
     });
     expect(retry.attempt.id).not.toBe(first.attempt.id);
-    expect((await loop.retry(retryInput)).execute).toBe(false);
+    expect((await retryTurn(loop, retryInput)).execute).toBe(false);
     expect(stub.requests).toHaveLength(2);
     expect(stub.requests[1]!.body).not.toHaveProperty('previous_response_id');
     expect(stub.requests[1]!.body.input).toHaveLength(1);
@@ -265,7 +270,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     expect((await restored.history(ownerId)).turns[0]?.attempts[0]?.state).toBe(
       'running',
     );
-    expect((await restored.submit(input)).execute).toBe(false);
+    expect((await submitTurn(restored, input)).execute).toBe(false);
     expect(stub.requests).toHaveLength(0);
     await connection.pool.query(
       "update conversation_attempts set started_at = clock_timestamp() - interval '2 minutes', deadline_at = clock_timestamp() - interval '1 minute' where id = $1",
@@ -279,10 +284,10 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
       inputTokens: null,
       outputTokens: null,
     });
-    expect((await restored.submit(input)).execute).toBe(false);
+    expect((await submitTurn(restored, input)).execute).toBe(false);
     expect(stub.requests).toHaveLength(0);
     stub.enqueue(response('Fresh run after restart'));
-    const retry = await restored.retry({
+    const retry = await retryTurn(restored, {
       ownerId,
       historyVersion: 0,
       turnId: orphan.turn.id,
@@ -310,7 +315,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     stub.replies.push((res) => {
       res.once('close', closed);
     });
-    const result = await loop.submit(submission());
+    const result = await submitTurn(loop, submission());
     expect(result.attempt).toMatchObject({
       state: 'interrupted',
       errorCode: 'INTERRUPTED',
@@ -327,17 +332,19 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
 
   it('rejects invalid, unknown-owner, and non-retryable work before another SDK call', async () => {
     const loop = compose();
-    await expect(loop.submit(submission({ text: ' ' }))).rejects.toMatchObject({
+    await expect(
+      submitTurn(loop, submission({ text: ' ' })),
+    ).rejects.toMatchObject({
       code: 'INVALID_INPUT',
     });
     await expect(
-      loop.submit(submission({ ownerId: randomUUID() })),
+      submitTurn(loop, submission({ ownerId: randomUUID() })),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(stub.requests).toHaveLength(0);
     stub.enqueue(response());
-    const result = await loop.submit(submission());
+    const result = await submitTurn(loop, submission());
     await expect(
-      loop.retry({
+      retryTurn(loop, {
         ownerId,
         historyVersion: 0,
         turnId: result.turn.id,
@@ -350,7 +357,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
   it('retains SDK-normalized zero counts when the provider omits usage', async () => {
     const loop = compose();
     stub.enqueue({ ...response(), usage: undefined });
-    const result = await loop.submit(submission());
+    const result = await submitTurn(loop, submission());
     expect(result.attempt).toMatchObject({
       state: 'completed',
       inputTokens: 0,
@@ -376,7 +383,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     'keeps history readable and clearable with $name, without admitting SDK work',
     async ({ values }) => {
       stub.enqueue(response('Retained answer'));
-      await compose().submit(submission());
+      await submitTurn(compose(), submission());
       const failed = await repository.submit(submission(), limits);
       await repository.finish(
         { ownerId, historyVersion: 0, attemptId: failed.attempt.id },
@@ -389,11 +396,11 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
         { baseURL: stub.baseURL },
       );
       expect(await disabled.history(ownerId)).toEqual(before);
-      await expect(disabled.submit(submission())).rejects.toMatchObject({
+      await expect(submitTurn(disabled, submission())).rejects.toMatchObject({
         code: 'EXECUTION_UNAVAILABLE',
       });
       await expect(
-        disabled.retry({
+        retryTurn(disabled, {
           ownerId,
           historyVersion: 0,
           turnId: failed.turn.id,
@@ -402,7 +409,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
       ).rejects.toMatchObject({ code: 'EXECUTION_UNAVAILABLE' });
       expect(await disabled.history(ownerId)).toEqual(before);
       expect(stub.requests).toHaveLength(1);
-      expect(await disabled.clear(ownerId, 0)).toBe(1);
+      expect(await disabled.clear(ownerId, { historyVersion: 0 })).toBe(1);
       expect((await disabled.history(ownerId)).turns).toEqual([]);
     },
   );
@@ -452,7 +459,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     async ({ body, status, code, usage }) => {
       const loop = compose();
       stub.enqueue(body, status);
-      const result = await loop.submit(submission());
+      const result = await submitTurn(loop, submission());
       expect(result.attempt).toMatchObject({
         state: 'failed',
         errorCode: code,
@@ -472,7 +479,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     const { loop } = withTestTool(async () => 'Synthetic evidence');
     stub.enqueue(toolResponse(70));
     stub.enqueue(response('Final answer', 60));
-    const result = await loop.submit(submission());
+    const result = await submitTurn(loop, submission());
     expect(result.attempt).toMatchObject({
       state: 'completed',
       inputTokens: 22,
@@ -491,7 +498,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     const { loop } = withTestTool(async () => 'Synthetic evidence');
     stub.enqueue(toolResponse(9));
     stub.enqueue({ error: { message: 'PRIVATE', type: 'api_error' } }, 429);
-    const result = await loop.submit(submission());
+    const result = await submitTurn(loop, submission());
     expect(result.attempt).toMatchObject({
       state: 'failed',
       errorCode: 'RATE_LIMITED',
@@ -503,7 +510,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     );
     expect(stub.requests).toHaveLength(2);
     stub.enqueue(response('Fresh retry answer'));
-    const retry = await compose().retry({
+    const retry = await retryTurn(compose(), {
       ownerId,
       historyVersion: 0,
       turnId: result.turn.id,
@@ -525,7 +532,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     const { loop } = withTestTool(async () => 'Synthetic evidence');
     for (let step = 1; step <= 10; step++)
       stub.enqueue(toolResponse(7, [], step));
-    const result = await loop.submit(submission());
+    const result = await submitTurn(loop, submission());
     expect(result.attempt).toMatchObject({
       state: 'failed',
       errorCode: 'LIMIT_EXCEEDED',
@@ -555,16 +562,17 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     });
     const oldInput = submission();
     stub.enqueue(toolResponse());
-    const original = test.loop.submit(oldInput).then(
+    const original = submitTurn(test.loop, oldInput).then(
       (value) => value,
       (error: unknown) => error,
     );
     try {
       await started;
-      expect(await test.loop.clear(ownerId, 0)).toBe(1);
+      expect(await test.loop.clear(ownerId, { historyVersion: 0 })).toBe(1);
       expect(await original).toMatchObject({ code: 'STALE_HISTORY' });
       stub.enqueue(response('Only the new answer'));
-      await compose().submit(
+      await submitTurn(
+        compose(),
         submission({ historyVersion: 1, text: 'A new private question' }),
       );
     } finally {
@@ -583,7 +591,7 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     expect(JSON.stringify(stub.requests[1]!.body)).not.toContain(
       'PRIVATE old intermediate',
     );
-    await expect(test.loop.submit(oldInput)).rejects.toMatchObject({
+    await expect(submitTurn(test.loop, oldInput)).rejects.toMatchObject({
       code: 'STALE_HISTORY',
     });
     expect(stub.requests).toHaveLength(2);
@@ -608,13 +616,13 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     });
     stub.enqueue(toolResponse());
     stub.enqueue(response('PRIVATE late final answer'));
-    const original = test.loop.submit(submission()).then(
+    const original = submitTurn(test.loop, submission()).then(
       (value) => value,
       (error: unknown) => error,
     );
     try {
       await started;
-      expect(await compose().clear(ownerId, 0)).toBe(1);
+      expect(await compose().clear(ownerId, { historyVersion: 0 })).toBe(1);
     } finally {
       release();
     }

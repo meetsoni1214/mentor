@@ -2,16 +2,21 @@ import { ConversationError } from '../domain/conversation.js';
 import type {
   Admission,
   AttemptReference,
-  RetryRequest,
   RunLimits,
-  Submission,
 } from './conversation.contracts.js';
 import type { ConversationModel } from './ports/conversation.model.js';
 import type { ConversationRepository } from './ports/conversation.repository.js';
 import type { RunOutcome } from '../domain/conversation.js';
 import { contextByteLength, selectContext } from './select-context.js';
-
-const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+import {
+  clearHistorySchema,
+  historyOptionsSchema,
+  ownerIdSchema,
+  parseConversationInput,
+  retryTurnSchema,
+  submitTurnSchema,
+  turnIdSchema,
+} from './conversation.validation.js';
 
 export type ConversationExecution =
   | { enabled: false }
@@ -47,22 +52,26 @@ export class ConversationLoop {
     }
   }
 
-  private validate(
-    ownerId: string,
-    historyVersion: number,
-    requestId?: string,
-  ): void {
-    if (
-      !uuid.test(ownerId) ||
-      (requestId !== undefined && !uuid.test(requestId)) ||
-      !Number.isSafeInteger(historyVersion) ||
-      historyVersion < 0
-    )
-      throw new ConversationError('INVALID_INPUT');
+  status() {
+    return this.execution.enabled
+      ? {
+          enabled: true as const,
+          limits: {
+            model: this.execution.limits.model,
+            maxMessageBytes: this.execution.limits.maxMessageBytes,
+            maxContextBytes: this.execution.limits.maxContextBytes,
+            maxOutputTokens: this.execution.limits.maxOutputTokens,
+            deadlineMs: this.execution.limits.deadlineMs,
+          },
+        }
+      : { enabled: false as const, limits: null };
   }
 
-  async submit(input: Submission): Promise<Admission> {
-    this.validate(input.ownerId, input.historyVersion, input.requestId);
+  async submit(ownerId: string, command: unknown): Promise<Admission> {
+    const input = {
+      ...parseConversationInput(submitTurnSchema, command),
+      ownerId: parseConversationInput(ownerIdSchema, ownerId),
+    };
     const execution = this.requireExecution();
     const { limits } = execution;
     if (
@@ -77,24 +86,34 @@ export class ConversationLoop {
     return this.execute(input.ownerId, admission, execution);
   }
 
-  async retry(input: RetryRequest): Promise<Admission> {
-    this.validate(input.ownerId, input.historyVersion, input.requestId);
-    if (!uuid.test(input.turnId)) throw new ConversationError('INVALID_INPUT');
+  async retry(
+    ownerId: string,
+    turnId: string,
+    command: unknown,
+  ): Promise<Admission> {
+    const input = {
+      ...parseConversationInput(retryTurnSchema, command),
+      ownerId: parseConversationInput(ownerIdSchema, ownerId),
+      turnId: parseConversationInput(turnIdSchema, turnId),
+    };
     const execution = this.requireExecution();
     const admission = await this.repository.retry(input, execution.limits);
     return this.execute(input.ownerId, admission, execution);
   }
 
-  history(
-    ownerId: string,
-    options?: Parameters<ConversationRepository['history']>[1],
-  ) {
-    this.validate(ownerId, options?.cursor?.historyVersion ?? 0);
-    return this.repository.history(ownerId, options);
+  history(ownerId: string, options: unknown = {}) {
+    return this.repository.history(
+      parseConversationInput(ownerIdSchema, ownerId),
+      parseConversationInput(historyOptionsSchema, options),
+    );
   }
 
-  async clear(ownerId: string, historyVersion: number): Promise<number> {
-    this.validate(ownerId, historyVersion);
+  async clear(ownerId: string, command: unknown): Promise<number> {
+    parseConversationInput(ownerIdSchema, ownerId);
+    const { historyVersion } = parseConversationInput(
+      clearHistorySchema,
+      command,
+    );
     const active = this.active.get(ownerId);
     const version = await this.repository.clear(ownerId, historyVersion);
     // Capture before clearing: a new-version run may already have started.

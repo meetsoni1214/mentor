@@ -1,11 +1,12 @@
-# The conversation loop: SDK composition review checkpoint
+# The conversation loop: protected API review checkpoint
 
 Mentor will have one continuous conversation. The owner will not create, name,
 or choose threads. This checkpoint implements its backend persistence and run
 lifecycle, server-only AI configuration, and a standard Agents SDK adapter verified
 against a local HTTP stub. Task 2.3 composes the use case, repository, and SDK
-adapter in the API's ConversationModule. The current web screen and API routes
-are unchanged. Verification uses
+adapter in the API's ConversationModule. Task 2.4 exposes protected status and
+singleton conversation routes with generated OpenAPI/client types. The current
+web screen is unchanged. Verification uses
 synthetic credentials and responses; no paid calls, email connection, or
 background jobs are involved.
 
@@ -40,9 +41,19 @@ Read these files in order:
    official client against `tests/fixtures/responses-stub.ts`.
 10. `apps/api/src/conversation/infrastructure/conversation.module.ts` composes
     server configuration, the Drizzle repository, and the SDK adapter into one
-    injectable ConversationLoop. It registers no controllers.
+    injectable ConversationLoop and registers the protected controllers.
 11. `tests/integration/conversation-sdk.test.ts` verifies the composed lifecycle
     against disposable PostgreSQL and the localhost Responses stub.
+12. `apps/api/src/conversation/adapters/driving/http/conversation.controller.ts`
+    declares routes and OpenAPI metadata, obtains the session owner, calls
+    ConversationLoop, and maps results to response DTOs. JSON content-type checks
+    and query-string decoding stay at this HTTP boundary. ConversationLoop uses
+    `packages/backend/src/conversation/application/conversation.validation.ts`
+    to validate commands and numeric history options with Zod before accessing
+    persistence or the model. Ownership is passed separately from untrusted
+    commands; supplied owner/turn selectors are rejected. Admission, retry,
+    context, and completion rules also stay in the backend. No extra HTTP service
+    sits between the controller and use case.
 
 Domain code has no application or adapter imports. Application code depends on
 the domain and its ports, with no NestJS, HTTP, Drizzle, or provider SDK imports.
@@ -522,3 +533,51 @@ references are restored to their incoming values. No existing `.env` or developm
 database was changed; no live provider call was made. Task 2.3 is complete; tasks
 2.4–2.5, the conversation UI, and public-web tools remain open. Stop here for review;
 commit when requested.
+
+Task 2.4 protected HTTP API, verified on 2026-11-01:
+
+- `GET /api/v1/assistant/status` returns readiness and safe execution settings;
+  disabled execution returns null limits without configuration diagnostics.
+- `GET /api/v1/conversation` returns the owner's transcript. Optional `limit`
+  is 1–100; pagination uses both `historyVersion` and `beforeSequence` from
+  `nextCursor`. Initial reads return an empty transcript without creating rows.
+- `POST /api/v1/conversation/turns` accepts `text`, `requestId`, and
+  `historyVersion`. It executes in the foreground or returns the persisted
+  attempt on replay, including running state, without another model call.
+- `POST /api/v1/conversation/turns/{turnId}/retry` accepts `requestId` and
+  `historyVersion` for an explicit fresh attempt on the latest retryable turn.
+- `DELETE /api/v1/conversation/history` accepts the observed `historyVersion`
+  in JSON and returns its incremented value after clearing.
+
+All routes use the existing session guard and private/no-store headers. Mutations
+require the configured Origin and session-bound CSRF token. Ownership comes from
+the session; supplied owner/conversation selectors and unknown body/query fields
+are rejected. Missing turn IDs return 404. Conversation validation returns
+`INVALID_INPUT` (400); malformed JSON returns `BAD_REQUEST` (400). Busy, stale
+history, conflicting request keys, and non-retryable turns return distinct 409
+codes. Disabled execution returns `EXECUTION_UNAVAILABLE` (503). Admitted model
+failures remain attempt outcomes in a 200 response, with redacted error categories.
+The transport omits the internal admission execution flag and raw SDK/provider
+state. UUIDs, integer versions, paired cursors, text, and UTF-8 message bounds are
+validated before model work.
+
+`tests/integration/conversation-http.test.ts` starts the production application
+factory on localhost with real session/CSRF protection and disposable PostgreSQL.
+Only the model boundary is faked; the adapter and SDK composition remain covered
+by their existing HTTP-stub suites. Nine new HTTP checks cover authorization and
+expiry, Origin/CSRF, private caching, selector rejection and missing turns,
+validation, completed/running replay, concurrency, explicit retry, pagination,
+stale versions, redaction, and disabled reads/clearing. `pnpm check` passes all
+195 unit/contract tests and the production build; `pnpm test:integration` passes
+all 87 checks and removes its disposable database container/network. These checks
+required localhost/Docker access outside the sandbox. No live OpenAI call was
+made. Task 2.4 is complete; task 2.5 documentation completion and the UI/public-web
+slices remain open. Stop here for review; commit when requested.
+
+Validation follow-up: ConversationLoop now validates commands and history options
+with application-owned Zod schemas. Controllers retain response mapping and HTTP
+decoding; the intermediate HTTP service was removed. Direct use-case tests cover
+malformed commands, supplied owner selectors, and invalid numeric history options
+before repository/model work. After this refactor, `pnpm check` passes all 198
+unit/contract tests and the production build, and `pnpm test:integration` passes
+all 87 checks. Regeneration leaves the HTTP contract unchanged.

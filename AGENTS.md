@@ -7,7 +7,8 @@ implemented with local verification. The active change is
 `add-assistant-conversation-loop`: one continuous conversation per owner, with
 no thread creation or selection. Group 1, conversation persistence and run
 lifecycle, and the four architecture follow-ups are implemented. The current
-review checkpoint is task 2.3: API-side composition of the conversation use case,
+review checkpoint is task 2.4: protected singleton conversation HTTP endpoints.
+Task 2.3 completed API-side composition of the conversation use case,
 Drizzle repository, and pinned Agents SDK/Responses adapter, including persistence
 of available SDK-reported usage for unsuccessful attempts. Tasks 2.2a–2.2c
 implemented normal SDK execution, cancellation, explicit privacy/retry settings,
@@ -17,10 +18,12 @@ standard per-call output setting; do not reintroduce cumulative budgets or hooks
 History remains readable/clearable
 while execution is disabled. Application/database tests use an injected fake;
 adapter and composed lifecycle tests use the actual SDK and official client with
-non-stub traffic denied. ConversationModule provides the composed use case but
-exposes no HTTP routes yet. Protected endpoints and API documentation (tasks
-2.4–2.5), UI, and public-web investigation remain later checkpoints. Stop after
-this verified task 2.3 slice for review; commit when requested.
+non-stub traffic denied. ConversationModule exposes authenticated assistant status,
+history, submit, retry, and clear-history routes under /api/v1. HTTP tests use
+the production app/guard with an injected model fake and disposable PostgreSQL.
+OpenAPI and client types are regenerated. API documentation completion (task
+2.5), UI, and public-web investigation remain later checkpoints. Stop after
+this verified task 2.4 slice for review; commit when requested.
 The older `build-personal-knowledge-assistant` change remains
 a broader historical roadmap, not the next implementation scope.
 

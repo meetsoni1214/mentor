@@ -7,7 +7,7 @@ export function createOpenApiDocument(app: INestApplication) {
     new DocumentBuilder()
       .setTitle('Mentor API')
       .setDescription(
-        'Single-owner authentication and service health. Mutations require Origin and X-CSRF-Token headers.',
+        'Single-owner authentication, continuous assistant conversation, and service health. Mutations require Origin and X-CSRF-Token headers. Conversation endpoints execute in the foreground; GET requests never start model work.',
       )
       .setVersion('0.0.0')
       .addCookieAuth('mentor-session')

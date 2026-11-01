@@ -1,4 +1,5 @@
 import type { ServerResponse } from 'node:http';
+import { ConversationError } from '@mentor/backend/conversation';
 import { Catch, HttpException, Logger } from '@nestjs/common';
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 
@@ -28,11 +29,51 @@ const errors: Record<number, { code: string; message: string }> = {
   },
 };
 
+const conversationErrors: Record<
+  ConversationError['code'],
+  { status: number; message: string }
+> = {
+  EXECUTION_UNAVAILABLE: {
+    status: 503,
+    message:
+      'Assistant execution is unavailable. History remains readable and clearable.',
+  },
+  NOT_FOUND: { status: 404, message: 'The conversation turn was not found.' },
+  INVALID_INPUT: {
+    status: 400,
+    message: 'The conversation request is invalid.',
+  },
+  STALE_HISTORY: {
+    status: 409,
+    message:
+      'History has changed. Reload the conversation before trying again.',
+  },
+  IDEMPOTENCY_CONFLICT: {
+    status: 409,
+    message: 'This request identifier was already used with different input.',
+  },
+  BUSY: {
+    status: 409,
+    message:
+      'The assistant is already working. Wait for the current attempt to finish.',
+  },
+  NOT_RETRYABLE: {
+    status: 409,
+    message: 'Only the latest failed or interrupted turn can be retried.',
+  },
+};
+
 @Catch()
 export class HttpErrorFilter implements ExceptionFilter {
   catch(error: unknown, host: ArgumentsHost) {
     const response = host.switchToHttp().getResponse<ServerResponse>();
-    const status = error instanceof HttpException ? error.getStatus() : 500;
+    const conversationError =
+      error instanceof ConversationError
+        ? conversationErrors[error.code]
+        : undefined;
+    const status =
+      conversationError?.status ??
+      (error instanceof HttpException ? error.getStatus() : 500);
     if (status >= 500)
       Logger.error('An API request failed; check service health.', 'HTTP');
     response.statusCode = status;
@@ -41,10 +82,12 @@ export class HttpErrorFilter implements ExceptionFilter {
     response.end(
       JSON.stringify({
         statusCode: status,
-        ...(errors[status] ?? {
-          code: 'INTERNAL_ERROR',
-          message: 'The request could not be completed.',
-        }),
+        ...(conversationError && error instanceof ConversationError
+          ? { code: error.code, message: conversationError.message }
+          : (errors[status] ?? {
+              code: 'INTERNAL_ERROR',
+              message: 'The request could not be completed.',
+            })),
       }),
     );
   }

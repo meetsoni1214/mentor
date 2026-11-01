@@ -1,3 +1,4 @@
+import { submitTurn, retryTurn } from '../fixtures/conversation-commands.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
@@ -906,11 +907,11 @@ describe('conversation use case with a fake provider and real persistence', () =
       if (config.enabled) throw new Error('Expected disabled fixture');
       const loop = new ConversationLoop(repository, config);
       expect(await loop.history(ownerId)).toEqual(before);
-      await expect(loop.submit(submission())).rejects.toMatchObject({
+      await expect(submitTurn(loop, submission())).rejects.toMatchObject({
         code: 'EXECUTION_UNAVAILABLE',
       });
       await expect(
-        loop.retry({
+        retryTurn(loop, {
           ownerId,
           historyVersion: 0,
           turnId: failed.turn.id,
@@ -918,7 +919,7 @@ describe('conversation use case with a fake provider and real persistence', () =
         }),
       ).rejects.toMatchObject({ code: 'EXECUTION_UNAVAILABLE' });
       expect(await loop.history(ownerId)).toEqual(before);
-      expect(await loop.clear(ownerId, 0)).toBe(1);
+      expect(await loop.clear(ownerId, { historyVersion: 0 })).toBe(1);
       expect(await loop.history(ownerId)).toEqual({
         historyVersion: 1,
         turns: [],
@@ -971,7 +972,7 @@ describe('conversation use case with a fake provider and real persistence', () =
         maxContextBytes: Buffer.byteLength(JSON.stringify(messages), 'utf8'),
       },
     });
-    const result = await loop.submit(submission({ text }));
+    const result = await submitTurn(loop, submission({ text }));
     expect(complete).toHaveBeenCalledTimes(1);
     expect(complete.mock.calls[0]?.[0].messages).toEqual(messages);
     expect(result.attempt).toMatchObject({
@@ -1003,9 +1004,9 @@ describe('conversation use case with a fake provider and real persistence', () =
       limits,
     });
     const input = submission();
-    const original = loop.submit(input);
+    const original = submitTurn(loop, input);
     await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
-    const replay = await loop.submit(input);
+    const replay = await submitTurn(loop, input);
     expect(replay.execute).toBe(false);
     expect(replay.attempt.state).toBe('running');
     release(completed);
@@ -1026,10 +1027,10 @@ describe('conversation use case with a fake provider and real persistence', () =
       model: { complete },
       limits,
     });
-    const first = await loop.submit(submission());
+    const first = await submitTurn(loop, submission());
     expect(first.attempt.errorCode).toBe('PROVIDER_ERROR');
     expect(JSON.stringify(first)).not.toContain('sensitive');
-    const retry = await loop.retry({
+    const retry = await retryTurn(loop, {
       ownerId,
       historyVersion: 0,
       turnId: first.turn.id,
@@ -1054,12 +1055,12 @@ describe('conversation use case with a fake provider and real persistence', () =
       limits,
     });
     // Register rejection handling before clearing, avoiding an unhandled rejection.
-    const original = loop.submit(submission()).then(
+    const original = submitTurn(loop, submission()).then(
       (value) => value,
       (error: unknown) => error,
     );
     await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
-    await loop.clear(ownerId, 0);
+    await loop.clear(ownerId, { historyVersion: 0 });
     expect(await original).toMatchObject({ code: 'STALE_HISTORY' });
     expect(complete.mock.calls[0]?.[0].signal.aborted).toBe(true);
     expect(await loop.history(ownerId)).toEqual({

@@ -1,3 +1,4 @@
+import { submitTurn, retryTurn } from '../fixtures/conversation-commands.js';
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConversationLoop } from '../../packages/backend/src/conversation/application/conversation-loop.js';
@@ -111,19 +112,19 @@ describe('bounded conversation execution', () => {
       turns: [],
       nextCursor: null,
     });
-    expect(await loop.clear(input.ownerId, 0)).toBe(1);
-    expect(repository.history).toHaveBeenCalledWith(input.ownerId, undefined);
+    expect(await loop.clear(input.ownerId, { historyVersion: 0 })).toBe(1);
+    expect(repository.history).toHaveBeenCalledWith(input.ownerId, {});
     expect(repository.clear).toHaveBeenCalledWith(input.ownerId, 0);
   });
 
   it('rejects disabled submission and retry before admission, context, or provider work', async () => {
     const { input, admission, repository, model } = setup();
     const loop = new ConversationLoop(repository, { enabled: false });
-    await expect(loop.submit(input)).rejects.toMatchObject({
+    await expect(submitTurn(loop, input)).rejects.toMatchObject({
       code: 'EXECUTION_UNAVAILABLE',
     });
     await expect(
-      loop.retry({
+      retryTurn(loop, {
         ownerId: input.ownerId,
         historyVersion: 0,
         turnId: admission.turn.id,
@@ -167,7 +168,7 @@ describe('bounded conversation execution', () => {
         model,
         limits: { ...limits, allowedTools },
       });
-      await loop.submit(input);
+      await submitTurn(loop, input);
       expect(model.complete.mock.calls[0]?.[0].tools).toEqual(allowedTools);
       // An available tool need not be used; the ordinary answer has no search activity.
       expect(repository.finish.mock.calls[0]?.[1]).toMatchObject({
@@ -184,7 +185,7 @@ describe('bounded conversation execution', () => {
       model,
       limits: { ...limits, allowedTools: [] },
     });
-    await loop.retry({
+    await retryTurn(loop, {
       ownerId: input.ownerId,
       historyVersion: 0,
       requestId: randomUUID(),
@@ -199,7 +200,7 @@ describe('bounded conversation execution', () => {
       { text: 'Recent question', answer: 'Recent answer' },
       { text: 'Old'.repeat(100), answer: 'Older answer' },
     ]);
-    await loop.submit(input);
+    await submitTurn(loop, input);
     expect(model.complete.mock.calls[0]?.[0].messages).toEqual([
       { role: 'user', text: 'Recent question' },
       { role: 'assistant', text: 'Recent answer' },
@@ -215,7 +216,7 @@ describe('bounded conversation execution', () => {
   it('does not invoke the model or load context for an idempotent replay', async () => {
     const { input, loop, repository, model, admission } = setup();
     repository.submit.mockResolvedValue({ ...admission, execute: false });
-    expect((await loop.submit(input)).execute).toBe(false);
+    expect((await submitTurn(loop, input)).execute).toBe(false);
     expect(model.complete).not.toHaveBeenCalled();
     expect(repository.context).not.toHaveBeenCalled();
   });
@@ -225,7 +226,7 @@ describe('bounded conversation execution', () => {
     async (contextLimited) => {
       const { input, loop, model, repository } = setup();
       model.complete.mockResolvedValue({ ...output, contextLimited });
-      await loop.submit(input);
+      await submitTurn(loop, input);
       expect(repository.finish.mock.calls[0]?.[1]).toMatchObject({
         state: 'completed',
         contextLimited,
@@ -239,7 +240,7 @@ describe('bounded conversation execution', () => {
       { text: 'Recent question', answer: 'Recent answer' },
       { text: 'Old'.repeat(100), answer: 'Older answer' },
     ]);
-    await loop.retry({
+    await retryTurn(loop, {
       ownerId: input.ownerId,
       historyVersion: 0,
       turnId: admission.turn.id,
@@ -267,7 +268,7 @@ describe('bounded conversation execution', () => {
       errorCode: 'INTERRUPTED',
       finishedAt: admission.attempt.deadlineAt,
     });
-    const running = loop.submit(input);
+    const running = submitTurn(loop, input);
     await vi.advanceTimersByTimeAsync(1000);
     expect((await running).attempt.state).toBe('interrupted');
     expect(model.complete.mock.calls[0]?.[0].signal.aborted).toBe(true);
@@ -283,7 +284,7 @@ describe('bounded conversation execution', () => {
     vi.useFakeTimers();
     const { input, loop, admission, model, repository } = setup();
     vi.setSystemTime(admission.attempt.deadlineAt);
-    await loop.submit(input);
+    await submitTurn(loop, input);
     expect(model.complete).not.toHaveBeenCalled();
     expect(repository.finish.mock.calls[0]?.[1]).toEqual({
       state: 'interrupted',
@@ -298,7 +299,7 @@ describe('bounded conversation execution', () => {
       vi.setSystemTime(admission.attempt.deadlineAt);
       return [];
     });
-    await loop.submit(input);
+    await submitTurn(loop, input);
     expect(model.complete).not.toHaveBeenCalled();
     expect(repository.finish.mock.calls[0]?.[1]).toEqual({
       state: 'interrupted',
@@ -309,7 +310,7 @@ describe('bounded conversation execution', () => {
   it('normalizes provider failures without exposing their payload', async () => {
     const { input, loop, model, repository } = setup();
     model.complete.mockRejectedValue(new Error('private provider details'));
-    await loop.submit(input);
+    await submitTurn(loop, input);
     expect(repository.finish.mock.calls[0]?.[1]).toEqual({
       state: 'failed',
       errorCode: 'PROVIDER_ERROR',
@@ -319,7 +320,7 @@ describe('bounded conversation execution', () => {
   it('does not publish an empty answer as a successful result', async () => {
     const { input, loop, model, repository } = setup();
     model.complete.mockResolvedValue({ ...output, answer: '   ' });
-    await loop.submit(input);
+    await submitTurn(loop, input);
     expect(repository.finish.mock.calls[0]?.[1]).toEqual({
       state: 'failed',
       errorCode: 'INVALID_RESPONSE',
@@ -330,7 +331,7 @@ describe('bounded conversation execution', () => {
     const { input, loop, model, repository } = setup();
     const usage = { inputTokens: 11, outputTokens: 7 };
     model.complete.mockResolvedValue({ ...output, answer: '   ', usage });
-    await loop.submit(input);
+    await submitTurn(loop, input);
     expect(repository.finish.mock.calls[0]?.[1]).toEqual({
       state: 'failed',
       errorCode: 'INVALID_RESPONSE',
@@ -349,11 +350,88 @@ describe('bounded conversation execution', () => {
       { requestId: 'not-a-uuid' },
       { historyVersion: -1 },
     ]) {
-      await expect(loop.submit({ ...input, ...changed })).rejects.toMatchObject(
-        { code: 'INVALID_INPUT' },
-      );
+      await expect(
+        submitTurn(loop, { ...input, ...changed }),
+      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     }
     expect(repository.submit).not.toHaveBeenCalled();
     expect(model.complete).not.toHaveBeenCalled();
+  });
+
+  it('validates untrusted submission commands without relying on HTTP', async () => {
+    const { input, loop, repository, model } = setup();
+    const { ownerId, ...command } = input;
+    for (const value of [
+      null,
+      [],
+      {},
+      { ...command, text: 1 },
+      { ...command, historyVersion: '0' },
+      { ...command, ownerId: randomUUID() },
+      { ...command, unexpected: true },
+    ]) {
+      await expect(loop.submit(ownerId, value)).rejects.toMatchObject({
+        code: 'INVALID_INPUT',
+      });
+    }
+    await expect(loop.submit('invalid-owner', command)).rejects.toMatchObject({
+      code: 'INVALID_INPUT',
+    });
+    expect(repository.submit).not.toHaveBeenCalled();
+    expect(model.complete).not.toHaveBeenCalled();
+  });
+
+  it('validates retry and clear commands before accessing persistence', async () => {
+    const { input, loop, repository, model } = setup();
+    const command = { requestId: randomUUID(), historyVersion: 0 };
+    for (const value of [
+      null,
+      {},
+      { ...command, requestId: 'bad' },
+      { ...command, turnId: randomUUID() },
+      { ...command, ownerId: input.ownerId },
+    ]) {
+      await expect(
+        loop.retry(input.ownerId, randomUUID(), value),
+      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    }
+    await expect(
+      loop.retry(input.ownerId, 'bad-turn', command),
+    ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    for (const value of [
+      null,
+      {},
+      0,
+      { historyVersion: -1 },
+      { historyVersion: '0' },
+      { historyVersion: 0, ownerId: input.ownerId },
+    ]) {
+      await expect(loop.clear(input.ownerId, value)).rejects.toMatchObject({
+        code: 'INVALID_INPUT',
+      });
+    }
+    expect(repository.retry).not.toHaveBeenCalled();
+    expect(repository.clear).not.toHaveBeenCalled();
+    expect(model.complete).not.toHaveBeenCalled();
+  });
+
+  it('validates numeric history options independently of query-string parsing', () => {
+    const { input, loop, repository } = setup();
+    for (const options of [
+      null,
+      { limit: '1' },
+      { limit: 0 },
+      { limit: 101 },
+      { limit: 1.5 },
+      { cursor: { historyVersion: 0 } },
+      { cursor: { historyVersion: -1, beforeSequence: 1 } },
+      { cursor: { historyVersion: 0, beforeSequence: 0 } },
+      { ownerId: input.ownerId },
+    ]) {
+      expect(() => loop.history(input.ownerId, options)).toThrow(
+        'INVALID_INPUT',
+      );
+    }
+    expect(repository.history).not.toHaveBeenCalled();
   });
 });
