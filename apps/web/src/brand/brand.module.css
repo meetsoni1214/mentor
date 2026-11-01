@@ -1,0 +1,34 @@
+.logo {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding-bottom: 0.1rem;
+  border-radius: 0.45rem;
+  background: var(--brand-primary);
+  color: var(--brand-on-primary);
+  font-family: var(--font-sans);
+  font-size: 1.3rem;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.08em;
+  line-height: 1;
+}
+
+.large {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding-bottom: 0.15rem;
+  border-radius: 0.7rem;
+  font-size: 1.8rem;
+}
+
+.lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-foreground);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.035em;
+}

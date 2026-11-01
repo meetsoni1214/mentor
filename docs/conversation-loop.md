@@ -1,4 +1,4 @@
-# The conversation loop: API and browser data boundary
+# The conversation loop: API and read-only workspace
 
 Mentor will have one continuous conversation. The owner will not create, name,
 or choose threads. This checkpoint implements its backend persistence and run
@@ -7,15 +7,17 @@ against a local HTTP stub. Task 2.3 composes the use case, repository, and SDK
 adapter in the API's ConversationModule. Tasks 2.4–2.5 expose and document protected
 status and singleton conversation routes with generated OpenAPI/client types.
 Application-owned Zod schemas validate commands; controllers map HTTP responses.
-The current web screen is a signed-in placeholder. Verification uses
+The current web screen is a read-only conversation workspace. Verification uses
 synthetic credentials and responses; no paid calls, email connection, or
 background jobs are involved.
 
 Task 3.1 now adds the validated browser conversation client and session isolation.
 See [the conversation UI plan](conversation-ui-plan.md#checkpoint-1-implementation-and-usage)
 for its request scope, cache keys, history-version guards, and focused verification.
-The placeholder remains visible; workspace rendering and resilient interactions
-require the next approved checkpoints.
+Task 3.2 renders the continuous transcript, pagination, and run details in a
+monochrome workspace. Owner messages align right and Mentor replies
+align left. The composer remains explicitly disabled; reliable sending and
+resilient interactions require the next approved checkpoint.
 
 ## Start the review here
 
@@ -118,7 +120,8 @@ HTTP requests with synthetic configuration. Set the server key and an explicit
 account-available model in the existing environment and restart the API; settings
 are read at startup. Valid configuration allows authenticated submit/retry requests
 to call OpenAI and incur charges. No default model or live call is assumed by the
-tests. The web conversation interface and draft preservation remain group 3.
+tests. Browser submission and draft preservation remain task 3.3; the workspace
+currently supports history reading and run inspection.
 `.env.example` documents defaults; an existing `.env` is left untouched.
 
 ## Standard Agents SDK adapter (tasks 2.2a–2.2c)
@@ -463,9 +466,10 @@ Local clearing cannot retract content already sent to a provider.
 
 ## Cloud-processing disclosure and current capability boundary
 
-The HTTP API can execute against OpenAI when configured, but the current web page
-has no message submission interface. Group 3 must show an informational notice
-before its first submission. Proposed notice content is:
+The HTTP API can execute against OpenAI when configured, but the current web
+composer is disabled. At the owner's request, the cloud-processing line and
+expandable Privacy & context section beneath the composer were removed.
+Cloud-processing information remains documented here:
 
 > Your message and selected recent conversation context are sent to OpenAI to
 > generate a response. Older messages remain in your local history but may be
@@ -475,8 +479,7 @@ before its first submission. Proposed notice content is:
 > content; it cannot retract content already sent to a provider. Disabling provider
 > response storage does not promise zero provider retention.
 
-This is planned UI copy, not an implemented browser disclosure. No persisted
-acknowledgement or acknowledgement gate is required. Production tool registration
+There is no persisted acknowledgement or acknowledgement gate. Production tool registration
 is empty: this checkpoint cannot search the web, access email/private accounts,
 rotate credentials, or perform external writes. Sources/activity fields exist in
 the contract but do not prove a tool ran; real observed search normalization is
@@ -508,9 +511,11 @@ unresponsive provider, invalid input, and sanitized failures.
 
 The actual HTTP suite covers the production controllers/guard with a model fake;
 the composed lifecycle and adapter suites exercise the real SDK/client against
-localhost stubs with non-stub outbound traffic denied. No conversation browser
-acceptance or live-provider verification has been performed. The UI is not yet
-implemented, and synthetic search fixtures are not live investigation evidence.
+localhost stubs with non-stub outbound traffic denied. Task 3.2 browser checks
+exercise the production read-only workspace with synthetic intercepted API
+responses on phone and desktop. See [the UI checkpoint evidence](conversation-ui-plan.md#checkpoint-2-implementation-and-verification).
+Complete sending/recovery acceptance and live-provider verification remain open;
+synthetic search fixtures are not live investigation evidence.
 
 ## Application/API checkpoint (task 2.5)
 
@@ -530,9 +535,9 @@ README and `.env.example` now describe the implemented API, required model/key,
 application settings, SDK defaults, tracing/privacy policy, planned UI disclosure,
 and foreground-recovery limits. No existing `.env` or development database was
 modified, and no live OpenAI call was made. Task 2.5 completes the application/API
-checkpoint. The subsequent task 3.1 browser data boundary is documented in
-[conversation-ui-plan.md](conversation-ui-plan.md); conversation rendering and
-resilient interactions remain later checkpoints.
+checkpoint. The subsequent tasks 3.1–3.2 browser data boundary and read-only
+workspace are documented in [conversation-ui-plan.md](conversation-ui-plan.md).
+Reliable sending and resilient interactions remain later checkpoints.
 
 ## Historical verification checkpoints
 

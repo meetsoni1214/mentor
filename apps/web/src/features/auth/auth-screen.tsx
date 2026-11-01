@@ -1,10 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Button } from '../../components/ui/button';
+import { Alert, AlertDescription } from '../../components/ui/alert';
+import { BrandLockup } from '../../brand/brand-logo';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RequestError } from '../../lib/api-request';
 import { sessionKey, sessionStateFor } from './session-state';
 import { LoginForm } from './login-form';
+import { ConversationWorkspace } from '../conversation/conversation-workspace';
 
 export function AuthScreen() {
   const queryClient = useQueryClient();
@@ -44,46 +48,38 @@ export function AuthScreen() {
     }
   }
 
+  if (session.data && !session.isError) {
+    const scope = sessionState.scope();
+    return (
+      <ConversationWorkspace
+        key={scope.generation}
+        session={scope}
+        onSignOut={() => void logout()}
+        signingOut={signingOut}
+        signOutError={error}
+      />
+    );
+  }
+
   return (
     <main className="auth-shell">
-      <p className="eyebrow">MENTOR</p>
+      <BrandLockup className="auth-brand" />
       {session.isPending ? (
         <p role="status">Opening your space…</p>
       ) : session.isError ? (
         <>
           <h1>Let’s reconnect.</h1>
-          <p role="alert">
-            Your account could not be reached. Please try again.
-          </p>
-          <button
+          <Alert className="mb-4">
+            <AlertDescription>
+              Your account could not be reached. Please try again.
+            </AlertDescription>
+          </Alert>
+          <Button
             onClick={() => void session.refetch()}
             disabled={session.isFetching}
           >
             {session.isFetching ? 'Reconnecting…' : 'Try again'}
-          </button>
-        </>
-      ) : session.data ? (
-        <>
-          <h1>Your space is ready.</h1>
-          <p className="intro">
-            You’re signed in as <strong>{session.data.owner.email}</strong>.
-          </p>
-          <p>
-            Your notes and conversations will live here as we build the next
-            part.
-          </p>
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
-          <button
-            className="secondary"
-            onClick={() => void logout()}
-            disabled={signingOut}
-          >
-            {signingOut ? 'Signing out…' : 'Sign out'}
-          </button>
+          </Button>
         </>
       ) : (
         <LoginForm

@@ -4,9 +4,14 @@ A personal assistant built incrementally. Owner provisioning, password recovery,
 browser sign-in, database sessions, and logout are implemented. The backend now
 provides one continuous conversation per owner, persistent turns and attempts,
 bounded context, an OpenAI Agents SDK/Responses adapter, and protected conversation
-HTTP endpoints with generated client types. The signed-in web screen is still a
-placeholder; the conversation UI and public-web investigation are the next slices.
+HTTP endpoints with generated client types. The signed-in web screen now shows a
+read-only conversation workspace with history pagination and run details. Reliable
+sending and public-web investigation are the next slices.
 Notes, long-term memory, email access, and external actions remain future work.
+
+Browser branding, design tokens, and reusable controls follow the
+[design system guide](docs/design-system.md). Name, logo, colors, and typography
+are shared across sign-in and the conversation workspace.
 
 ## Prerequisites
 
@@ -36,15 +41,15 @@ stored history remains readable and clearable. Authenticated status returns only
 readiness and safe settings, without credentials or configuration diagnostics.
 Preserve an existing `.env`; do not copy over it to pick up optional values.
 
-| Service           | Address                                   | Purpose                                    |
-| ----------------- | ----------------------------------------- | ------------------------------------------ |
-| Web               | http://127.0.0.1:3000                     | Sign-in and signed-in placeholder          |
-| API               | http://127.0.0.1:3001/api/v1/health/live  | API liveness                               |
-| API readiness     | http://127.0.0.1:3001/api/v1/health/ready | Database connection and pgvector migration |
-| API documentation | http://127.0.0.1:3001/api/docs            | Development OpenAPI explorer               |
-| Worker            | http://127.0.0.1:3002/health/live         | Worker process liveness                    |
-| Worker readiness  | http://127.0.0.1:3002/health/ready        | Worker database connectivity               |
-| PostgreSQL        | 127.0.0.1:55432                           | Persistent development database            |
+| Service           | Address                                   | Purpose                                      |
+| ----------------- | ----------------------------------------- | -------------------------------------------- |
+| Web               | http://127.0.0.1:3000                     | Sign-in and read-only conversation workspace |
+| API               | http://127.0.0.1:3001/api/v1/health/live  | API liveness                                 |
+| API readiness     | http://127.0.0.1:3001/api/v1/health/ready | Database connection and pgvector migration   |
+| API documentation | http://127.0.0.1:3001/api/docs            | Development OpenAPI explorer                 |
+| Worker            | http://127.0.0.1:3002/health/live         | Worker process liveness                      |
+| Worker readiness  | http://127.0.0.1:3002/health/ready        | Worker database connectivity                 |
+| PostgreSQL        | 127.0.0.1:55432                           | Persistent development database              |
 
 `pnpm dev` builds the service code, generates API client types, and starts the
 TypeScript watcher, API, worker, and web processes together. Ctrl+C stops the
@@ -102,7 +107,8 @@ To configure execution, set `OPENAI_API_KEY` and an explicit account-available
 `OPENAI_CHAT_MODEL` in your existing server environment, then restart the API.
 There is no default model or enable flag. Once configuration is valid, an
 authenticated submit or retry can make paid requests to OpenAI. The current web
-screen has no chat composer; configuring the API does not add one.
+workspace has a disabled composer; configuring the API does not enable browser
+sending. See [the conversation UI checkpoint](docs/conversation-ui-plan.md#checkpoint-2-implementation-and-verification).
 
 The request path is controller → application validation/admission → persisted
 turn/attempt → bounded context → Agents SDK → conditional database completion.
@@ -115,9 +121,10 @@ settings do not impose a cumulative token or daily spending cap.
 The adapter sets `store: false`, disables automatic retries and tracing/export,
 and omits sensitive SDK logging. This does not promise zero provider retention.
 Messages and selected recent context go to OpenAI; public-web search is currently
-unavailable. Before the future UI allows submission, it must explain cloud
-processing, limited context, and that permitted web search can send derived
-queries to that service. No persisted acknowledgement is required. Clearing local
+unavailable. Documentation explains cloud processing, limited context, and that
+permitted web search can send derived queries to that service. The composer has
+no cloud-processing or privacy footer, at the owner's request. No persisted
+acknowledgement is required. Clearing local
 history cannot retract content already sent externally.
 
 Execution runs inside the original HTTP request. A lost response can be reconciled
@@ -126,7 +133,7 @@ Process failure can leave a running attempt until its deadline is reconciled as
 interrupted. Retry starts fresh and is explicit. The worker does not resume runs.
 The [configuration and recovery guide](docs/conversation-loop.md) records these
 limits and the local verification evidence. Live OpenAI verification and the
-conversation browser walkthrough remain pending.
+complete conversation interaction walkthrough remain pending.
 
 ## Daily commands
 

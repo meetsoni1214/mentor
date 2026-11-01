@@ -34,14 +34,14 @@ The system SHALL use the TypeScript OpenAI Agents SDK with Responses and one Men
 - **WHEN** the pinned SDK/provider combination or selected model cannot enforce required storage, tracing, retry, cancellation, or limit policies
 - **THEN** the integration fails visibly without silently switching provider, API, or policies
 
-### Requirement: Cloud-processing disclosure
+### Requirement: Cloud-processing documentation
 
-Before first model submission, the app SHALL explain that the current message and bounded conversation context go to OpenAI. The notice SHALL also explain that the assistant can choose public-web search when permitted and derived search queries go to that service. No persisted acknowledgement or acknowledgement gate SHALL be required.
+Documentation SHALL explain that the current message and bounded context go to OpenAI and that permitted public-web search can send derived queries to that service. At the owner's request, the conversation UI SHALL omit the cloud-processing and Privacy & context section beneath the composer. No persisted acknowledgement or acknowledgement gate SHALL be required.
 
-#### Scenario: First assistant use
+#### Scenario: Focused conversation interface
 
-- **WHEN** the owner first uses the assistant
-- **THEN** the app explains cloud processing without requiring a versioned acknowledgement or blocking submission on one
+- **WHEN** the owner opens the conversation
+- **THEN** the composer has no cloud-processing or Privacy & context footer, while documentation records cloud processing without requiring a versioned acknowledgement
 
 ### Requirement: Standard SDK execution controls
 

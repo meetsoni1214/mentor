@@ -1,9 +1,10 @@
 # Conversation UI: implementation checkpoints
 
-Status: checkpoint 1 (task 3.1) implements the validated browser client and
-session isolation. The signed-in screen remains the placeholder. Checkpoints 2
-and 3 are proposed for later approval; conversation rendering and full browser
-acceptance are not complete.
+Status: checkpoints 1 and 2 (tasks 3.1–3.2) implement the validated browser client,
+session isolation, and a read-only conversation workspace. The owner approved a
+monochrome interface with owner messages on the right and Mentor responses on the
+left. Sending stays separate and disabled. Checkpoint 3 requires later approval;
+reliable submission and complete interaction acceptance are not implemented.
 
 ## Starting point before checkpoint 1
 
@@ -143,21 +144,89 @@ Verified locally on 2026-11-01:
 
 Replace the signed-in placeholder with one continuous transcript opened after
 sign-in. Include older-message pagination, an accessible composer, empty/loading/
-configuration-disabled/error states, and expandable run details. Show cloud
-processing and limited-context notices before sending is exposed. Display answer
+configuration-disabled/error states, and expandable run details. Keep per-response
+limited-context notes; the owner removed the cloud-processing/privacy footer.
+Cloud-processing information remains in documentation. Display answer
 text safely; production search remains unavailable and empty activity must not
 be presented as a completed search.
 
-Use the existing warm background, green accent, and readable typography. The main
-layout is a writing workspace with the transcript and composer as its focus,
-account controls nearby, and Clear history in privacy settings. There is no
+Use white, black, and neutral gray with readable typography. The owner replaced
+the earlier green direction with a focused monochrome interface. Owner messages
+align right in dark bubbles and Mentor replies align left in light bubbles. The
+main layout is a writing workspace with the transcript and composer as its focus,
+account controls nearby, and Clear history in privacy settings in its later slice. There is no
 thread sidebar, title editor, or New conversation flow. Review the phone/desktop
 composition, keyboard navigation, focus behavior, and status announcements.
 
 This checkpoint establishes rendering and client integration. Submission,
 reconciliation, retry, and clearing become fully operational and accepted in the
 next checkpoint; do not leave an apparently working Send control that silently
-drops text. Agree the final interaction details before implementing this screen.
+drops text. The owner approved keeping sending separate: both the textarea and
+Send button are disabled with “Sending is not available yet.” No draft is accepted.
+
+Shared branding and control styles are documented in
+[the design system guide](design-system.md). The brand name/metadata, reusable
+logo/lockup, and semantic color/typography/spacing tokens live under
+`apps/web/src/brand/`. Sign-in and conversation controls use local shadcn
+primitives for buttons, inputs, labels, textareas, alerts, and collapsible run
+details. Tailwind utilities consume the shared brand tokens. Focus, disabled,
+keyboard, and reduced-motion behavior remain part of this checkpoint.
+
+## Checkpoint 2 implementation and verification
+
+After sign-in, `AuthScreen` renders `ConversationWorkspace`, keyed by the local
+session generation. The workspace creates one query adapter and shares it across
+history and assistant-status reads. Session replacement unmounts local workspace
+state along with the existing private-cache cleanup. There are no mock transcripts
+or synthetic answers in application code.
+
+| Module                        | Responsibility                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------ |
+| `conversation-workspace.tsx`  | Workspace composition, header/logout, assistant availability, shared query adapter         |
+| `use-conversation-history.ts` | Head and cursor-page queries, current-version filtering, ordering and deduplication        |
+| `conversation-transcript.tsx` | Loading/empty/error states, older-page recovery, scroll and keyboard-focus preservation    |
+| `conversation-message.tsx`    | Right/left bubbles, latest attempt outcome, escaped answer text and limited-context notice |
+| `run-details.tsx`             | Expandable persisted attempts, model, context, activity, sources, and nullable SDK usage   |
+| `conversation-composer.tsx`   | Explicitly disabled composer with its availability explanation                             |
+
+Initial history opens at the latest messages. Older pages prepend without moving
+the visible message; pagination returns keyboard focus to that reading position.
+Page failures retain loaded messages and offer an explicit retry. Head refreshes
+that observe a newer history version discard the old page list. Running attempts
+show their persisted state with a manual “Check for updates” action. Automatic
+polling, submission, retry attempts, and history clearing remain checkpoint 3.
+Answers are escaped text, preserving whitespace without rendering HTML or turning
+generated URLs into links. Recorded sources use the already-validated contract.
+
+Verification uses the production frontend at a separate local port with every API
+request intercepted by Playwright and supplied synthetic data. It does not use real
+cookies, the development database, provider credentials, or paid model calls.
+Browser checks cover:
+
+- Loading, empty history, initial errors and recovery, older-page failure/retry,
+  readable history with execution disabled, and completed/failed/interrupted/running states.
+- Right/left alignment, disabled input/sending, run details operated by keyboard,
+  null versus zero usage, ordered pagination without duplicates, scroll/focus
+  preservation, and replacement of old pages after a newer history version.
+- Escaped HTML-like answer text, long unbroken content,
+  visible composer and no horizontal overflow at 1440×1000, 390×844, and 320×568.
+- Reduced motion, logout removing the transcript, subsequent sign-in restoring the
+  workspace, empty browser local/session storage, and no conversation mutations.
+
+`pnpm check` passes formatting, lint, strict types, all 252 unit/contract tests,
+generated-contract checks, and the production build. This slice adds browser
+verification rather than duplicating the existing request-boundary unit tests.
+The owner subsequently removed the OpenAI processing line and Privacy & context
+footer section. The section and its CSS have been removed; the updated production
+browser checks assert that both are absent. The shared-brand follow-up also
+verifies metadata and sign-in branding, default native button types, and changing
+one primary token across the logo, primary controls, outgoing bubbles, and focus
+rings while neutral body text stays unchanged. Pagination, keyboard, error,
+disabled-sending, and phone/desktop checks were repeated after this refactor.
+Screenshots and local browser artifacts are under ignored
+`output/playwright/conversation-ui/`. Full sending/recovery acceptance, real-cookie
+authentication acceptance, integration reruns, and live-provider verification are
+not claimed by this UI checkpoint.
 
 ## Checkpoint 3: resilient interaction and acceptance (tasks 3.3–3.5)
 

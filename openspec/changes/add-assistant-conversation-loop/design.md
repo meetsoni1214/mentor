@@ -121,14 +121,33 @@ the query delivering that version and current-version pages while discarding
 obsolete history. History transitions remove only conversation mutations, leaving
 assistant status and unrelated feature state intact. Session loss still clears
 all private state. Neither boundary generates submission keys or automatically
-retries mutations. This separation is part of task 3.1; transcript/composer UI
-and resilient interaction wiring remain later checkpoints.
+retries mutations. This separation is part of task 3.1. Task 3.2 adds the read-only
+workspace; resilient interaction wiring remains task 3.3.
 
-Visual thesis: a calm writing workspace using the existing warm background, green accent, and readable typography. Content plan: open directly to the continuous transcript, with older-message pagination, composer, and expandable run/source detail; keep Clear history in privacy settings rather than the primary conversation flow. Interaction thesis: clear pending-to-result transitions and responsive navigation with reduced-motion support; avoid ornamental dashboards or fake tool activity.
+Visual thesis: a focused monochrome workspace with white surfaces, black text,
+neutral gray dividers, and readable typography. The owner chose this direction
+instead of the earlier green palette. Owner messages align right in dark bubbles;
+Mentor responses align left in light bubbles. Content plan: open directly to the
+continuous transcript, with older-message pagination, composer, and expandable run
+details; keep Clear history in privacy settings in its later interaction slice.
+Interaction thesis: preserve reading position and keyboard focus when prepending
+history, expose details on demand, and respect reduced motion. Keep the composer
+and Send button disabled with an explicit explanation for task 3.2; the owner
+approved keeping sending separate. No conversation mutations or polling are wired
+until the next checkpoint.
+
+Browser identity is centralized under `apps/web/src/brand/`: a framework-free
+name/monogram/description module, shared logo and lockup components, and one CSS
+token file for brand colors, semantic colors, typography, spacing, radii, and
+motion. Metadata and browser copy use the same brand name. Features compose the
+local shadcn primitives under `components/ui/` for buttons, text fields, labels,
+alerts, and collapsible run details. Tailwind utilities map to the shared brand
+tokens instead of introducing a second palette. Raw palette codes stay in the token file;
+feature styles own layout. See `docs/design-system.md` for extension examples.
 
 Use TanStack Query and generated API types, with runtime validation at frontend boundaries. A text draft stays in memory until admission is known; uncertain submissions keep their original key and reconcile through the same idempotent operation or restored history. Do not store private drafts or transcripts in browser local/session storage. Refresh restores accepted text from the backend; it does not promise recovery of an unsent in-memory draft. History pagination and privacy settings must retain keyboard focus, readable status announcements, and the composer within the mobile viewport. There is no thread sidebar, conversation picker, title, or New conversation button.
 
-An informational notice covers selected content, cloud processing, local history, and provider-retention limits. The notice includes assistant-selected public-web search and derived queries; tool availability must not silently add unrelated owner data to search queries. No persisted acknowledgement or submission gate is required. Clear history is an explicit destructive privacy action. Under the owner lock, atomically increment history version and remove turns, attempts, and dependent sources/activity, retaining the same singleton conversation row. Abort local work where possible. Completion checks both the attempt state and captured history version, so late writes cannot restore removed content. Version checks also prevent old tabs from replaying cleared input or repeating a clear against newer messages. Refresh stale tabs to the current empty or updated history, without automatically resubmitting. Clearing cannot revoke content already sent externally.
+Documentation covers selected content, cloud processing, local history, provider-retention limits, and assistant-selected public-web search with derived queries. The owner removed the cloud-processing line and Privacy & context section beneath the composer; do not render that footer. Tool availability must not silently add unrelated owner data to search queries. No persisted acknowledgement or submission gate is required. Clear history is an explicit destructive privacy action. Under the owner lock, atomically increment history version and remove turns, attempts, and dependent sources/activity, retaining the same singleton conversation row. Abort local work where possible. Completion checks both the attempt state and captured history version, so late writes cannot restore removed content. Version checks also prevent old tabs from replaying cleared input or repeating a clear against newer messages. Refresh stale tabs to the current empty or updated history, without automatically resubmitting. Clearing cannot revoke content already sent externally.
 
 ### 8. Verification and learning checkpoints
 
@@ -154,7 +173,7 @@ A separately enabled, bounded live smoke check requires existing server credenti
 
 1. Implement tasks 2.2a–2.2c as the next SDK-only review checkpoint, then proceed separately through application/API, UI, and investigation checkpoints. Preserve completed work and update milestone documentation without changing unrelated owner-auth code or the existing local generated `next-env.d.ts` modification.
 2. Apply new migrations only to the disposable integration database during verification. Existing development data is migrated through the normal documented command, without schema push or volume deletion.
-3. Remove the stricter budget policy and its model-call setting without editing an existing `.env`; obsolete extra environment keys are ignored. Use the standard SDK configuration. Construct the explicit Responses provider and runner with tracing/storage/retry policies before exposing them. AI execution becomes ready automatically with valid server model/key/finite-limit configuration; missing or invalid settings preserve read-only history. The UI disclosure must be in place before live model submission is exposed.
+3. Remove the stricter budget policy and its model-call setting without editing an existing `.env`; obsolete extra environment keys are ignored. Use the standard SDK configuration. Construct the explicit Responses provider and runner with tracing/storage/retry policies before exposing them. AI execution becomes ready automatically with valid server model/key/finite-limit configuration; missing or invalid settings preserve read-only history. Document cloud processing without a composer disclosure footer, following the owner's revised UI decision.
 4. Roll back to the prior application version with AI disabled; keep additive tables for a forward fix rather than destructively rolling back private history.
 
 ## Open Questions

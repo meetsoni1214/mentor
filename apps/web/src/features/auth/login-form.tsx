@@ -1,4 +1,8 @@
 import { useState } from 'react';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Alert, AlertDescription } from '../../components/ui/alert';
 import type { FormEvent } from 'react';
 import { z } from 'zod';
 import { AuthError } from './auth-api';
@@ -53,8 +57,8 @@ export function LoginForm({
         aria-describedby={error ? 'login-error' : undefined}
       >
         <div className="field">
-          <label htmlFor="email">Email</label>
-          <input
+          <Label htmlFor="email">Email</Label>
+          <Input
             id="email"
             name="email"
             type="email"
@@ -67,8 +71,8 @@ export function LoginForm({
           />
         </div>
         <div className="field">
-          <label htmlFor="password">Password</label>
-          <input
+          <Label htmlFor="password">Password</Label>
+          <Input
             id="password"
             name="password"
             type="password"
@@ -81,13 +85,13 @@ export function LoginForm({
           />
         </div>
         {error && (
-          <p id="login-error" className="error" role="alert">
-            {error}
-          </p>
+          <Alert id="login-error" className="error">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
-        <button type="submit" disabled={pending}>
+        <Button className="w-full" type="submit" disabled={pending}>
           {pending ? 'Signing in…' : 'Sign in'}
-        </button>
+        </Button>
       </form>
     </>
   );
