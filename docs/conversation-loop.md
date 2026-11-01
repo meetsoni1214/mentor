@@ -1,10 +1,11 @@
-# The conversation loop: SDK review checkpoint
+# The conversation loop: SDK composition review checkpoint
 
 Mentor will have one continuous conversation. The owner will not create, name,
 or choose threads. This checkpoint implements its backend persistence and run
 lifecycle, server-only AI configuration, and a standard Agents SDK adapter verified
-against a local HTTP stub. The adapter is not yet wired into
-the API. The current web screen and API routes are unchanged. Verification uses
+against a local HTTP stub. Task 2.3 composes the use case, repository, and SDK
+adapter in the API's ConversationModule. The current web screen and API routes
+are unchanged. Verification uses
 synthetic credentials and responses; no paid calls, email connection, or
 background jobs are involved.
 
@@ -37,6 +38,11 @@ Read these files in order:
    one Mentor agent, and a runner, then maps SDK results to application outcomes.
 9. `tests/unit/openai-conversation-model.test.ts` runs the actual pinned SDK and
    official client against `tests/fixtures/responses-stub.ts`.
+10. `apps/api/src/conversation/infrastructure/conversation.module.ts` composes
+    server configuration, the Drizzle repository, and the SDK adapter into one
+    injectable ConversationLoop. It registers no controllers.
+11. `tests/integration/conversation-sdk.test.ts` verifies the composed lifecycle
+    against disposable PostgreSQL and the localhost Responses stub.
 
 Domain code has no application or adapter imports. Application code depends on
 the domain and its ports, with no NestJS, HTTP, Drizzle, or provider SDK imports.
@@ -87,10 +93,10 @@ admission, so no user turn or run is added. History reads and versioned clearing
 remain available. Enabled execution retains the existing input checks, replay,
 deadline, cancellation, and conditional completion behavior.
 
-This checkpoint verifies those branches directly with the real repository and
-synthetic configuration. It does not yet wire an OpenAI adapter into Nest, add
-assistant HTTP/status routes, or preserve drafts in a conversation UI. Those
-remain tasks 2.3–2.4 and group 3. Setting environment values alone does not enable
+This checkpoint verifies those branches through API-side composition with the real
+repository and synthetic configuration. Assistant HTTP/status routes and draft
+preservation in a conversation UI remain task 2.4 and group 3. Setting environment
+values alone does not enable
 an interactive conversation in the current app. `.env.example` documents defaults;
 an existing `.env` is left untouched.
 
@@ -152,12 +158,17 @@ map to stable application error codes without exposing exception text or raw SDK
 state. `LIMIT_EXCEEDED` now describes the SDK iteration-limit exception. There is
 no additional raw-response validation layer.
 
-Usage comes from the SDK's aggregate `Usage` object, including exception state
-when the SDK supplies it. The SDK may normalize absent provider counts to zero;
+Usage comes from the SDK's aggregate `Usage` object. Each run receives a fresh SDK
+RunContext so already-reported counts remain available even if a later provider
+error carries no SDK exception state. This is the SDK's own aggregate; the adapter
+does not count tokens or calls independently. The SDK may normalize absent provider counts to zero;
 we accept that behavior and treat these as SDK-reported metrics, not audited
 provider totals. Missing usage does not stop another SDK step. When no SDK usage
-is available, the outcome leaves it unavailable. Persistence of unsuccessful
-usage remains task 2.3.
+is available, the outcome leaves it unavailable. Task 2.3 persists supplied usage
+for failed and interrupted outcomes as well as completed answers. An interruption
+that wins the application abort race may have no SDK outcome/usage available;
+counts remain null. Clearing history removes the attempt and its usage entirely.
+Existing terminal-state and deadline checks continue to reject late publication.
 
 The contract suite uses the actual SDK/client and a localhost HTTP stub with a
 synthetic key. It verifies context, privacy settings, no retries, SDK results and
@@ -250,8 +261,12 @@ attempt's original key can inspect its state without starting more work.
 
 There is no daily attempt limit or daily usage counter in this slice. Per-run
 input/output, tool-call, deadline, and concurrency limits remain. Limits are
-injected values here. Server configuration and the SDK adapter are implemented;
-composing them into the application/API remains task 2.3.
+injected values here. The API's ConversationModule reads server configuration at
+startup and creates the repository and SDK adapter through createConversationLoop.
+Disabled configuration creates only the repository and disabled use case. Module
+initialization, reads, and reconciliation never start SDK work. The singleton use
+case tracks local cancellation; database admission still coordinates multiple
+API instances. There are no conversation HTTP routes until task 2.4.
 
 ## Expiry and interruption
 
@@ -477,3 +492,33 @@ build-generated Next.js type references are restored to their incoming values.
 Tasks 2.2a–2.2c now describe and verify the simplified implementation. API
 composition, conversation UI, and production tools remain later checkpoints.
 Verification used synthetic inputs and a local stub; no live OpenAI call was made.
+
+Task 2.3 composition, verified on 2026-10-26: ConversationModule now provides the
+use case with the real repository and SDK adapter. Available SDK usage is saved
+for unsuccessful outcomes in the existing nullable token columns. Empty-answer
+normalization also retains supplied usage. No migration or independent token
+accounting was added. The adapter's low-level execution entry is exported through
+`@mentor/backend/conversation/model` so integration tests use the declared adapter
+boundary for synthetic tools; production composition registers no tools.
+
+The composed SDK/PostgreSQL suite proves contextual follow-up, cross-instance
+concurrency/replay, explicit retry with fresh context, deadline cancellation,
+configuration-disabled reads/clearing, redacted provider/refusal/incomplete/limit
+failures, and aggregate SDK usage on success and failure. Restart recovery is
+simulated by leaving a persisted orphaned admission and creating a fresh use case;
+reads and replay start no SDK work, expiry records interruption, and only an
+explicit retry runs again. Clear-history tests cover both local cancellation
+between SDK steps and another API instance clearing without a local abort; late
+multi-step completion cannot restore deleted history. Non-stub outbound traffic
+is denied through trace flushing and shutdown.
+
+`pnpm check` passes formatting, lint, strict types, all 195 unit/contract tests,
+and the production build. After the final integration additions, test typechecking
+and lint pass again. `pnpm test:integration` passes all 78 checks against disposable
+PostgreSQL, with the container and network removed afterward. Localhost/Docker
+verification ran with sandbox permission. Strict OpenSpec validation passes.
+Generated OpenAPI/client contracts are unchanged, and build-generated Next.js type
+references are restored to their incoming values. No existing `.env` or development
+database was changed; no live provider call was made. Task 2.3 is complete; tasks
+2.4–2.5, the conversation UI, and public-web tools remain open. Stop here for review;
+commit when requested.

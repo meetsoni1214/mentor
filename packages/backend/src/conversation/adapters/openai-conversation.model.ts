@@ -1,11 +1,11 @@
 import {
   Agent,
-  AgentsError,
   MaxTurnsExceededError,
   ModelBehaviorError,
   ModelRefusalError,
   OpenAIResponsesModel,
   Runner,
+  RunContext,
   setSensitiveDataLoggingEnabled,
   setTraceProcessors,
   setTracingDisabled,
@@ -59,6 +59,9 @@ export async function executeSDKConversation(
   testTools: Tool[] = [],
 ): Promise<RunOutcome> {
   disableTelemetry();
+  // The SDK updates this aggregate even if a later provider call throws an
+  // error without SDK state. Read it directly; do not count calls or tokens here.
+  const context = new RunContext();
   let usage: TokenUsage | null = null;
   try {
     input.signal.throwIfAborted();
@@ -90,7 +93,7 @@ export async function executeSDKConversation(
               content: [{ type: 'output_text', text }],
             },
       ),
-      { signal: input.signal },
+      { signal: input.signal, context },
     );
     usage = sdkUsage(result.runContext.usage);
     input.signal.throwIfAborted();
@@ -109,7 +112,7 @@ export async function executeSDKConversation(
       contextLimited: false,
     };
   } catch (error) {
-    usage = error instanceof AgentsError ? sdkUsage(error.state?.usage) : usage;
+    usage = sdkUsage(context.usage);
     const metadata = usage ? { usage } : {};
     if (input.signal.aborted)
       return { state: 'interrupted', errorCode: 'INTERRUPTED', ...metadata };

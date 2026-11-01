@@ -7,17 +7,20 @@ implemented with local verification. The active change is
 `add-assistant-conversation-loop`: one continuous conversation per owner, with
 no thread creation or selection. Group 1, conversation persistence and run
 lifecycle, and the four architecture follow-ups are implemented. The current
-review checkpoint is tasks 2.2a–2.2c: the simplified, pinned Agents SDK/Responses
-adapter using normal SDK execution, cancellation, explicit privacy/retry settings,
+review checkpoint is task 2.3: API-side composition of the conversation use case,
+Drizzle repository, and pinned Agents SDK/Responses adapter, including persistence
+of available SDK-reported usage for unsuccessful attempts. Tasks 2.2a–2.2c
+implemented normal SDK execution, cancellation, explicit privacy/retry settings,
 and local HTTP-stub verification. The stricter budget policy and request subclass
 were removed at the owner's request. Use the SDK default iteration limit and
 standard per-call output setting; do not reintroduce cumulative budgets or hooks.
 History remains readable/clearable
 while execution is disabled. Application/database tests use an injected fake;
-adapter tests use the actual SDK and official client with non-stub traffic denied.
-The adapter is not composed into the API yet. API composition and protected
-conversation endpoints (tasks 2.3–2.5), UI, and public-web investigation remain
-later checkpoints. Stop after this verified SDK slice for review; commit when requested.
+adapter and composed lifecycle tests use the actual SDK and official client with
+non-stub traffic denied. ConversationModule provides the composed use case but
+exposes no HTTP routes yet. Protected endpoints and API documentation (tasks
+2.4–2.5), UI, and public-web investigation remain later checkpoints. Stop after
+this verified task 2.3 slice for review; commit when requested.
 The older `build-personal-knowledge-assistant` change remains
 a broader historical roadmap, not the next implementation scope.
 

@@ -558,6 +558,48 @@ describe('singleton conversation lifecycle', () => {
     ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
   });
 
+  it.each<RunOutcome>([
+    { state: 'failed', errorCode: 'PROVIDER_ERROR' },
+    {
+      state: 'failed',
+      errorCode: 'RATE_LIMITED',
+      usage: { inputTokens: 11, outputTokens: 7 },
+    },
+    {
+      state: 'failed',
+      errorCode: 'INVALID_RESPONSE',
+      usage: { inputTokens: 0, outputTokens: 0 },
+    },
+    {
+      state: 'interrupted',
+      errorCode: 'INTERRUPTED',
+      usage: { inputTokens: 11, outputTokens: null },
+    },
+    {
+      state: 'interrupted',
+      errorCode: 'INTERRUPTED',
+      usage: { inputTokens: null, outputTokens: 7 },
+    },
+  ])(
+    'retains supplied unsuccessful usage and leaves terminal metadata unchanged: %j',
+    async (outcome) => {
+      const accepted = await repository.submit(submission(), limits);
+      const finished = await repository.finish(reference(accepted), outcome);
+      expect(finished).toMatchObject({
+        state: outcome.state,
+        inputTokens: outcome.usage?.inputTokens ?? null,
+        outputTokens: outcome.usage?.outputTokens ?? null,
+        answer: null,
+      });
+      expect((await repository.history(ownerId)).turns[0]?.attempts[0]).toEqual(
+        finished,
+      );
+      expect(await repository.finish(reference(accepted), completed)).toEqual(
+        finished,
+      );
+    },
+  );
+
   it('terminalizes expired attempts and refuses late or repeated completion', async () => {
     const accepted = await repository.submit(submission(), limits);
     await expire(accepted);

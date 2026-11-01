@@ -317,6 +317,8 @@ export class DrizzleConversationRepository implements ConversationRepository {
                 state: outcome.state,
                 finishedAt: now,
                 errorCode: outcome.errorCode,
+                inputTokens: outcome.usage?.inputTokens ?? null,
+                outputTokens: outcome.usage?.outputTokens ?? null,
               },
         )
         .where(

@@ -187,7 +187,11 @@ export class ConversationLoop {
               ...outcome,
               contextLimited: contextLimited || outcome.contextLimited,
             }
-          : { state: 'failed', errorCode: 'INVALID_RESPONSE' };
+          : {
+              state: 'failed',
+              errorCode: 'INVALID_RESPONSE',
+              ...(outcome.usage ? { usage: outcome.usage } : {}),
+            };
       }
       const attempt = await this.repository.finish(ref, outcome);
       if (!attempt) throw new ConversationError('STALE_HISTORY');

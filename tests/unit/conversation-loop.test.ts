@@ -326,6 +326,18 @@ describe('bounded conversation execution', () => {
     });
   });
 
+  it('keeps reported usage when an empty answer becomes a failure', async () => {
+    const { input, loop, model, repository } = setup();
+    const usage = { inputTokens: 11, outputTokens: 7 };
+    model.complete.mockResolvedValue({ ...output, answer: '   ', usage });
+    await loop.submit(input);
+    expect(repository.finish.mock.calls[0]?.[1]).toEqual({
+      state: 'failed',
+      errorCode: 'INVALID_RESPONSE',
+      usage,
+    });
+  });
+
   it('rejects invalid input before admission or provider work', async () => {
     const { input, loop, repository, model } = setup();
     for (const changed of [
