@@ -1,10 +1,7 @@
-'use client';
-
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { z } from 'zod';
-import { AuthError, signIn } from './auth-api';
-import type { Session } from './auth-api';
+import { AuthError } from './auth-api';
 
 const credentialsSchema = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email()),
@@ -12,9 +9,9 @@ const credentialsSchema = z.object({
 });
 
 export function LoginForm({
-  onSignedIn,
+  onSignIn,
 }: {
-  onSignedIn: (session: Session) => Promise<void>;
+  onSignIn: (email: string, password: string) => Promise<void>;
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,9 +30,8 @@ export function LoginForm({
     setError('');
     try {
       // Keep passwords out of query/mutation caches and browser storage.
-      const session = await signIn(input.data.email, input.data.password);
+      await onSignIn(input.data.email, input.data.password);
       setPassword('');
-      await onSignedIn(session);
     } catch (cause) {
       setError(
         cause instanceof AuthError

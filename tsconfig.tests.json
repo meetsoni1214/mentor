@@ -1,5 +1,15 @@
 {
   "extends": "./tsconfig.base.json",
-  "compilerOptions": { "noEmit": true },
-  "include": ["tests/**/*.ts", "vitest*.ts", "packages/backend/src/**/*.ts"]
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+  },
+  "include": [
+    "tests/**/*.ts",
+    "apps/web/tests/**/*.ts",
+    "vitest*.ts",
+    "packages/backend/src/**/*.ts"
+  ]
 }

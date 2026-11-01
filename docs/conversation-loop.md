@@ -1,14 +1,21 @@
-# The conversation loop: protected API review checkpoint
+# The conversation loop: API and browser data boundary
 
 Mentor will have one continuous conversation. The owner will not create, name,
 or choose threads. This checkpoint implements its backend persistence and run
 lifecycle, server-only AI configuration, and a standard Agents SDK adapter verified
 against a local HTTP stub. Task 2.3 composes the use case, repository, and SDK
-adapter in the API's ConversationModule. Task 2.4 exposes protected status and
-singleton conversation routes with generated OpenAPI/client types. The current
-web screen is unchanged. Verification uses
+adapter in the API's ConversationModule. Tasks 2.4–2.5 expose and document protected
+status and singleton conversation routes with generated OpenAPI/client types.
+Application-owned Zod schemas validate commands; controllers map HTTP responses.
+The current web screen is a signed-in placeholder. Verification uses
 synthetic credentials and responses; no paid calls, email connection, or
 background jobs are involved.
+
+Task 3.1 now adds the validated browser conversation client and session isolation.
+See [the conversation UI plan](conversation-ui-plan.md#checkpoint-1-implementation-and-usage)
+for its request scope, cache keys, history-version guards, and focused verification.
+The placeholder remains visible; workspace rendering and resilient interactions
+require the next approved checkpoints.
 
 ## Start the review here
 
@@ -71,7 +78,9 @@ files, make network calls, or initialize a provider.
 Execution becomes ready automatically with a nonempty `OPENAI_API_KEY`, an
 explicit `OPENAI_CHAT_MODEL`, and valid limits. There is no separate enable flag
 or default model. Missing or invalid settings return `{ enabled: false, invalidKeys }`,
-with only the affected configuration key names. Values and raw Zod errors are excluded.
+with only the affected configuration key names inside server composition. Values
+and raw Zod errors are excluded. The HTTP status endpoint omits even those key
+names: disabled execution returns `{ "enabled": false, "limits": null }`.
 This keeps a configuration problem from preventing access to stored history.
 
 Enabled configuration contains the server key separately from plain `RunLimits`.
@@ -104,12 +113,13 @@ admission, so no user turn or run is added. History reads and versioned clearing
 remain available. Enabled execution retains the existing input checks, replay,
 deadline, cancellation, and conditional completion behavior.
 
-This checkpoint verifies those branches through API-side composition with the real
-repository and synthetic configuration. Assistant HTTP/status routes and draft
-preservation in a conversation UI remain task 2.4 and group 3. Setting environment
-values alone does not enable
-an interactive conversation in the current app. `.env.example` documents defaults;
-an existing `.env` is left untouched.
+These branches are verified through SDK/database composition and actual protected
+HTTP requests with synthetic configuration. Set the server key and an explicit
+account-available model in the existing environment and restart the API; settings
+are read at startup. Valid configuration allows authenticated submit/retry requests
+to call OpenAI and incur charges. No default model or live call is assumed by the
+tests. The web conversation interface and draft preservation remain group 3.
+`.env.example` documents defaults; an existing `.env` is left untouched.
 
 ## Standard Agents SDK adapter (tasks 2.2a–2.2c)
 
@@ -194,24 +204,104 @@ shutdown. A restricted sandbox may require permission to bind localhost.
 Suppose the owner says, "Discuss this security notice."
 
 ```text
-Submission: owner, request UUID, history version, text
-    --> ConversationLoop.submit
+POST /api/v1/conversation/turns: request UUID, history version, text
+    --> global guard: session + exact Origin + session-bound CSRF
+    --> controller: session owner + raw command, separate arguments
+    --> ConversationLoop.submit: Zod application validation + execution readiness
     --> repository.submit: commit user turn + running attempt
     --> repository.context: recent completed turn pairs
     --> selectContext: chronological bounded messages + omission flag
-    --> injected ConversationModel.complete, outside any transaction
+    --> ConversationModel.complete: Agents SDK Runner + Responses, outside transactions
     --> repository.finish: save outcome only if still current and in time
-    --> return persisted attempt
+    --> controller: map turn + persisted attempt + history version to HTTP DTOs
 ```
 
-The caller supplies the owner identity. Future authenticated HTTP adapters must
-derive it from the session, never from browser JSON. There are no conversation
-HTTP routes in this checkpoint. The tests call the use case directly.
+The controller derives owner identity from the session and passes it separately
+from the unknown command. Application schemas reject supplied owner/turn selector
+fields, invalid UUIDs, unsafe versions, and unknown properties. Controllers handle
+HTTP content type, decimal query-string decoding, and response mapping; application
+code has no NestJS, request/response, ORM, or SDK imports. The module composes the
+use case with the real repository and standard SDK adapter. No intermediate HTTP
+service is needed.
 
 The first submission automatically creates the singleton conversation. A history
 read before then returns an empty transcript without inserting a row. PostgreSQL
 enforces a unique owner foreign key. Returning later or changing topic continues
 the same sequence of turns.
+
+## Protected API contract
+
+All paths below have the `/api/v1` prefix and require a valid session. Responses
+use `Cache-Control: private, no-store`. Mutations require JSON, the exact configured
+Origin, and `X-CSRF-Token` from `/api/v1/auth/csrf`, fetched with the current session
+cookie. The signature is session- and process-bound; fetch a fresh one after login
+or API restart. Browser requests use the existing same-origin Next.js `/api/*`
+proxy; the frontend never needs the provider key or a backend-package import.
+
+| Method/path                               | Input                                                                                             | Successful response                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| GET `/assistant/status`                   | None                                                                                              | `enabled` and safe `limits`, or null limits when disabled        |
+| GET `/conversation`                       | Optional `limit` (default 20, range 1–100); optional paired `historyVersion` and `beforeSequence` | Version, chronological turns with all attempts, and `nextCursor` |
+| POST `/conversation/turns`                | `text`, `requestId` UUID, `historyVersion`                                                        | Version, one turn, and the request's attempt                     |
+| POST `/conversation/turns/{turnId}/retry` | `requestId` UUID and `historyVersion`; turn UUID in path                                          | Same result shape, with a fresh attempt or the replayed retry    |
+| DELETE `/conversation/history`            | `historyVersion` in JSON body                                                                     | Incremented `historyVersion`                                     |
+
+No conversation ID or owner ID is accepted from the browser. There are no create,
+list, rename, or select-conversation routes. GET never starts or resumes model work;
+it may reconcile an expired attempt. History pages load newest first, with each
+page's turns in chronological order. Pass both values from `nextCursor` to load
+older turns; null means there are no older turns.
+
+For example, this submission body contains only application command fields:
+
+```json
+{
+  "text": "Discuss this security notice.",
+  "requestId": "c3db53ee-2607-4f4a-99ad-f7abed417036",
+  "historyVersion": 0
+}
+```
+
+Use the version actually read from history, not a hardcoded zero. Matching replay
+uses the same key, text, and version. It returns existing state without another
+runner. An explicit retry after failure uses a fresh key; reconciling that retry
+reuses its key. Both POST operations normally wait for completion, but a replay
+can return a still-running attempt. Responses omit internal execution flags, raw
+SDK state, hidden reasoning, and provider exception text. Dates are ISO strings;
+available SDK usage is retained, including unsuccessful attempts.
+
+Conversation operation failures use the stable `{ statusCode, code, message }`
+envelope:
+
+| HTTP status | Codes                                             | Caller behavior                                           |
+| ----------- | ------------------------------------------------- | --------------------------------------------------------- |
+| 400         | `INVALID_INPUT`; `BAD_REQUEST` for malformed JSON | Correct input; do not resubmit unchanged                  |
+| 401         | `UNAUTHORIZED`                                    | Return to sign-in and discard private client state        |
+| 403         | `FORBIDDEN`                                       | Refresh session-bound CSRF and check the browser Origin   |
+| 404         | `NOT_FOUND`                                       | The turn does not exist for this owner                    |
+| 409         | `BUSY`                                            | Wait for the active attempt                               |
+| 409         | `STALE_HISTORY`                                   | Reload history; do not replay cleared content             |
+| 409         | `IDEMPOTENCY_CONFLICT`                            | The key was used with different input; preserve the draft |
+| 409         | `NOT_RETRYABLE`                                   | Only the latest unsuccessful turn can be retried          |
+| 413 / 415   | `PAYLOAD_TOO_LARGE` / `UNSUPPORTED_MEDIA_TYPE`    | Reduce the request / send JSON                            |
+| 503         | `EXECUTION_UNAVAILABLE`                           | Preserve unsent text; history remains readable/clearable  |
+
+Accepted model failures are different from rejected operations: the HTTP response
+is 200 with an attempt in failed/interrupted state and a redacted `errorCode`, such
+as `REFUSED`, `INCOMPLETE`, `PROVIDER_ERROR`, `RATE_LIMITED`, `LIMIT_EXCEEDED`, or
+`INTERRUPTED`. They do not use authentication's sign-in rate-limit message. Unknown
+server failures use the existing generic 500 envelope.
+
+DTOs in `apps/api/src/conversation/adapters/driving/http/conversation.dto.ts`
+describe OpenAPI. Runtime validation lives in the application schemas. Regenerate
+the document and browser contract after DTO/route changes:
+
+```bash
+pnpm build:services && pnpm api:generate
+```
+
+Do not hand-edit `packages/api-client/openapi.json` or
+`packages/api-client/src/generated/schema.ts`.
 
 ## A turn and an attempt are different
 
@@ -271,13 +361,14 @@ distinct submission while an attempt is running returns BUSY. A replay of that
 attempt's original key can inspect its state without starting more work.
 
 There is no daily attempt limit or daily usage counter in this slice. Per-run
-input/output, tool-call, deadline, and concurrency limits remain. Limits are
+message/initial-context bounds, per-call output settings, deadline, and concurrency
+checks remain. Limits are
 injected values here. The API's ConversationModule reads server configuration at
 startup and creates the repository and SDK adapter through createConversationLoop.
 Disabled configuration creates only the repository and disabled use case. Module
 initialization, reads, and reconciliation never start SDK work. The singleton use
 case tracks local cancellation; database admission still coordinates multiple
-API instances. There are no conversation HTTP routes until task 2.4.
+API instances. Protected controllers resolve the owner from the authenticated session.
 
 ## Expiry and interruption
 
@@ -289,12 +380,17 @@ database-clock condition on the update, so a late answer cannot become successfu
 The use case also aborts the provider signal at the deadline and stops waiting
 even if a fake provider ignores cancellation. Errors are normalized without
 returning their private exception payloads. Provider work is never automatically
-retried. Browser disconnect is not modeled as cancellation; future HTTP code must
-preserve that behavior.
+retried. The HTTP adapter does not use browser disconnect as a cancellation signal;
+work can continue in the local API process after a lost connection.
 
 This is foreground execution. If the process dies after admission, a later read
 will eventually expose an interrupted attempt. It does not automatically resume
 paid work. Reliable unattended execution will need the later worker slice.
+The worker currently serves health checks only. Refreshing or polling history is
+safe and never auto-resumes uncertain provider work. An explicit retry is a fresh
+attempt from application-owned completed context and may incur another charge.
+Persisted expiry is reconciled on reads/admissions, not by a background timer that
+survives a process crash.
 
 ## Tool selection
 
@@ -363,9 +459,28 @@ version-0 clear cannot erase new version-1 messages. A running attempt's late
 completion also cannot restore cleared data. The use case aborts local provider
 work when possible; persisted version checks protect against other processes.
 
-No disclosure acknowledgement table or acknowledgement gate is included. A later
-UI checkpoint will explain cloud processing through an informational notice.
 Local clearing cannot retract content already sent to a provider.
+
+## Cloud-processing disclosure and current capability boundary
+
+The HTTP API can execute against OpenAI when configured, but the current web page
+has no message submission interface. Group 3 must show an informational notice
+before its first submission. Proposed notice content is:
+
+> Your message and selected recent conversation context are sent to OpenAI to
+> generate a response. Older messages remain in your local history but may be
+> omitted from the model's context. When public-web search is permitted, Mentor
+> may choose to search and send derived queries to that service. Web search is
+> currently unavailable. Clearing history removes Mentor's local conversation
+> content; it cannot retract content already sent to a provider. Disabling provider
+> response storage does not promise zero provider retention.
+
+This is planned UI copy, not an implemented browser disclosure. No persisted
+acknowledgement or acknowledgement gate is required. Production tool registration
+is empty: this checkpoint cannot search the web, access email/private accounts,
+rotate credentials, or perform external writes. Sources/activity fields exist in
+the contract but do not prove a tool ran; real observed search normalization is
+group 4. Hidden reasoning and raw SDK intermediate items are not stored.
 
 ## Verification
 
@@ -391,11 +506,38 @@ authentication integration checks continue to run. Unit cases cover exact deadli
 boundaries, final-state protection, retry policy, bounded context, aborting an
 unresponsive provider, invalid input, and sanitized failures.
 
-There is no conversation browser acceptance or live-provider verification in this
-checkpoint because the conversation HTTP adapter and UI are not implemented.
-The SDK adapter has local stub verification only. Later checkpoints add the
-remaining checks before claiming the complete
-conversation experience works.
+The actual HTTP suite covers the production controllers/guard with a model fake;
+the composed lifecycle and adapter suites exercise the real SDK/client against
+localhost stubs with non-stub outbound traffic denied. No conversation browser
+acceptance or live-provider verification has been performed. The UI is not yet
+implemented, and synthetic search fixtures are not live investigation evidence.
+
+## Application/API checkpoint (task 2.5)
+
+Verified on 2026-11-01 after the documentation update:
+
+- `pnpm check` passes formatting, lint, strict types, all 198 unit/contract tests,
+  and the production build.
+- `pnpm test:integration` passes all 87 checks, including actual HTTP protection
+  and SDK/database composition. Its disposable PostgreSQL container and network
+  are removed afterward.
+- Regeneration leaves both `packages/api-client/openapi.json` and
+  `packages/api-client/src/generated/schema.ts` byte-for-byte unchanged.
+- Strict OpenSpec validation passes. Localhost/Docker checks ran with sandbox
+  permission. Build-generated Next.js type references are restored afterward.
+
+README and `.env.example` now describe the implemented API, required model/key,
+application settings, SDK defaults, tracing/privacy policy, planned UI disclosure,
+and foreground-recovery limits. No existing `.env` or development database was
+modified, and no live OpenAI call was made. Task 2.5 completes the application/API
+checkpoint. The subsequent task 3.1 browser data boundary is documented in
+[conversation-ui-plan.md](conversation-ui-plan.md); conversation rendering and
+resilient interactions remain later checkpoints.
+
+## Historical verification checkpoints
+
+The dated entries below record the implementation at that time. Earlier statements
+about pending routes or checks are superseded by the later application/API evidence.
 
 Recorded on 2026-10-25: formatting, lint, strict type checking, and all 30 unit
 tests pass. The isolated integration suite passes all 46 checks, including the

@@ -1,11 +1,12 @@
 # Mentor
 
-A personal assistant built incrementally. This first milestone establishes the
-services and development workflow. An administrative command now creates the
-single owner account. Browser sign-in, database sessions, and logout are now
-implemented. Conversation persistence, context selection, and server-side AI
-configuration are implemented and tested at the backend boundary. The model
-adapter, conversation API/UI, notes, and memory are later slices.
+A personal assistant built incrementally. Owner provisioning, password recovery,
+browser sign-in, database sessions, and logout are implemented. The backend now
+provides one continuous conversation per owner, persistent turns and attempts,
+bounded context, an OpenAI Agents SDK/Responses adapter, and protected conversation
+HTTP endpoints with generated client types. The signed-in web screen is still a
+placeholder; the conversation UI and public-web investigation are the next slices.
+Notes, long-term memory, email access, and external actions remain future work.
 
 ## Prerequisites
 
@@ -26,18 +27,18 @@ pnpm dev
 ```
 
 Copy the environment example only on first setup; preserve an existing `.env`.
-The values in the example are for local development. No OpenAI key is needed.
+The values in the example are for local development. No OpenAI key is needed for
+bootstrap, authentication, history reading/clearing, or deterministic verification.
 
 AI configuration becomes ready automatically with a valid explicit model, server
-key, and limits. Missing or invalid settings keep execution unavailable and report
-only configuration key names. This checkpoint does not connect those settings to a live
-provider or expose a conversation UI. See [conversation configuration](docs/conversation-loop.md#ai-configuration-and-disabled-execution)
-for the limits and current implementation boundary. Preserve an existing `.env`;
-do not copy over it to pick up these optional example values.
+key, and limits. Missing or invalid settings keep execution unavailable while
+stored history remains readable and clearable. Authenticated status returns only
+readiness and safe settings, without credentials or configuration diagnostics.
+Preserve an existing `.env`; do not copy over it to pick up optional values.
 
 | Service           | Address                                   | Purpose                                    |
 | ----------------- | ----------------------------------------- | ------------------------------------------ |
-| Web               | http://127.0.0.1:3000                     | Minimal Next.js starting page              |
+| Web               | http://127.0.0.1:3000                     | Sign-in and signed-in placeholder          |
 | API               | http://127.0.0.1:3001/api/v1/health/live  | API liveness                               |
 | API readiness     | http://127.0.0.1:3001/api/v1/health/ready | Database connection and pgvector migration |
 | API documentation | http://127.0.0.1:3001/api/docs            | Development OpenAPI explorer               |
@@ -79,6 +80,54 @@ browser address consistent: mutation requests must match `APP_ORIGIN`, which
 defaults to `http://127.0.0.1:3000`. Restart `pnpm dev` after applying the new
 migration. See [sign-in and sessions](docs/sign-in.md) for the request flow.
 
+## Conversation API checkpoint
+
+The API exposes these authenticated endpoints under `/api/v1`:
+
+| Method | Path                                 | Purpose                                                 |
+| ------ | ------------------------------------ | ------------------------------------------------------- |
+| GET    | `/assistant/status`                  | Read execution readiness and safe settings              |
+| GET    | `/conversation`                      | Read the singleton transcript with versioned pagination |
+| POST   | `/conversation/turns`                | Submit text with a request UUID and history version     |
+| POST   | `/conversation/turns/{turnId}/retry` | Explicitly retry the latest unsuccessful turn           |
+| DELETE | `/conversation/history`              | Clear local history using its observed version          |
+
+Mutations require the existing session, exact `APP_ORIGIN`, and session-bound
+`X-CSRF-Token`. Responses use private/no-store caching. There are no conversation
+creation or selection endpoints. See the development OpenAPI explorer for the
+generated DTOs and [the conversation guide](docs/conversation-loop.md#protected-api-contract)
+for request bodies, pagination, and recovery errors.
+
+To configure execution, set `OPENAI_API_KEY` and an explicit account-available
+`OPENAI_CHAT_MODEL` in your existing server environment, then restart the API.
+There is no default model or enable flag. Once configuration is valid, an
+authenticated submit or retry can make paid requests to OpenAI. The current web
+screen has no chat composer; configuring the API does not add one.
+
+The request path is controller → application validation/admission → persisted
+turn/attempt → bounded context → Agents SDK → conditional database completion.
+PostgreSQL owns history; the SDK has no durable session or cross-turn provider
+conversation. Defaults are 8 KiB per message, 32 KiB for the initial transcript,
+2,048 output tokens per model call, a 60-second attempt deadline, and one active
+attempt per owner. The pinned SDK uses its default ten-iteration limit. These
+settings do not impose a cumulative token or daily spending cap.
+
+The adapter sets `store: false`, disables automatic retries and tracing/export,
+and omits sensitive SDK logging. This does not promise zero provider retention.
+Messages and selected recent context go to OpenAI; public-web search is currently
+unavailable. Before the future UI allows submission, it must explain cloud
+processing, limited context, and that permitted web search can send derived
+queries to that service. No persisted acknowledgement is required. Clearing local
+history cannot retract content already sent externally.
+
+Execution runs inside the original HTTP request. A lost response can be reconciled
+with history or the same request key; it must not cause a new automatic attempt.
+Process failure can leave a running attempt until its deadline is reconciled as
+interrupted. Retry starts fresh and is explicit. The worker does not resume runs.
+The [configuration and recovery guide](docs/conversation-loop.md) records these
+limits and the local verification evidence. Live OpenAI verification and the
+conversation browser walkthrough remain pending.
+
 ## Daily commands
 
 ```bash
@@ -107,7 +156,7 @@ apps/
   api/             NestJS HTTP entry point
   worker/          NestJS worker entry point and health listener
 packages/
-  backend/         Configuration, database adapter, migrations, health module
+  backend/         Identity/conversation use cases, ports, adapters, migrations
   api-client/      OpenAPI-generated types and typed fetch client
 scripts/           Isolated integration-test runner
 tests/             Unit and real-database integration checks

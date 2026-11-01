@@ -1,13 +1,16 @@
-import { createApiClient } from '@mentor/api-client';
+import {
+  apiClient as client,
+  csrfToken,
+  RequestError,
+  requestFailure,
+} from '../../lib/api-request';
 import { z } from 'zod';
 
-const client = createApiClient();
 const sessionSchema = z.object({
   owner: z.object({ id: z.uuid(), email: z.email() }),
   expiresAt: z.iso.datetime(),
   idleExpiresAt: z.iso.datetime(),
 });
-const csrfSchema = z.object({ token: z.string().regex(/^[a-f0-9]{64}$/) });
 export type Session = z.infer<typeof sessionSchema>;
 
 export class AuthError extends Error {
@@ -27,48 +30,51 @@ export class AuthError extends Error {
   }
 }
 
-function failure(response: Response): AuthError {
-  const seconds = Number(response.headers.get('Retry-After') ?? '0');
-  return new AuthError(response.status, Number.isFinite(seconds) ? seconds : 0);
-}
-
 export async function getSession(signal: AbortSignal): Promise<Session | null> {
-  const { data, response } = await client.GET('/api/v1/auth/session', {
-    signal,
-    cache: 'no-store',
-  });
-  if (response.status === 401) return null;
-  if (!response.ok) throw failure(response);
-  return sessionSchema.parse(data);
-}
-
-async function csrfToken(): Promise<string> {
-  const { data, response } = await client.GET('/api/v1/auth/csrf', {
-    cache: 'no-store',
-  });
-  if (!response.ok) throw failure(response);
-  return csrfSchema.parse(data).token;
+  try {
+    const { data, response } = await client.GET('/api/v1/auth/session', {
+      signal,
+      cache: 'no-store',
+    });
+    if (!response.ok) throw requestFailure(response);
+    return sessionSchema.parse(data);
+  } catch (cause) {
+    if (cause instanceof RequestError && cause.status === 401) return null;
+    throw cause;
+  }
 }
 
 export async function signIn(
   email: string,
   password: string,
+  signal: AbortSignal,
 ): Promise<Session> {
-  const token = await csrfToken();
-  const { data, response } = await client.POST('/api/v1/auth/login', {
-    body: { email, password },
-    params: { header: { 'X-CSRF-Token': token } },
-    cache: 'no-store',
-  });
-  if (!response.ok) throw failure(response);
-  return sessionSchema.parse(data);
+  try {
+    const token = await csrfToken(signal);
+    signal.throwIfAborted();
+    const { data, response } = await client.POST('/api/v1/auth/login', {
+      body: { email, password },
+      params: { header: { 'X-CSRF-Token': token } },
+      signal,
+      cache: 'no-store',
+    });
+    if (!response.ok) throw requestFailure(response);
+    return sessionSchema.parse(data);
+  } catch (cause) {
+    if (cause instanceof RequestError) {
+      throw new AuthError(cause.status, cause.retryAfterSeconds);
+    }
+    throw cause;
+  }
 }
 
-export async function signOut(): Promise<void> {
-  const token = await csrfToken();
+export async function signOut(signal: AbortSignal): Promise<void> {
+  const token = await csrfToken(signal);
+  signal.throwIfAborted();
   const { response } = await client.POST('/api/v1/auth/logout', {
     params: { header: { 'X-CSRF-Token': token } },
+    signal,
     cache: 'no-store',
   });
-  if (!response.ok && response.status !== 401) throw failure(response);
+  if (!response.ok) throw requestFailure(response);
 }

@@ -2,30 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AuthError, getSession, signOut } from './auth-api';
-import type { Session } from './auth-api';
+import { RequestError } from '../../lib/api-request';
+import { sessionKey, sessionStateFor } from './session-state';
 import { LoginForm } from './login-form';
-
-const sessionKey = ['session'] as const;
 
 export function AuthScreen() {
   const queryClient = useQueryClient();
+  const sessionState = sessionStateFor(queryClient);
   const session = useQuery({
     queryKey: sessionKey,
-    queryFn: ({ signal }) => getSession(signal),
+    queryFn: ({ signal }) => sessionState.read(signal),
     retry: false,
     staleTime: 0,
   });
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (session.data === null) {
-      queryClient.removeQueries({
-        predicate: (query) => query.queryKey[0] !== 'session',
-      });
-    }
-  }, [session.data, queryClient]);
 
   useEffect(() => {
     if (!session.data) return;
@@ -37,24 +28,14 @@ export function AuthScreen() {
     return () => clearTimeout(timeout);
   }, [session.data, queryClient]);
 
-  async function replaceSession(value: Session | null) {
-    await queryClient.cancelQueries();
-    queryClient.removeQueries({
-      predicate: (query) => query.queryKey[0] !== 'session',
-    });
-    queryClient.setQueryData(sessionKey, value);
-    setError('');
-  }
-
   async function logout() {
     setSigningOut(true);
     setError('');
     try {
-      await signOut();
-      await replaceSession(null);
+      await sessionState.signOut();
     } catch (cause) {
       setError(
-        cause instanceof AuthError
+        cause instanceof RequestError
           ? cause.message
           : 'Unable to sign out. Check your connection and try again.',
       );
@@ -105,7 +86,12 @@ export function AuthScreen() {
           </button>
         </>
       ) : (
-        <LoginForm onSignedIn={replaceSession} />
+        <LoginForm
+          onSignIn={async (email, password) => {
+            await sessionState.signIn(email, password);
+            setError('');
+          }}
+        />
       )}
     </main>
   );

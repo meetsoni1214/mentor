@@ -106,6 +106,24 @@ No model work occurs from GET requests. GET reconciliation can terminalize expir
 
 Replace the signed-in placeholder with `apps/web/src/features/conversation/`. Keep auth state handling and logout; generalize protected-request handling so 401 clears conversation queries and private drafts and cancels in-flight requests before returning to sign-in. Gate late responses by the current auth generation and persisted history version to prevent stale completions repopulating the UI after logout or history clearing.
 
+The browser conversation boundary separates browser-owned Zod contracts/types,
+assistant error decoding, stateless generated-client HTTP functions, request
+scope, and TanStack Query integration into `conversation-contracts.ts`,
+`conversation-errors.ts`, `conversation-api.ts`, `conversation-scope.ts`, and
+`conversation-queries.ts`. The request scope holds only version/cancellation state
+and reuses authentication's protected session scope from `auth/session-scope.ts`;
+it does not import the HTTP client or TanStack Query. The query adapter accepts
+that `SessionScope` contract directly; callers obtain it from `SessionState.scope()`.
+The query adapter owns keys/options and cache cleanup.
+Its keys include a local session generation; pagination keys also carry the
+server history version. When a head refetch discovers a newer version, preserve
+the query delivering that version and current-version pages while discarding
+obsolete history. History transitions remove only conversation mutations, leaving
+assistant status and unrelated feature state intact. Session loss still clears
+all private state. Neither boundary generates submission keys or automatically
+retries mutations. This separation is part of task 3.1; transcript/composer UI
+and resilient interaction wiring remain later checkpoints.
+
 Visual thesis: a calm writing workspace using the existing warm background, green accent, and readable typography. Content plan: open directly to the continuous transcript, with older-message pagination, composer, and expandable run/source detail; keep Clear history in privacy settings rather than the primary conversation flow. Interaction thesis: clear pending-to-result transitions and responsive navigation with reduced-motion support; avoid ornamental dashboards or fake tool activity.
 
 Use TanStack Query and generated API types, with runtime validation at frontend boundaries. A text draft stays in memory until admission is known; uncertain submissions keep their original key and reconcile through the same idempotent operation or restored history. Do not store private drafts or transcripts in browser local/session storage. Refresh restores accepted text from the backend; it does not promise recovery of an unsent in-memory draft. History pagination and privacy settings must retain keyboard focus, readable status announcements, and the composer within the mobile viewport. There is no thread sidebar, conversation picker, title, or New conversation button.
