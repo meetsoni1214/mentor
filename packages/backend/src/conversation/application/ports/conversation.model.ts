@@ -9,5 +9,6 @@ export interface ConversationModel {
     maxOutputTokens: number;
     maxToolCalls: number;
     signal: AbortSignal;
+    onTextDelta?: (delta: string) => void;
   }): Promise<RunOutcome>;
 }

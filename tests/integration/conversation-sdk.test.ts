@@ -20,6 +20,7 @@ import { owners } from '@mentor/backend/identity/schema';
 import { ConversationLoop } from '@mentor/backend/conversation';
 import type {
   ConversationModel,
+  ConversationProgress,
   RunOutcome,
   Submission,
 } from '@mentor/backend/conversation';
@@ -33,6 +34,7 @@ import { createConversationLoop } from '../../apps/api/src/conversation/infrastr
 import {
   createResponsesStub,
   response,
+  startResponseStream,
   toolResponse,
 } from '../fixtures/responses-stub.js';
 
@@ -141,6 +143,86 @@ afterAll(async () => {
 });
 
 describe('composed conversation use case, real SDK, and PostgreSQL', () => {
+  it('streams real SDK text before completion, saves usage, and rebuilds follow-up context from the final answer', async () => {
+    const loop = compose();
+    const { ownerId: owner, ...command } = submission();
+    let stream!: ReturnType<typeof startResponseStream>;
+    stub.replies.push((res) => {
+      stream = startResponseStream(res);
+      stream.delta('Growing ');
+    });
+    const progress: ConversationProgress[] = [];
+    const running = loop.submit(owner, command, (event) =>
+      progress.push(event),
+    );
+    try {
+      await vi.waitFor(() =>
+        expect(progress.some((event) => event.type === 'text_delta')).toBe(
+          true,
+        ),
+      );
+      expect(progress[0]).toMatchObject({
+        type: 'accepted',
+        admission: { execute: true, attempt: { state: 'running' } },
+      });
+      expect((await loop.history(owner)).turns[0]?.attempts[0]).toMatchObject({
+        state: 'running',
+        answer: null,
+      });
+      const replay = await loop.submit(owner, command, () => {});
+      expect(replay.execute).toBe(false);
+      expect(stub.requests).toHaveLength(1);
+      stream.delta('gardens 🌱');
+    } finally {
+      stream?.finish();
+    }
+    const saved = await running;
+    expect(saved.attempt).toMatchObject({
+      state: 'completed',
+      answer: 'Growing gardens 🌱',
+      inputTokens: 11,
+      outputTokens: 7,
+    });
+    expect((await compose().history(owner)).turns[0]?.attempts[0]).toEqual(
+      saved.attempt,
+    );
+    stub.enqueue(response('Follow-up'));
+    await submitTurn(compose(), submission({ text: 'Continue' }));
+    expect(JSON.stringify(stub.requests[1]!.body.input)).toContain(
+      'Growing gardens 🌱',
+    );
+  });
+
+  it('saves unsuccessful streaming usage and excludes provisional text from future context', async () => {
+    const loop = compose();
+    const { ownerId: owner, ...command } = submission();
+    stub.replies.push((res) => {
+      const stream = startResponseStream(res);
+      stream.delta('PRIVATE partial answer');
+      stream.finish('incomplete');
+    });
+    const progress: ConversationProgress[] = [];
+    const result = await loop.submit(owner, command, (event) =>
+      progress.push(event),
+    );
+    expect(progress.some((event) => event.type === 'text_delta')).toBe(true);
+    expect(result.attempt).toMatchObject({
+      state: 'failed',
+      errorCode: 'INCOMPLETE',
+      answer: null,
+      inputTokens: 11,
+      outputTokens: 7,
+    });
+    expect((await compose().history(owner)).turns[0]?.attempts[0]).toEqual(
+      result.attempt,
+    );
+    stub.enqueue(response('New answer'));
+    await submitTurn(compose(), submission({ text: 'A new question' }));
+    expect(JSON.stringify(stub.requests[1]!.body.input)).not.toContain(
+      'PRIVATE',
+    );
+  });
+
   it('starts no work at composition and rebuilds follow-up context from persisted answers', async () => {
     const loop = compose();
     expect(stub.requests).toHaveLength(0);

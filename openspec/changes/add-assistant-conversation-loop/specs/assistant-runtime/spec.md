@@ -154,3 +154,32 @@ Ordinary adapter verification SHALL exercise the real Agents SDK and Responses p
 
 - **WHEN** the adapter contract suite runs with synthetic inputs
 - **THEN** model requests reach only the local stub, storage and retry policies are asserted on the actual requests, and unexpected model or telemetry traffic fails verification
+
+### Requirement: Provisional backend response streaming
+
+Authenticated streaming submission SHALL emit committed admission, provisional text deltas, and a persisted result through application-owned SSE events. JSON submission SHALL remain compatible. Deltas SHALL contain only answer text and attempt/version identity, never raw SDK events or reasoning. Partial text SHALL remain ephemeral; only successful conditional completion SHALL enter durable answer history.
+
+#### Scenario: Text arrives before completion
+
+- **WHEN** the SDK emits answer text while an admitted attempt is running
+- **THEN** the stream delivers text deltas before final persistence, and emits the result only after the attempt is conditionally saved
+
+#### Scenario: Streaming request is replayed
+
+- **WHEN** the same submission key and payload are posted again
+- **THEN** the stream reports the existing persisted snapshot and closes without attaching to or starting another runner
+
+#### Scenario: Reader disconnects or cannot keep up
+
+- **WHEN** a stream reader disconnects or exceeds bounded output buffering
+- **THEN** progress delivery detaches while the original request continues bounded execution and persistence without automatic replay
+
+#### Scenario: Failure after provisional text
+
+- **WHEN** the provider fails, the deadline expires, or history is cleared after deltas were emitted
+- **THEN** no partial text becomes a completed answer, late deltas stop, and connected readers receive a persisted unsuccessful result or redacted stream error
+
+#### Scenario: Rejected streaming admission
+
+- **WHEN** session, Origin, CSRF, input, version, or concurrency checks reject streaming submission
+- **THEN** the normal JSON HTTP error is returned before SSE headers and no additional runner starts

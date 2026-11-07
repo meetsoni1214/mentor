@@ -10,7 +10,7 @@ The existing broad change puts library capture/retrieval first and excludes exte
 
 **Goals:** provide an understandable request-to-context-to-agent-to-result path, use the SDK runner for model/tool coordination, enforce permissions outside the model, persist recoverable state, and demonstrate a real read-only investigation in a conversation.
 
-**Non-Goals:** durable unattended execution, automatic restart/resume of paid calls, custom tool frameworks, streaming partial answers, hidden reasoning storage, or a general integration/approval platform. Background observation gets a separate durable worker design when email is added.
+**Non-Goals:** durable unattended execution, automatic restart/resume of paid calls, custom tool frameworks, durable token replay, hidden reasoning storage, or a general integration/approval platform. Background observation gets a separate durable worker design when email is added.
 
 ## Decisions
 
@@ -62,7 +62,13 @@ Refresh does not resubmit or cancel. A local API process continues an admitted r
 
 Pass the same attempt abort signal through the runner to every underlying request. Use the SDK cancellation mechanism and retain application deadline and conditional-completion checks. Do not add custom request hooks or budget counters. Explicit retry starts a fresh SDK run for the latest retryable turn; it does not resume an uncertain SDK state or silently repeat a paid request. SDK resumable approvals and durable sessions are later work, not a guarantee supplied by installing the SDK.
 
-Polling the conversation while an attempt is running is enough for this checkpoint. No SSE/WebSocket or partial answer stream is needed. The UI says Working until an observed terminal result exists; it does not invent a sequence of investigation steps. The worker remains unchanged.
+The owner subsequently approved streaming in three review slices. Slice 1 adds backend streaming; browser rendering and recovery acceptance remain later slices. Keep the JSON submission route compatible and add POST `/api/v1/conversation/turns/stream`, consumed through fetch with the same JSON command, session, Origin, and CSRF protections. Do not add a GET that starts model work.
+
+An application-owned synchronous progress observer receives committed admission and provisional text deltas; SDK and HTTP types stay in adapters. The controller decodes the HTTP request and delegates streaming to a dedicated HTTP-adapter ConversationStreamService. That service owns event mapping through shared presenters, post-header errors, and response cleanup; ConversationStream owns framing/heartbeats/buffering. Ordinary JSON routes still call the use case directly. The model adapter opts into SDK streaming only when text progress is requested. HTTP emits SSE `accepted`, `text_delta`, and `result` events with JSON data. Admission and result events carry the normal turn/attempt snapshot; accepted also carries `replayed`. Text deltas carry history version, turn ID, attempt ID, and text. Result is emitted only after conditional persistence, or is the current persisted snapshot on replay. A running replay closes without attaching to or restarting the original runner; clients recover through history reads. No token replay log or partial-answer database writes are introduced.
+
+Validation/admission failures retain normal JSON HTTP errors before headers. Once admitted, infrastructure/stale-history failures use a redacted SSE `error` event and never a successful result. Provider failure/interruption is represented by the persisted attempt in `result`. EOF alone never proves success. Heartbeat comments keep idle streams active; no-cache/proxy-buffering headers and bounded response buffering protect delivery. A disconnected or slow reader detaches from progress without cancelling model execution or blocking persistence. The original request handler still awaits bounded execution. Ignore observer failures and late deltas after deadline, clearing, or execution settlement.
+
+Slice 2 will render provisional text in memory, separately from persisted query history, and separate admission confirmation from streaming lifetime. Slice 3 will verify recovery, stale sessions/history, and actual Next.js proxy delivery. The first version uses history-based recovery after reload/disconnect; reconnecting to an active token stream is outside this scope. The worker remains unchanged.
 
 ### 4. Application-owned history and standard SDK behavior
 

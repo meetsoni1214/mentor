@@ -37,6 +37,20 @@ export interface Admission {
   attempt: RunAttempt;
 }
 
+export type ConversationProgress =
+  | { type: 'accepted'; admission: Admission }
+  | {
+      type: 'text_delta';
+      historyVersion: number;
+      turnId: string;
+      attemptId: string;
+      delta: string;
+    };
+
+export type ConversationProgressObserver = (
+  progress: ConversationProgress,
+) => void;
+
 export interface HistoryCursor {
   historyVersion: number;
   beforeSequence: number;

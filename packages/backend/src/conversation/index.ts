@@ -5,6 +5,8 @@ export type {
   Admission,
   AttemptReference,
   ConversationHistory,
+  ConversationProgress,
+  ConversationProgressObserver,
   HistoryCursor,
   ModelMessage,
   RetryRequest,

@@ -9,6 +9,10 @@ read-only conversation workspace with history pagination and run details. Reliab
 sending and public-web investigation are the next slices.
 Notes, long-term memory, email access, and external actions remain future work.
 
+The backend also exposes opt-in SSE submission with provisional text and saved
+results alongside the compatible JSON route. Browser streaming remains a later
+slice. See the [backend streaming contract](docs/conversation-loop.md#backend-streaming-slice-1).
+
 Browser branding, design tokens, and reusable controls follow the
 [design system guide](docs/design-system.md). Name, logo, colors, and typography
 are shared across sign-in and the conversation workspace.

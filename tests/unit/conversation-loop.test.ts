@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConversationLoop } from '../../packages/backend/src/conversation/application/conversation-loop.js';
 import type {
   Admission,
+  ConversationProgress,
   RunLimits,
   Submission,
 } from '../../packages/backend/src/conversation/application/conversation.contracts.js';
@@ -104,6 +105,136 @@ afterEach(() => {
 });
 
 describe('bounded conversation execution', () => {
+  it('acknowledges committed admission, delivers provisional text, and awaits persistence before returning', async () => {
+    const { input, loop, model, repository, admission } = setup();
+    const { ownerId, ...command } = input;
+    const events: ConversationProgress[] = [];
+    let finish!: () => void;
+    const stored = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    model.complete.mockImplementation(async ({ onTextDelta }) => {
+      expect(repository.submit).toHaveBeenCalled();
+      expect(events).toEqual([{ type: 'accepted', admission }]);
+      onTextDelta?.('Provisional text');
+      return output;
+    });
+    const saved = {
+      ...admission.attempt,
+      state: 'completed' as const,
+      answer: output.answer,
+      finishedAt: new Date(),
+      errorCode: null,
+    };
+    repository.finish.mockImplementation(async () => {
+      await stored;
+      return saved;
+    });
+    let settled = false;
+    const run = loop
+      .submit(ownerId, command, (event) => events.push(event))
+      .then((result) => {
+        settled = true;
+        return result;
+      });
+    try {
+      await vi.waitFor(() =>
+        expect(repository.finish).toHaveBeenCalledTimes(1),
+      );
+      expect(settled).toBe(false);
+      expect(events[1]).toEqual({
+        type: 'text_delta',
+        historyVersion: 0,
+        turnId: admission.turn.id,
+        attemptId: admission.attempt.id,
+        delta: 'Provisional text',
+      });
+    } finally {
+      finish();
+    }
+    expect((await run).attempt).toEqual(saved);
+  });
+
+  it('reports replayed admission without requesting text or starting another model', async () => {
+    const { input, loop, repository, model, admission } = setup();
+    const replay = { ...admission, execute: false };
+    repository.submit.mockResolvedValue(replay);
+    const { ownerId, ...command } = input;
+    const observer = vi.fn();
+    expect(await loop.submit(ownerId, command, observer)).toEqual(replay);
+    expect(observer).toHaveBeenCalledExactlyOnceWith({
+      type: 'accepted',
+      admission: replay,
+    });
+    expect(model.complete).not.toHaveBeenCalled();
+  });
+
+  it('isolates progress observer errors from admission and persistence', async () => {
+    const { input, loop, model, repository } = setup();
+    const { ownerId, ...command } = input;
+    model.complete.mockImplementation(async ({ onTextDelta }) => {
+      onTextDelta?.('Text');
+      return output;
+    });
+    expect(
+      (
+        await loop.submit(ownerId, command, () => {
+          throw new Error('reader gone');
+        })
+      ).attempt.state,
+    ).toBe('completed');
+    expect(repository.finish).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['deadline', 'clear', 'settled'] as const)(
+    'suppresses late text after %s even if the model ignores cancellation',
+    async (ending) => {
+      vi.useFakeTimers();
+      const { input, loop, model, repository, admission } = setup();
+      const { ownerId, ...command } = input;
+      let emit!: (delta: string) => void;
+      let resolve!: (outcome: RunOutcome) => void;
+      model.complete.mockImplementation(({ onTextDelta }) => {
+        emit = onTextDelta!;
+        emit('Before');
+        return new Promise<RunOutcome>((finish) => {
+          resolve = finish;
+        });
+      });
+      const events: ConversationProgress[] = [];
+      const run = loop.submit(ownerId, command, (event) => events.push(event));
+      await vi.advanceTimersByTimeAsync(0);
+      if (ending === 'clear') {
+        repository.finish.mockResolvedValue(null);
+        const rejection = expect(run).rejects.toMatchObject({
+          code: 'STALE_HISTORY',
+        });
+        await loop.clear(ownerId, { historyVersion: 0 });
+        await rejection;
+      } else if (ending === 'deadline') {
+        await vi.advanceTimersByTimeAsync(1000);
+        await run;
+      } else {
+        resolve(output);
+        await run;
+      }
+      emit('After');
+      resolve(output);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(events.filter((event) => event.type === 'text_delta')).toEqual([
+        {
+          type: 'text_delta',
+          historyVersion: 0,
+          turnId: admission.turn.id,
+          attemptId: admission.attempt.id,
+          delta: 'Before',
+        },
+      ]);
+      expect(repository.finish).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
   it('keeps history and clearing available when execution is disabled', async () => {
     const { input, repository } = setup();
     const loop = new ConversationLoop(repository, { enabled: false });

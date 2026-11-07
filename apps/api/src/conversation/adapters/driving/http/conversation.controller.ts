@@ -1,9 +1,5 @@
+import type { ServerResponse } from 'node:http';
 import { ConversationLoop } from '@mentor/backend/conversation';
-import type {
-  Admission,
-  ConversationTurn,
-  RunAttempt,
-} from '@mentor/backend/conversation';
 import {
   Body,
   Controller,
@@ -15,6 +11,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UnauthorizedException,
 } from '@nestjs/common';
 import {
@@ -35,56 +32,26 @@ import {
   AssistantStatusDto,
   ConversationErrorDto,
   ConversationHistoryDto,
+  ConversationAcceptedEventDto,
+  ConversationTextDeltaEventDto,
+  ConversationResultEventDto,
+  ConversationStreamErrorEventDto,
   HistoryVersionDto,
   RetryTurnDto,
   SubmitTurnDto,
   TurnResultDto,
 } from './conversation.dto.js';
-import type { ConversationTurnDto, RunAttemptDto } from './conversation.dto.js';
 import { parseHistoryQuery, requireJson } from './conversation.validation.js';
+import { ConversationStreamService } from './conversation-stream.service.js';
+import {
+  describeAttempt,
+  describeResult,
+  describeTurn,
+} from './conversation.presenter.js';
 
 function ownerId(request: AuthenticatedRequest): string {
   if (!request.authSession) throw new UnauthorizedException();
   return request.authSession.owner.id;
-}
-
-function describeTurn(turn: ConversationTurn): ConversationTurnDto {
-  return {
-    id: turn.id,
-    requestId: turn.requestId,
-    sequence: turn.sequence,
-    text: turn.text,
-    createdAt: turn.createdAt.toISOString(),
-  };
-}
-
-function describeAttempt(attempt: RunAttempt): RunAttemptDto {
-  return {
-    id: attempt.id,
-    turnId: attempt.turnId,
-    requestId: attempt.requestId,
-    attemptNumber: attempt.attemptNumber,
-    model: attempt.model,
-    state: attempt.state,
-    startedAt: attempt.startedAt.toISOString(),
-    deadlineAt: attempt.deadlineAt.toISOString(),
-    finishedAt: attempt.finishedAt?.toISOString() ?? null,
-    answer: attempt.answer,
-    errorCode: attempt.errorCode,
-    sources: attempt.sources.map(({ title, url }) => ({ title, url })),
-    activity: attempt.activity.map(({ type, status }) => ({ type, status })),
-    inputTokens: attempt.inputTokens,
-    outputTokens: attempt.outputTokens,
-    contextLimited: attempt.contextLimited,
-  };
-}
-
-function describeResult(result: Admission): TurnResultDto {
-  return {
-    historyVersion: result.historyVersion,
-    turn: describeTurn(result.turn),
-    attempt: describeAttempt(result.attempt),
-  };
 }
 
 @ApiTags('assistant')
@@ -108,7 +75,14 @@ export class AssistantController {
 
 @ApiTags('conversation')
 @ApiCookieAuth()
-@ApiExtraModels(ApiErrorDto, ConversationErrorDto)
+@ApiExtraModels(
+  ApiErrorDto,
+  ConversationErrorDto,
+  ConversationAcceptedEventDto,
+  ConversationTextDeltaEventDto,
+  ConversationResultEventDto,
+  ConversationStreamErrorEventDto,
+)
 @ApiResponse({
   status: 400,
   schema: {
@@ -133,6 +107,8 @@ export class ConversationController {
   constructor(
     @Inject(ConversationLoop)
     private readonly conversation: ConversationLoop,
+    @Inject(ConversationStreamService)
+    private readonly streaming: ConversationStreamService,
   ) {}
 
   @Get()
@@ -194,6 +170,44 @@ export class ConversationController {
     return describeResult(
       await this.conversation.submit(ownerId(request), body),
     );
+  }
+
+  @Post('turns/stream')
+  @HttpCode(200)
+  @ApiBody({ type: SubmitTurnDto })
+  @ApiHeader({ name: 'Origin', required: true })
+  @ApiHeader({ name: 'X-CSRF-Token', required: true })
+  @ApiOkResponse({
+    description:
+      'SSE events with JSON data: accepted, text_delta, result, or error. ' +
+      'Result is saved state (possibly running on replay); EOF is not success. ' +
+      'Replays never attach to or restart model work. Recover through history reads.',
+    content: {
+      'text/event-stream': {
+        schema: {
+          type: 'string',
+          ...{
+            'x-event-schemas': {
+              accepted: { $ref: getSchemaPath(ConversationAcceptedEventDto) },
+              text_delta: {
+                $ref: getSchemaPath(ConversationTextDeltaEventDto),
+              },
+              result: { $ref: getSchemaPath(ConversationResultEventDto) },
+              error: { $ref: getSchemaPath(ConversationStreamErrorEventDto) },
+            },
+          },
+        },
+      },
+    },
+  })
+  async submitStream(
+    @Req() request: AuthenticatedRequest,
+    @Body() body: unknown,
+    @Res() response: ServerResponse,
+  ): Promise<void> {
+    requireJson(request);
+    const owner = ownerId(request);
+    return this.streaming.submit(owner, body, response);
   }
 
   @Post('turns/:turnId/retry')

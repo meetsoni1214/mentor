@@ -130,6 +130,45 @@ export class TurnResultDto extends HistoryVersionDto {
   @ApiProperty({ type: RunAttemptDto }) attempt!: RunAttemptDto;
 }
 
+export class ConversationAcceptedEventDto extends TurnResultDto {
+  @ApiProperty({ enum: ['accepted'] }) type!: 'accepted';
+  @ApiProperty({
+    description:
+      'A replay reports saved state without attaching to a live run.',
+  })
+  replayed!: boolean;
+}
+
+export class ConversationAttemptEventDto extends HistoryVersionDto {
+  @ApiProperty({ format: 'uuid' }) turnId!: string;
+  @ApiProperty({ format: 'uuid' }) attemptId!: string;
+}
+
+export class ConversationTextDeltaEventDto extends ConversationAttemptEventDto {
+  @ApiProperty({ enum: ['text_delta'] }) type!: 'text_delta';
+  @ApiProperty({
+    description: 'Provisional answer text; never saved as context.',
+  })
+  delta!: string;
+}
+
+export class ConversationResultEventDto extends TurnResultDto {
+  @ApiProperty({ enum: ['result'] }) type!: 'result';
+}
+
+export class ConversationStreamErrorEventDto extends ConversationAttemptEventDto {
+  @ApiProperty({ enum: ['error'] }) type!: 'error';
+  @ApiProperty({ enum: ['STALE_HISTORY', 'INTERNAL_ERROR'] }) code!:
+    'STALE_HISTORY' | 'INTERNAL_ERROR';
+  @ApiProperty() message!: string;
+}
+
+export type ConversationStreamEventDto =
+  | ConversationAcceptedEventDto
+  | ConversationTextDeltaEventDto
+  | ConversationResultEventDto
+  | ConversationStreamErrorEventDto;
+
 export class ConversationErrorDto {
   @ApiProperty() statusCode!: number;
   @ApiProperty({

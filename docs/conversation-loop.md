@@ -728,3 +728,96 @@ malformed commands, supplied owner selectors, and invalid numeric history option
 before repository/model work. After this refactor, `pnpm check` passes all 198
 unit/contract tests and the production build, and `pnpm test:integration` passes
 all 87 checks. Regeneration leaves the HTTP contract unchanged.
+
+## Backend streaming slice 1
+
+Task 2.6 adds `POST /api/v1/conversation/turns/stream`. Send the same JSON
+`{ text, requestId, historyVersion }` command as the existing submission route,
+with the signed-in session cookie, configured Origin, and session-bound
+`X-CSRF-Token`. Consume the response body incrementally through fetch. The
+existing JSON route and browser remain compatible; UI streaming is slice 2.
+
+The controller checks the request media type, obtains the session owner, and
+delegates to `ConversationStreamService` in the HTTP adapter. That service calls
+`ConversationLoop.submit`, translates progress/results into HTTP events through
+shared presenters, maps post-header failures, and closes the writer in `finally`.
+`ConversationStream` handles SSE framing, headers, heartbeats, and bounded socket
+buffering. Admission, deadlines, context selection, and persistence rules remain
+in `ConversationLoop`; the streaming service adds no application policy.
+
+The backend commits admission before starting the SSE response. Authentication,
+CSRF, input, disabled execution, stale version, busy, and idempotency-conflict
+errors use the normal JSON HTTP status/envelope before SSE headers. Successful
+admission returns `text/event-stream; charset=utf-8`,
+`Cache-Control: private, no-store, no-transform`, and `X-Accel-Buffering: no`.
+Comment heartbeats are emitted every 15 seconds during idle periods.
+
+Each frame has an event name and one JSON data line with a matching `type`:
+
+| Event        | JSON data                                                          | Meaning                                                                 |
+| ------------ | ------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `accepted`   | `type`, `replayed`, `historyVersion`, `turn`, `attempt`            | Admission is committed; a replay describes existing state               |
+| `text_delta` | `type`, `historyVersion`, `turnId`, `attemptId`, `delta`           | Provisional answer text for this attempt/version                        |
+| `result`     | `type`, `historyVersion`, `turn`, `attempt`                        | Current saved result, with normal sources/activity/context/usage fields |
+| `error`      | `type`, `historyVersion`, `turnId`, `attemptId`, `code`, `message` | Saved completion could not be confirmed; reconcile history              |
+
+OpenAPI documents the event data DTOs in `components.schemas` and maps the event
+names in the response schema's `x-event-schemas` extension. Regenerate these
+contracts with `pnpm build:services && pnpm api:generate`; do not hand-edit them.
+JSON encoding preserves multiline and Unicode text without inserting extra SSE
+frames. Clients must decode UTF-8 and SSE frames across arbitrary HTTP chunks.
+
+`ConversationLoop.submit` accepts an optional synchronous progress observer.
+It emits committed admission and version/attempt-scoped text progress without
+HTTP or SDK dependencies. `ConversationModel.complete` accepts an optional
+`onTextDelta`; the adapter opts into the pinned SDK's streaming runner only when
+that callback is present, forwards answer-text deltas, consumes the entire run,
+and maps the final SDK output/usage/errors as before. SDK events, raw errors,
+and hidden reasoning do not cross the application boundary.
+
+Text deltas are temporary display data. No partial answer is written to
+PostgreSQL or included in future context. A `result` for fresh work follows the
+conditional database completion and can represent completed, failed, or
+interrupted work. A replay emits `accepted` with `replayed: true`, then `result`
+with the current persisted state, which may still be running, and closes. It
+does not subscribe to the original stream, replay missed deltas, or start another
+SDK runner. A stream close alone is never proof of completion.
+
+Provider failure after text produces a saved unsuccessful result with no answer;
+available SDK usage remains persisted. Failures after headers that prevent
+confirmed persistence emit only a fixed `INTERNAL_ERROR` or `STALE_HISTORY`
+stream error. Never treat previously received text as a completed answer in
+those cases. Session/history guards and provisional rendering in the browser
+remain slice 2; complete recovery acceptance is slice 3.
+
+The original request handler awaits execution even if its reader disconnects.
+Reader failures and observer exceptions cannot cancel or replace the run. A
+64 KiB bound on queued response bytes detaches slow readers; it does not impose
+an answer-size or model budget limit. Detached clients recover through saved
+history. The application deadline and history-clear abort still reach the SDK;
+late deltas from settled/cancelled local runs are suppressed. Across API
+processes, conditional persistence protects cleared history; version tags allow
+clients to discard stale delivery when they observe a newer version. This adds
+no durable worker, shared stream registry, reconnect cursor, or token replay.
+API crashes still rely on persisted deadline reconciliation.
+
+Verification uses the actual pinned SDK and official client against a localhost
+Responses SSE stub, injected model fakes at the real authenticated HTTP boundary,
+and disposable PostgreSQL. It covers text arriving before completion, saved
+final answer/usage, failure after deltas, replay without another runner, JSON
+admission errors, redacted post-header errors, disconnect continuation, local
+clear/deadline suppression, heartbeat cleanup, and bounded reader buffering.
+No live provider calls, development-data operations, or migration are required.
+Delivery through the actual Next.js proxy and smooth UI rendering remain later
+acceptance checks; headers alone do not establish end-to-end proxy behavior.
+
+Verified locally on 2026-11-01: `pnpm check` passes formatting, architecture
+lint, strict types, all 285 unit/contract tests, contract generation, and the
+production build. `pnpm test:integration` passes all 95 checks and removes its
+disposable database container/network. Localhost/Docker checks used the permitted
+execution path. Generated event references/discriminators were checked; all
+existing API paths and DTOs are semantically unchanged. Strict OpenSpec validation
+passes. No live OpenAI call, existing `.env` edit, database migration, or
+development-data operation occurred. Task 2.6 is complete; browser streaming and
+end-to-end recovery/proxy acceptance remain open. Stop here for review; commit
+when requested.

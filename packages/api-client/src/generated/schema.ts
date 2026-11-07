@@ -116,6 +116,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversation/turns/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ConversationController_submitStream"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/conversation/turns/{turnId}/retry": {
         parameters: {
             query?: never;
@@ -230,6 +246,16 @@ export interface components {
             code: "EXECUTION_UNAVAILABLE" | "NOT_FOUND" | "INVALID_INPUT" | "STALE_HISTORY" | "IDEMPOTENCY_CONFLICT" | "BUSY" | "NOT_RETRYABLE";
             message: string;
         };
+        ConversationTurnDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            requestId: string;
+            sequence: number;
+            text: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
         SourceDto: {
             title: string;
             /** Format: uri */
@@ -267,6 +293,45 @@ export interface components {
             outputTokens: number | null;
             contextLimited: boolean;
         };
+        ConversationAcceptedEventDto: {
+            historyVersion: number;
+            turn: components["schemas"]["ConversationTurnDto"];
+            attempt: components["schemas"]["RunAttemptDto"];
+            /** @enum {string} */
+            type: "accepted";
+            /** @description A replay reports saved state without attaching to a live run. */
+            replayed: boolean;
+        };
+        ConversationTextDeltaEventDto: {
+            historyVersion: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** @enum {string} */
+            type: "text_delta";
+            /** @description Provisional answer text; never saved as context. */
+            delta: string;
+        };
+        ConversationResultEventDto: {
+            historyVersion: number;
+            turn: components["schemas"]["ConversationTurnDto"];
+            attempt: components["schemas"]["RunAttemptDto"];
+            /** @enum {string} */
+            type: "result";
+        };
+        ConversationStreamErrorEventDto: {
+            historyVersion: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** @enum {string} */
+            type: "error";
+            /** @enum {string} */
+            code: "STALE_HISTORY" | "INTERNAL_ERROR";
+            message: string;
+        };
         HistoryTurnDto: {
             /** Format: uuid */
             id: string;
@@ -293,16 +358,6 @@ export interface components {
             requestId: string;
             /** @description Nonblank text, bounded by the configured UTF-8 message limit. */
             text: string;
-        };
-        ConversationTurnDto: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            requestId: string;
-            sequence: number;
-            text: string;
-            /** Format: date-time */
-            createdAt: string;
         };
         TurnResultDto: {
             historyVersion: number;
@@ -679,6 +734,106 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TurnResultDto"];
+                };
+            };
+            /** @description INVALID_INPUT for conversation validation; BAD_REQUEST for malformed JSON. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationErrorDto"] | components["schemas"]["ApiErrorDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationErrorDto"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationErrorDto"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationErrorDto"];
+                };
+            };
+        };
+    };
+    ConversationController_submitStream: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": string;
+                Origin: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitTurnDto"];
+            };
+        };
+        responses: {
+            /** @description SSE events with JSON data: accepted, text_delta, result, or error. Result is saved state (possibly running on replay); EOF is not success. Replays never attach to or restart model work. Recover through history reads. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             /** @description INVALID_INPUT for conversation validation; BAD_REQUEST for malformed JSON. */

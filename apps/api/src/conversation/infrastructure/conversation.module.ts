@@ -11,6 +11,8 @@ import {
   ConversationController,
 } from '../adapters/driving/http/conversation.controller.js';
 
+import { ConversationStreamService } from '../adapters/driving/http/conversation-stream.service.js';
+
 // Transport overrides are trusted composition inputs for local contract tests,
 // never environment settings or request parameters.
 export function createConversationLoop(
@@ -34,6 +36,7 @@ export function createConversationLoop(
   imports: [DatabaseModule],
   controllers: [AssistantController, ConversationController],
   providers: [
+    ConversationStreamService,
     {
       provide: ConversationLoop,
       inject: [DatabaseService],

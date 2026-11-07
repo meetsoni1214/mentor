@@ -82,19 +82,37 @@ export async function executeSDKConversation(
       tracingDisabled: true,
       traceIncludeSensitiveData: false,
     });
-    const result = await runner.run(
-      agent,
-      input.messages.map<AgentInputItem>(({ role, text }) =>
-        role === 'user'
-          ? { role, content: text }
-          : {
-              role,
-              status: 'completed',
-              content: [{ type: 'output_text', text }],
-            },
-      ),
-      { signal: input.signal, context },
+    const messages = input.messages.map<AgentInputItem>(({ role, text }) =>
+      role === 'user'
+        ? { role, content: text }
+        : {
+            role,
+            status: 'completed',
+            content: [{ type: 'output_text', text }],
+          },
     );
+    const options = { signal: input.signal, context };
+    const result = input.onTextDelta
+      ? await runner.run(agent, messages, { ...options, stream: true })
+      : await runner.run(agent, messages, options);
+    if ('completed' in result) {
+      // Consume every SDK event, even after the HTTP reader has detached. The
+      // final output and aggregate usage still belong to this admitted attempt.
+      for await (const event of result) {
+        input.signal.throwIfAborted();
+        if (
+          event.type === 'raw_model_stream_event' &&
+          event.data.type === 'output_text_delta'
+        ) {
+          try {
+            input.onTextDelta?.(event.data.delta);
+          } catch {
+            // Progress delivery is independent of the final model outcome.
+          }
+        }
+      }
+      await result.completed;
+    }
     usage = sdkUsage(result.runContext.usage);
     input.signal.throwIfAborted();
     if (typeof result.finalOutput !== 'string' || !result.finalOutput.trim())

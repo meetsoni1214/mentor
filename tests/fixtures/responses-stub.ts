@@ -53,6 +53,46 @@ export function toolResponse(
 
 type Reply = (res: ServerResponse) => void;
 
+export function startResponseStream(res: ServerResponse) {
+  let sequence = 0;
+  let answer = '';
+  const event = (value: Record<string, unknown>) => {
+    res.write(
+      `data: ${JSON.stringify({ sequence_number: sequence++, ...value })}\n\n`,
+    );
+  };
+  res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+  event({
+    type: 'response.created',
+    response: { ...response(''), status: 'in_progress', output: [] },
+  });
+  event({
+    type: 'response.output_item.added',
+    output_index: 0,
+    item: { ...response('').output[0], status: 'in_progress', content: [] },
+  });
+  return {
+    event,
+    delta(text: string) {
+      answer += text;
+      event({
+        type: 'response.output_text.delta',
+        item_id: 'msg_stub',
+        output_index: 0,
+        content_index: 0,
+        delta: text,
+      });
+    },
+    finish(status = 'completed') {
+      event({
+        type: `response.${status}`,
+        response: { ...response(answer), status },
+      });
+      res.end();
+    },
+  };
+}
+
 export async function createResponsesStub() {
   const requests: {
     path: string;

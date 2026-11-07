@@ -606,6 +606,170 @@
         ]
       }
     },
+    "/api/v1/conversation/turns/stream": {
+      "post": {
+        "operationId": "ConversationController_submitStream",
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitTurnDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSE events with JSON data: accepted, text_delta, result, or error. Result is saved state (possibly running on replay); EOF is not success. Replays never attach to or restart model work. Recover through history reads.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "x-event-schemas": {
+                    "accepted": {
+                      "$ref": "#/components/schemas/ConversationAcceptedEventDto"
+                    },
+                    "text_delta": {
+                      "$ref": "#/components/schemas/ConversationTextDeltaEventDto"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ConversationResultEventDto"
+                    },
+                    "error": {
+                      "$ref": "#/components/schemas/ConversationStreamErrorEventDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_INPUT for conversation validation; BAD_REQUEST for malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConversationErrorDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiErrorDto"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationErrorDto"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorDto"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "conversation"
+        ]
+      }
+    },
     "/api/v1/conversation/turns/{turnId}/retry": {
       "post": {
         "operationId": "ConversationController_retry",
@@ -1186,6 +1350,37 @@
           "message"
         ]
       },
+      "ConversationTurnDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "text": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "requestId",
+          "sequence",
+          "text",
+          "createdAt"
+        ]
+      },
       "SourceDto": {
         "type": "object",
         "properties": {
@@ -1330,6 +1525,144 @@
           "contextLimited"
         ]
       },
+      "ConversationAcceptedEventDto": {
+        "type": "object",
+        "properties": {
+          "historyVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "turn": {
+            "$ref": "#/components/schemas/ConversationTurnDto"
+          },
+          "attempt": {
+            "$ref": "#/components/schemas/RunAttemptDto"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "accepted"
+            ]
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "A replay reports saved state without attaching to a live run."
+          }
+        },
+        "required": [
+          "historyVersion",
+          "turn",
+          "attempt",
+          "type",
+          "replayed"
+        ]
+      },
+      "ConversationTextDeltaEventDto": {
+        "type": "object",
+        "properties": {
+          "historyVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "turnId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text_delta"
+            ]
+          },
+          "delta": {
+            "type": "string",
+            "description": "Provisional answer text; never saved as context."
+          }
+        },
+        "required": [
+          "historyVersion",
+          "turnId",
+          "attemptId",
+          "type",
+          "delta"
+        ]
+      },
+      "ConversationResultEventDto": {
+        "type": "object",
+        "properties": {
+          "historyVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "turn": {
+            "$ref": "#/components/schemas/ConversationTurnDto"
+          },
+          "attempt": {
+            "$ref": "#/components/schemas/RunAttemptDto"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "result"
+            ]
+          }
+        },
+        "required": [
+          "historyVersion",
+          "turn",
+          "attempt",
+          "type"
+        ]
+      },
+      "ConversationStreamErrorEventDto": {
+        "type": "object",
+        "properties": {
+          "historyVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "turnId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "error"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "STALE_HISTORY",
+              "INTERNAL_ERROR"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "historyVersion",
+          "turnId",
+          "attemptId",
+          "type",
+          "code",
+          "message"
+        ]
+      },
       "HistoryTurnDto": {
         "type": "object",
         "properties": {
@@ -1439,37 +1772,6 @@
           "historyVersion",
           "requestId",
           "text"
-        ]
-      },
-      "ConversationTurnDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sequence": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "text": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "requestId",
-          "sequence",
-          "text",
-          "createdAt"
         ]
       },
       "TurnResultDto": {

@@ -2,6 +2,8 @@ import { ConversationError } from '../domain/conversation.js';
 import type {
   Admission,
   AttemptReference,
+  ConversationProgress,
+  ConversationProgressObserver,
   RunLimits,
 } from './conversation.contracts.js';
 import type { ConversationModel } from './ports/conversation.model.js';
@@ -67,7 +69,11 @@ export class ConversationLoop {
       : { enabled: false as const, limits: null };
   }
 
-  async submit(ownerId: string, command: unknown): Promise<Admission> {
+  async submit(
+    ownerId: string,
+    command: unknown,
+    onProgress?: ConversationProgressObserver,
+  ): Promise<Admission> {
     const input = {
       ...parseConversationInput(submitTurnSchema, command),
       ownerId: parseConversationInput(ownerIdSchema, ownerId),
@@ -83,7 +89,7 @@ export class ConversationLoop {
       throw new ConversationError('INVALID_INPUT');
     }
     const admission = await this.repository.submit(input, limits);
-    return this.execute(input.ownerId, admission, execution);
+    return this.execute(input.ownerId, admission, execution, onProgress);
   }
 
   async retry(
@@ -134,7 +140,16 @@ export class ConversationLoop {
     ownerId: string,
     admission: Admission,
     execution: Extract<ConversationExecution, { enabled: true }>,
+    onProgress?: ConversationProgressObserver,
   ): Promise<Admission> {
+    const notify = (progress: ConversationProgress) => {
+      try {
+        onProgress?.(progress);
+      } catch {
+        // A progress consumer must not change admission or model execution.
+      }
+    };
+    notify({ type: 'accepted', admission });
     if (!admission.execute) return admission;
     const { model, limits } = execution;
     const ref: AttemptReference = {
@@ -163,6 +178,7 @@ export class ConversationLoop {
       admission.attempt.deadlineAt.getTime() - this.clock().getTime(),
     );
     const timer = setTimeout(() => controller.abort(), remainingMs);
+    let delivering = true;
     try {
       const history = await this.repository.context(
         ref,
@@ -190,6 +206,26 @@ export class ConversationLoop {
               maxOutputTokens: limits.maxOutputTokens,
               maxToolCalls: limits.maxToolCalls,
               signal: controller.signal,
+              ...(onProgress
+                ? {
+                    onTextDelta: (delta: string) => {
+                      if (
+                        delivering &&
+                        !controller.signal.aborted &&
+                        this.clock().getTime() <
+                          admission.attempt.deadlineAt.getTime() &&
+                        delta
+                      )
+                        notify({
+                          type: 'text_delta',
+                          historyVersion: ref.historyVersion,
+                          turnId: admission.turn.id,
+                          attemptId: ref.attemptId,
+                          delta,
+                        });
+                    },
+                  }
+                : {}),
             }),
             aborted,
           ]);
@@ -200,6 +236,7 @@ export class ConversationLoop {
             : { state: 'failed', errorCode: 'PROVIDER_ERROR' };
         }
       }
+      delivering = false;
       if (outcome.state === 'completed') {
         outcome = outcome.answer.trim()
           ? {
@@ -216,6 +253,7 @@ export class ConversationLoop {
       if (!attempt) throw new ConversationError('STALE_HISTORY');
       return { ...admission, attempt };
     } finally {
+      delivering = false;
       clearTimeout(timer);
       if (abortListener)
         controller.signal.removeEventListener('abort', abortListener);

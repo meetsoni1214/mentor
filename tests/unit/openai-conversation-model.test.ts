@@ -25,6 +25,7 @@ import type { ConversationModel } from '../../packages/backend/src/conversation/
 import {
   createResponsesStub,
   response,
+  startResponseStream,
   toolResponse,
 } from '../fixtures/responses-stub.js';
 
@@ -97,6 +98,145 @@ afterAll(async () => {
 });
 
 describe('standard Agents SDK / Responses adapter', () => {
+  it('delivers only text deltas before final output and retains privacy controls and SDK usage', async () => {
+    let stream!: ReturnType<typeof startResponseStream>;
+    stub.replies.push((res) => {
+      stream = startResponseStream(res);
+      stream.event({
+        type: 'response.reasoning_summary_text.delta',
+        item_id: 'reason_stub',
+        output_index: 1,
+        summary_index: 0,
+        delta: 'PRIVATE reasoning',
+      });
+      stream.delta('Hello ');
+    });
+    const onTextDelta = vi.fn();
+    let settled = false;
+    const running = model.complete(input({ onTextDelta })).then((result) => {
+      settled = true;
+      return result;
+    });
+    try {
+      await vi.waitFor(() =>
+        expect(onTextDelta).toHaveBeenCalledWith('Hello '),
+      );
+      expect(settled).toBe(false);
+      expect(onTextDelta.mock.calls).toEqual([['Hello ']]);
+      stream.delta('🌱\nworld');
+    } finally {
+      stream?.finish();
+    }
+    expect(await running).toMatchObject({
+      state: 'completed',
+      answer: 'Hello 🌱\nworld',
+      usage: { inputTokens: 11, outputTokens: 7 },
+    });
+    expect(stub.requests).toHaveLength(1);
+    expect(stub.requests[0]!.body).toMatchObject({
+      stream: true,
+      store: false,
+      max_output_tokens: 100,
+    });
+    expect(stub.requests[0]!.body).not.toHaveProperty('previous_response_id');
+    expect(stub.requests[0]!.body).not.toHaveProperty('conversation');
+  });
+
+  it.each(['incomplete', 'failed'])(
+    'keeps usage and a stable failure after streamed text followed by %s',
+    async (status) => {
+      const onTextDelta = vi.fn();
+      stub.replies.push((res) => {
+        const stream = startResponseStream(res);
+        stream.delta('Provisional');
+        stream.finish(status);
+      });
+      const result = await model.complete(input({ onTextDelta }));
+      expect(onTextDelta).toHaveBeenCalledWith('Provisional');
+      expect(result).toMatchObject({
+        state: 'failed',
+        errorCode: status === 'incomplete' ? 'INCOMPLETE' : 'PROVIDER_ERROR',
+        usage: { inputTokens: 11, outputTokens: 7 },
+      });
+      expect(result).not.toHaveProperty('answer');
+      expect(stub.requests).toHaveLength(1);
+    },
+  );
+
+  it('does not let a text observer failure change a successful SDK outcome', async () => {
+    stub.replies.push((res) => {
+      const stream = startResponseStream(res);
+      stream.delta('Saved answer');
+      stream.finish();
+    });
+    expect(
+      await model.complete(
+        input({
+          onTextDelta: () => {
+            throw new Error('reader gone');
+          },
+        }),
+      ),
+    ).toMatchObject({ state: 'completed', answer: 'Saved answer' });
+  });
+
+  it('normalizes streamed refusals without exposing refusal content', async () => {
+    stub.replies.push((res) => {
+      const stream = startResponseStream(res);
+      stream.event({
+        type: 'response.completed',
+        response: {
+          ...response(),
+          output: [
+            {
+              id: 'msg_stub',
+              type: 'message',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'refusal', refusal: 'PRIVATE refusal' }],
+            },
+          ],
+        },
+      });
+      res.end();
+    });
+    const result = await model.complete(input({ onTextDelta: vi.fn() }));
+    expect(result).toMatchObject({
+      state: 'failed',
+      errorCode: 'REFUSED',
+      usage: { inputTokens: 11, outputTokens: 7 },
+    });
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  });
+
+  it('does not retry a dropped stream after delivering provisional text', async () => {
+    let disconnect!: () => void;
+    const onTextDelta = vi.fn(() => disconnect());
+    stub.replies.push((res) => {
+      disconnect = () => res.destroy();
+      startResponseStream(res).delta('Provisional');
+    });
+    const result = await model.complete(input({ onTextDelta }));
+    expect(onTextDelta).toHaveBeenCalledExactlyOnceWith('Provisional');
+    expect(result).toMatchObject({
+      state: 'failed',
+      errorCode: 'INVALID_RESPONSE',
+    });
+    expect(result).not.toHaveProperty('answer');
+    expect(stub.requests).toHaveLength(1);
+  });
+
+  it('aborts an active text stream without retrying or delivering subsequent text', async () => {
+    const controller = new AbortController();
+    const onTextDelta = vi.fn(() => controller.abort());
+    stub.replies.push((res) => startResponseStream(res).delta('First chunk'));
+    expect(
+      await model.complete(input({ onTextDelta, signal: controller.signal })),
+    ).toMatchObject({ state: 'interrupted', errorCode: 'INTERRUPTED' });
+    expect(onTextDelta).toHaveBeenCalledExactlyOnceWith('First chunk');
+    expect(stub.requests).toHaveLength(1);
+  });
+
   it('sends application-owned context through the standard SDK with privacy settings', async () => {
     stub.enqueue(response('We discussed gardens.'));
     expect(

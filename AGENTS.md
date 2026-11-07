@@ -7,7 +7,8 @@ implemented with local verification. The active change is
 `add-assistant-conversation-loop`: one continuous conversation per owner, with
 no thread creation or selection. Group 1, conversation persistence and run
 lifecycle, and the four architecture follow-ups are implemented. The current
-review checkpoint is task 3.2: the read-only conversation workspace.
+review checkpoint is backend streaming slice 1 (task 2.6), following the
+committed task 3.2 read-only conversation workspace.
 Task 2.3 completed API-side composition of the conversation use case,
 Drizzle repository, and pinned Agents SDK/Responses adapter, including persistence
 of available SDK-reported usage for unsuccessful attempts. Tasks 2.2a–2.2c
@@ -24,8 +25,9 @@ the production app/guard with an injected model fake and disposable PostgreSQL.
 OpenAPI and client types are regenerated. README, .env.example, and the conversation
 guide document the composed request path, server settings, privacy/disclosure,
 and foreground-recovery limits. ConversationLoop validates application commands
-with Zod; controllers own HTTP decoding and response mapping, with no intermediate
-conversation HTTP service. Task 3.1 adds the generated-client-backed browser
+with Zod; controllers own HTTP decoding and use shared HTTP presenters for response
+mapping. JSON routes call the use case directly; ConversationStreamService in the
+HTTP adapter owns streaming event mapping, response errors, and cleanup. Task 3.1 adds the generated-client-backed browser
 conversation API, browser-owned response validation, shared CSRF handling, and
 session/history guards for late requests. Conversation contracts/errors, stateless
 HTTP operations, request scope, and TanStack Query integration are separate modules.
@@ -43,10 +45,17 @@ black, white, and neutral gray instead of green. Sending remains separate: the
 composer and Send button are disabled with an explicit explanation. One query
 adapter is shared by a workspace keyed by session generation. See
 docs/conversation-ui-plan.md for component responsibilities and browser evidence.
-Stop after this task 3.2 slice for review; commit when requested. Reliable sending,
-polling, retry, Clear history, full interaction/auth acceptance, and public-web
-investigation remain later checkpoints. Do not implement task 3.3 until the owner
-approves its next checkpoint.
+Backend streaming slice 1 adds an opt-in POST /api/v1/conversation/turns/stream
+alongside the compatible JSON route. Application-owned admission/text progress
+becomes SSE accepted/text_delta/result/error events. Only committed final results
+enter history/context; provisional text stays ephemeral. Replays return persisted
+snapshots without another runner or stream attachment. Reader disconnect or bounded
+output buffering detaches delivery without cancelling admitted execution.
+The browser sending slice remains uncommitted in the working tree. Browser
+streaming and recovery/proxy acceptance remain later checkpoints. Stop after
+backend streaming for review; commit when requested. Explicit attempt retry,
+Clear history, full interaction/auth acceptance, and public-web investigation
+remain later checkpoints. Task 3.3 stays open until its full requirements pass.
 The older `build-personal-knowledge-assistant` change remains
 a broader historical roadmap, not the next implementation scope.
 
