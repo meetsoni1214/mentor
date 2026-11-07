@@ -4,6 +4,12 @@ The browser shares one brand definition and one set of design tokens. Shared
 controls use local shadcn/ui components. Features own their layout and behavior;
 branding is imported from `src/brand/`.
 
+The default theme uses a black canvas, charcoal surfaces, subtle gray borders,
+and white primary buttons, logos, and outgoing message chips with black text.
+Secondary text uses lighter neutral grays for readability on dark surfaces.
+Native browser controls use the dark color scheme. Both sign-in and the
+conversation workspace consume this same palette.
+
 ## Change the brand in one place
 
 | Change                                                                             | Source                                                     |

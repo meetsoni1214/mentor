@@ -22,7 +22,7 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-control-disabled: var(--neutral-250);
+  --color-control-disabled: var(--control-disabled);
   --text-xs: var(--font-size-sm);
   --text-sm: var(--font-size-md);
   --text-base: var(--font-size-lg);
@@ -30,7 +30,7 @@
 
 @layer base {
   :root {
-    color-scheme: light;
+    color-scheme: dark;
     font-family: var(--font-sans);
     background: var(--color-background);
     color: var(--color-foreground);
