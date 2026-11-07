@@ -3,8 +3,14 @@
 Status: checkpoints 1 and 2 (tasks 3.1–3.2) implement the validated browser client,
 session isolation, and a read-only conversation workspace. The owner approved a
 monochrome interface with owner messages on the right and Mentor responses on the
-left. Sending stays separate and disabled. Checkpoint 3 requires later approval;
-reliable submission and complete interaction acceptance are not implemented.
+left. The owner subsequently approved checkpoint 3a: sending, draft preservation,
+delivery reconciliation, and running-attempt polling. Explicit attempt retry,
+Clear history, and complete interaction/auth acceptance are separate follow-ups.
+Tasks 3.3–3.5 remain open pending their full implementation and verification.
+The owner subsequently approved backend streaming slice 1 (task 2.6). Its opt-in
+SSE endpoint is documented in [the conversation guide](conversation-loop.md#backend-streaming-slice-1).
+Browser streaming and recovery/proxy acceptance are separate later slices; this
+workspace still uses JSON submission and polling.
 
 ## Starting point before checkpoint 1
 
@@ -228,7 +234,69 @@ Screenshots and local browser artifacts are under ignored
 authentication acceptance, integration reruns, and live-provider verification are
 not claimed by this UI checkpoint.
 
-## Checkpoint 3: resilient interaction and acceptance (tasks 3.3–3.5)
+## Checkpoint 3a: sending and delivery recovery
+
+The first approved portion of task 3.3 enables the composer when current history
+and assistant status permit sending. Enter sends; Shift+Enter adds a newline and
+IME composition is left alone. Validate nonblank input and the server's UTF-8
+message-byte limit before allocating a UUID. Preserve the exact submitted text,
+including surrounding whitespace, when assigning the UUID and observed version.
+
+`ConversationSubmission` owns one in-memory draft and delivery identity. Its
+states are editing, sending, uncertain delivery, checking, and stale history.
+The small `useConversationSubmission` hook connects it to React and the existing
+query adapter. Neither module holds a second transcript or persists browser data.
+Known admission rejections preserve editable text. Transport/response failures
+and a 15-second confirmation timeout retain the original UUID, version, and text;
+editing stays locked until delivery is resolved. There is no automatic POST retry.
+
+Polling or an immediate head read can confirm acceptance by the request ID and
+exact text, allowing the composer to clear before the original foreground POST
+finishes. Late completion of that POST cannot replace the next draft or produce
+an error for a different submission. A missing turn in the current head is not
+proof of rejection: it may be outside the page or not yet committed. The explicit
+Check or resend action reads fresh history and, if still unresolved, replays the
+original request. This is idempotent delivery recovery, separate from retrying a
+failed model attempt. Session/history guards remain in the existing query adapter.
+
+`conversation-polling.ts` decides whether the head needs two-second polling;
+`useConversationHistory` supplies that policy to TanStack Query with background
+polling disabled. Unresolved delivery and persisted running attempts keep it
+active, including after reload. A terminal head stops polling. Read failures
+retain cached history and never trigger a write. Typing the next draft is allowed
+while work runs; admitting the next message waits. The transcript follows new
+responses when already near the end and moves to a newly accepted local message;
+reading older history and prepending pages preserve the reading position.
+
+Observing a newer history version clears pre-clear draft/key state without replay.
+Logout/session replacement unmounts and resets the controller; late responses
+remain rejected by the request scope. A page reload restores accepted history,
+but deliberately drops unsent in-memory text. No local/session storage is used.
+
+Verified locally on 2026-11-01:
+
+- 17 focused delivery/polling tests cover pending/known-rejected/uncertain input,
+  a hung POST, byte validation, exact-payload replay, missing head entries,
+  read failures, stale history, session replacement, and late completions.
+- `pnpm check` passes formatting, architecture lint, strict types, all 269
+  unit/contract tests, generated contracts, and the production build. OpenAPI and
+  generated-client output have no drift; strict OpenSpec validation also passes.
+- 29 production-browser scenarios cover send/follow-up, Enter/Shift+Enter/IME,
+  CSRF, a slow foreground POST, lost or hung responses, explicit same-key
+  recovery, busy/unavailable admission, accepted model failure, read failure,
+  UTF-8 bytes, stale/cleared history, reload, logout and a submission 401, reading
+  position, accepted-message scrolling, phone/desktop layout, no browser storage,
+  and the continued absence of the removed footer. The earlier 28 workspace and
+  branding regression scenarios also pass with the enabled composer.
+- The browser runs the production frontend on a separate local port and
+  intercepts every API call with synthetic data. This verifies UI/client behavior;
+  it is not an integrated database/cookie/provider acceptance run. No paid model
+  call, `.env` change, database migration, or development-data operation occurs.
+- Full retry, Clear history, and task 3.4 auth acceptance remain unimplemented or
+  unverified as a complete checkpoint. Keep tasks 3.3–3.5 open. Browser artifacts
+  and acceptance scripts are under ignored `output/playwright/conversation-ui/`.
+
+## Checkpoint 3: remaining resilient interaction and acceptance (tasks 3.3–3.5)
 
 Wire submission with one UUID retained until acceptance/rejection is known. Keep
 unsent text in memory on failed admission. A lost response retains the original
@@ -267,5 +335,7 @@ investigation remain separate group-4 work.
 Group 4 adds only permitted hosted public-web search, observed activity and safe
 source presentation, adversarial fixtures, and complete-loop acceptance. The
 opt-in live smoke check is separate from deterministic verification. Email sync,
-background monitoring, long-term memory, streaming, and external actions remain
-outside this change.
+background monitoring, long-term memory, and external actions remain outside
+this change. Streaming now has its own approved backend checkpoint, followed by
+browser rendering and recovery acceptance; durable token replay remains outside
+that scope.

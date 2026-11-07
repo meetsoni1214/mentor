@@ -5,13 +5,12 @@ browser sign-in, database sessions, and logout are implemented. The backend now
 provides one continuous conversation per owner, persistent turns and attempts,
 bounded context, an OpenAI Agents SDK/Responses adapter, and protected conversation
 HTTP endpoints with generated client types. The signed-in web screen now shows a
-read-only conversation workspace with history pagination and run details. Reliable
-sending and public-web investigation are the next slices.
+conversation workspace with history pagination, run details, sending, draft
+recovery, and polling. An opt-in backend SSE submission endpoint now provides
+provisional text and saved results; browser streaming is the next slice.
+Explicit attempt retry, history clearing in the UI, and public-web investigation
+remain follow-ups. See the [backend streaming contract](docs/conversation-loop.md#backend-streaming-slice-1).
 Notes, long-term memory, email access, and external actions remain future work.
-
-The backend also exposes opt-in SSE submission with provisional text and saved
-results alongside the compatible JSON route. Browser streaming remains a later
-slice. See the [backend streaming contract](docs/conversation-loop.md#backend-streaming-slice-1).
 
 Browser branding, design tokens, and reusable controls follow the
 [design system guide](docs/design-system.md). Name, logo, colors, and typography
@@ -45,15 +44,15 @@ stored history remains readable and clearable. Authenticated status returns only
 readiness and safe settings, without credentials or configuration diagnostics.
 Preserve an existing `.env`; do not copy over it to pick up optional values.
 
-| Service           | Address                                   | Purpose                                      |
-| ----------------- | ----------------------------------------- | -------------------------------------------- |
-| Web               | http://127.0.0.1:3000                     | Sign-in and read-only conversation workspace |
-| API               | http://127.0.0.1:3001/api/v1/health/live  | API liveness                                 |
-| API readiness     | http://127.0.0.1:3001/api/v1/health/ready | Database connection and pgvector migration   |
-| API documentation | http://127.0.0.1:3001/api/docs            | Development OpenAPI explorer                 |
-| Worker            | http://127.0.0.1:3002/health/live         | Worker process liveness                      |
-| Worker readiness  | http://127.0.0.1:3002/health/ready        | Worker database connectivity                 |
-| PostgreSQL        | 127.0.0.1:55432                           | Persistent development database              |
+| Service           | Address                                   | Purpose                                    |
+| ----------------- | ----------------------------------------- | ------------------------------------------ |
+| Web               | http://127.0.0.1:3000                     | Sign-in and conversation workspace         |
+| API               | http://127.0.0.1:3001/api/v1/health/live  | API liveness                               |
+| API readiness     | http://127.0.0.1:3001/api/v1/health/ready | Database connection and pgvector migration |
+| API documentation | http://127.0.0.1:3001/api/docs            | Development OpenAPI explorer               |
+| Worker            | http://127.0.0.1:3002/health/live         | Worker process liveness                    |
+| Worker readiness  | http://127.0.0.1:3002/health/ready        | Worker database connectivity               |
+| PostgreSQL        | 127.0.0.1:55432                           | Persistent development database            |
 
 `pnpm dev` builds the service code, generates API client types, and starts the
 TypeScript watcher, API, worker, and web processes together. Ctrl+C stops the
@@ -111,8 +110,9 @@ To configure execution, set `OPENAI_API_KEY` and an explicit account-available
 `OPENAI_CHAT_MODEL` in your existing server environment, then restart the API.
 There is no default model or enable flag. Once configuration is valid, an
 authenticated submit or retry can make paid requests to OpenAI. The current web
-workspace has a disabled composer; configuring the API does not enable browser
-sending. See [the conversation UI checkpoint](docs/conversation-ui-plan.md#checkpoint-2-implementation-and-verification).
+workspace enables Send when assistant status is ready and no attempt is running.
+It preserves rejected drafts and reconciles uncertain delivery with the original
+request ID. See [the sending checkpoint](docs/conversation-ui-plan.md#checkpoint-3a-sending-and-delivery-recovery).
 
 The request path is controller → application validation/admission → persisted
 turn/attempt → bounded context → Agents SDK → conditional database completion.

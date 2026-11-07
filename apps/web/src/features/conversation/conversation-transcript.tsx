@@ -9,11 +9,15 @@ import type { useConversationHistory } from './use-conversation-history';
 
 export function ConversationTranscript({
   history,
+  acceptedRequestId,
 }: {
   history: ReturnType<typeof useConversationHistory>;
+  acceptedRequestId: string | null;
 }) {
   const scroll = useRef<HTMLElement>(null);
   const positionedVersion = useRef<number | undefined>(undefined);
+  const positionedRequest = useRef<string | null>(null);
+  const followLatest = useRef(true);
   const anchor = useRef<{
     element: HTMLElement;
     top: number;
@@ -42,8 +46,15 @@ export function ConversationTranscript({
           previous.element.focus({ preventScroll: true });
       }
       anchor.current = null;
+    } else if (
+      (acceptedRequestId !== positionedRequest.current &&
+        turns.some((turn) => turn.requestId === acceptedRequestId)) ||
+      followLatest.current
+    ) {
+      container.scrollTop = container.scrollHeight;
+      positionedRequest.current = acceptedRequestId;
     }
-  }, [version, turns.length, history.loadingOlder]);
+  }, [version, turns, history.loadingOlder, acceptedRequestId]);
 
   function rememberReadingPosition() {
     const container = scroll.current;
@@ -57,8 +68,7 @@ export function ConversationTranscript({
           element: visible,
           top: visible.getBoundingClientRect().top,
           version,
-          restoreFocus:
-            document.activeElement?.closest('.history-controls') !== null,
+          restoreFocus: !!document.activeElement?.closest('.history-controls'),
         };
     }
   }
@@ -80,6 +90,14 @@ export function ConversationTranscript({
       ref={scroll}
       tabIndex={-1}
       aria-label="Conversation history"
+      onScroll={(event) => {
+        const container = event.currentTarget;
+        followLatest.current =
+          container.scrollHeight -
+            container.scrollTop -
+            container.clientHeight <
+          96;
+      }}
     >
       <div className="transcript-content">
         <h1 className="sr-only">Conversation with {brand.name}</h1>
@@ -149,9 +167,7 @@ export function ConversationTranscript({
                     ? 'Loading older messages…'
                     : 'Load older messages'}
                 </Button>
-              ) : (
-                <p className="history-start">Beginning of your conversation</p>
-              )}
+              ) : null}
               <span className="sr-only" role="status">
                 {history.loadingOlder
                   ? 'Loading older messages.'

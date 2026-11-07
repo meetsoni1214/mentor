@@ -7,8 +7,8 @@ implemented with local verification. The active change is
 `add-assistant-conversation-loop`: one continuous conversation per owner, with
 no thread creation or selection. Group 1, conversation persistence and run
 lifecycle, and the four architecture follow-ups are implemented. The current
-review checkpoint is backend streaming slice 1 (task 2.6), following the
-committed task 3.2 read-only conversation workspace.
+review checkpoint is backend streaming slice 1 (task 2.6), following the sending
+portion of task 3.3 and the committed task 3.2 workspace.
 Task 2.3 completed API-side composition of the conversation use case,
 Drizzle repository, and pinned Agents SDK/Responses adapter, including persistence
 of available SDK-reported usage for unsuccessful attempts. Tasks 2.2a–2.2c
@@ -41,21 +41,29 @@ pagination, run details, and per-response context notes. The owner removed the
 OpenAI disclosure line and Privacy & context section beneath the composer; do not
 restore that footer section. Cloud-processing details remain in documentation.
 The owner requested
-black, white, and neutral gray instead of green. Sending remains separate: the
-composer and Send button are disabled with an explicit explanation. One query
+black, white, and neutral gray instead of green. The owner has now approved the
+sending slice: the composer preserves drafts on rejected admission, retains the
+same request ID/payload for uncertain delivery, and offers explicit recovery.
+Poll head history every two seconds while delivery is unresolved or an attempt
+is running; pause background polling. A 15-second confirmation wait exposes
+recovery without cancelling or automatically replaying backend work. Drafts are
+in memory only and clear on unmount/session replacement/history-version change.
+One query
 adapter is shared by a workspace keyed by session generation. See
 docs/conversation-ui-plan.md for component responsibilities and browser evidence.
-Backend streaming slice 1 adds an opt-in POST /api/v1/conversation/turns/stream
-alongside the compatible JSON route. Application-owned admission/text progress
-becomes SSE accepted/text_delta/result/error events. Only committed final results
-enter history/context; provisional text stays ephemeral. Replays return persisted
+The sending slice is implemented as a separate commit checkpoint. The owner has approved backend
+streaming slice 1: add an opt-in POST /api/v1/conversation/turns/stream alongside
+the compatible JSON route. Use application-owned admission/text progress and
+SSE accepted/text_delta/result/error events. Only committed final results enter
+history/context; provisional text stays ephemeral. Replays return persisted
 snapshots without another runner or stream attachment. Reader disconnect or bounded
 output buffering detaches delivery without cancelling admitted execution.
-The browser sending slice remains uncommitted in the working tree. Browser
-streaming and recovery/proxy acceptance remain later checkpoints. Stop after
-backend streaming for review; commit when requested. Explicit attempt retry,
-Clear history, full interaction/auth acceptance, and public-web investigation
-remain later checkpoints. Task 3.3 stays open until its full requirements pass.
+Browser streaming and recovery/proxy acceptance are later slices; the current
+browser still uses JSON submission and polling. Stop after backend streaming
+for review; commit when requested. Explicit attempt
+retry, Clear history, full interaction/auth acceptance, and public-web investigation
+remain later checkpoints. Task 3.3 stays open until all of its behavior and
+acceptance checks are complete. Do not add retry or Clear history in this slice.
 The older `build-personal-knowledge-assistant` change remains
 a broader historical roadmap, not the next implementation scope.
 

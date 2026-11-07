@@ -1,4 +1,4 @@
-# The conversation loop: API and read-only workspace
+# The conversation loop: API and conversation workspace
 
 Mentor will have one continuous conversation. The owner will not create, name,
 or choose threads. This checkpoint implements its backend persistence and run
@@ -6,8 +6,10 @@ lifecycle, server-only AI configuration, and a standard Agents SDK adapter verif
 against a local HTTP stub. Task 2.3 composes the use case, repository, and SDK
 adapter in the API's ConversationModule. Tasks 2.4–2.5 expose and document protected
 status and singleton conversation routes with generated OpenAPI/client types.
-Application-owned Zod schemas validate commands; controllers map HTTP responses.
-The current web screen is a read-only conversation workspace. Verification uses
+Application-owned Zod schemas validate commands; shared HTTP presenters map
+responses and a dedicated streaming HTTP service owns SSE delivery.
+The backend also exposes opt-in [SSE submission](#backend-streaming-slice-1).
+The current web screen still uses JSON submission and polling. Verification uses
 synthetic credentials and responses; no paid calls, email connection, or
 background jobs are involved.
 
@@ -16,8 +18,21 @@ See [the conversation UI plan](conversation-ui-plan.md#checkpoint-1-implementati
 for its request scope, cache keys, history-version guards, and focused verification.
 Task 3.2 renders the continuous transcript, pagination, and run details in a
 monochrome workspace. Owner messages align right and Mentor replies
-align left. The composer remains explicitly disabled; reliable sending and
-resilient interactions require the next approved checkpoint.
+align left. The approved sending portion of task 3.3 now enables the composer,
+retains rejected drafts, reconciles uncertain delivery, and polls persisted work.
+Explicit attempt retry, Clear history, and full interaction/auth acceptance remain
+later slices; task 3.3 is still open.
+
+See [the sending checkpoint](conversation-ui-plan.md#checkpoint-3a-sending-and-delivery-recovery)
+for the UI state transitions, module responsibilities, and verification limits.
+Enter sends and Shift+Enter inserts a newline; IME composition does not submit.
+You may write the next draft while an accepted attempt runs, but Send waits for
+the run to finish. A confirmation timeout or connection error keeps the original
+text and request ID. Automatic recovery reads history only; the explicit
+Check or resend control checks current history before replaying that same request.
+This replay recovers delivery and never creates a fresh attempt for a failed run.
+Unsent drafts are not durable and are cleared on reload, logout/session change,
+or observation of a new history version. Accepted messages remain in PostgreSQL.
 
 ## Start the review here
 
@@ -61,8 +76,10 @@ Read these files in order:
     to validate commands and numeric history options with Zod before accessing
     persistence or the model. Ownership is passed separately from untrusted
     commands; supplied owner/turn selectors are rejected. Admission, retry,
-    context, and completion rules also stay in the backend. No extra HTTP service
-    sits between the controller and use case.
+    context, and completion rules also stay in the backend. Ordinary JSON routes
+    call the use case directly. `conversation.presenter.ts` shares DTO mapping
+    between those routes and `ConversationStreamService`, which owns streaming
+    event mapping, post-header errors, and response cleanup in the HTTP adapter.
 
 Domain code has no application or adapter imports. Application code depends on
 the domain and its ports, with no NestJS, HTTP, Drizzle, or provider SDK imports.
@@ -466,8 +483,8 @@ Local clearing cannot retract content already sent to a provider.
 
 ## Cloud-processing disclosure and current capability boundary
 
-The HTTP API can execute against OpenAI when configured, but the current web
-composer is disabled. At the owner's request, the cloud-processing line and
+The HTTP API and web composer can execute against OpenAI when configured. At the
+owner's request, the cloud-processing line and
 expandable Privacy & context section beneath the composer were removed.
 Cloud-processing information remains documented here:
 
@@ -513,8 +530,11 @@ The actual HTTP suite covers the production controllers/guard with a model fake;
 the composed lifecycle and adapter suites exercise the real SDK/client against
 localhost stubs with non-stub outbound traffic denied. Task 3.2 browser checks
 exercise the production read-only workspace with synthetic intercepted API
-responses on phone and desktop. See [the UI checkpoint evidence](conversation-ui-plan.md#checkpoint-2-implementation-and-verification).
-Complete sending/recovery acceptance and live-provider verification remain open;
+responses on phone and desktop. The sending slice adds 29 browser scenarios and
+repeats the 28 workspace regressions with the enabled composer. All of those
+browser checks intercept API calls with synthetic responses; they do not exercise
+real cookies, PostgreSQL, or a live provider. See [the sending evidence](conversation-ui-plan.md#checkpoint-3a-sending-and-delivery-recovery).
+Full retry/clear-history/auth acceptance and live-provider verification remain open;
 synthetic search fixtures are not live investigation evidence.
 
 ## Application/API checkpoint (task 2.5)
@@ -537,7 +557,8 @@ and foreground-recovery limits. No existing `.env` or development database was
 modified, and no live OpenAI call was made. Task 2.5 completes the application/API
 checkpoint. The subsequent tasks 3.1–3.2 browser data boundary and read-only
 workspace are documented in [conversation-ui-plan.md](conversation-ui-plan.md).
-Reliable sending and resilient interactions remain later checkpoints.
+The subsequent approved sending slice is documented in checkpoint 3a of that
+guide. Explicit retry, UI history clearing, and full acceptance remain later work.
 
 ## Historical verification checkpoints
 

@@ -5,11 +5,20 @@ import type {
   HistoryCursor,
 } from './conversation-contracts';
 import type { createConversationQueries } from './conversation-queries';
+import { conversationPollInterval } from './conversation-polling';
 
 export type ConversationQueries = ReturnType<typeof createConversationQueries>;
 
-export function useConversationHistory(conversation: ConversationQueries) {
-  const head = useQuery(conversation.historyOptions());
+export function useConversationHistory(
+  conversation: ConversationQueries,
+  deliveryPending = false,
+) {
+  const head = useQuery({
+    ...conversation.historyOptions(),
+    refetchInterval: (query) =>
+      conversationPollInterval(query.state.data, deliveryPending),
+    refetchIntervalInBackground: false,
+  });
   const [requestedPages, setRequestedPages] = useState<HistoryCursor[]>([]);
   // A clear in another tab can replace the head while older pages are mounted.
   const cursors = requestedPages.filter(

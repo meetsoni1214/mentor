@@ -30,6 +30,11 @@ This change is the current conversation-loop implementation scope. The older `bu
 - [ ] 3.4 Extend auth browser acceptance to session expiry/logout while conversation requests are in flight; verify sign-in recovery does not resubmit, private caches/drafts clear, browser local/session storage has no transcript, and existing sign-in/logout behavior still works.
 - [ ] 3.5 Document the in-app walkthrough and browser evidence in docs/conversation-loop.md, distinguishing accepted from unsent drafts and fixture output from live output; run relevant checks, present the focused verified checkpoint for review, and commit when requested.
 
+The owner approved the sending portion of task 3.3 as a separate review slice:
+draft preservation, stable submission identity, explicit delivery recovery, and
+polling. Explicit model-attempt retry, Clear history, and full acceptance remain
+follow-ups. Task 3.3 must remain unchecked until those requirements are also met.
+
 ## 4. Read-only investigation and complete-loop acceptance
 
 - [ ] 4.1 Register only the SDK-supported hosted web-search tool through Responses under runtime-controlled availability and disclose assistant-selected search. Let the SDK/model choose when to search, using supported per-request settings and the application deadline, without custom cumulative budgets. Verify searched/unsearched SDK fixtures, unavailable tools omitted, no other production tools, no per-turn toggle, and no search claimed without observed activity.

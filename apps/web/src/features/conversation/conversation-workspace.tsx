@@ -1,6 +1,6 @@
 import { Button } from '../../components/ui/button';
 import { Alert, AlertDescription } from '../../components/ui/alert';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SessionScope } from '../auth/session-scope';
 import { ConversationComposer } from './conversation-composer';
@@ -8,6 +8,8 @@ import { createConversationQueries } from './conversation-queries';
 import { ConversationTranscript } from './conversation-transcript';
 import { useConversationHistory } from './use-conversation-history';
 import { BrandLockup } from '../../brand/brand-logo';
+import { useConversationSubmission } from './use-conversation-submission';
+import { hasRunningAttempt } from './conversation-polling';
 
 export function ConversationWorkspace({
   session,
@@ -26,8 +28,30 @@ export function ConversationWorkspace({
   const [conversation] = useState(() =>
     createConversationQueries(session, queryClient),
   );
-  const history = useConversationHistory(conversation);
+  const { submission, state } = useConversationSubmission(conversation);
+  const deliveryPending = ['sending', 'checking', 'uncertain'].includes(
+    state.phase,
+  );
+  const history = useConversationHistory(conversation, deliveryPending);
   const status = useQuery(conversation.statusOptions());
+  useEffect(() => {
+    if (history.head.data) submission.observe(history.head.data);
+  }, [submission, history.head.data]);
+  const blockedReason = signingOut
+    ? 'Signing out…'
+    : !history.head.data
+      ? 'Load your conversation before sending.'
+      : history.head.isError
+        ? 'Refresh your conversation before sending.'
+        : status.isPending
+          ? 'Checking assistant availability…'
+          : status.isError
+            ? 'Check assistant availability before sending.'
+            : !status.data.enabled
+              ? 'Assistant responses are unavailable. Your draft stays here.'
+              : hasRunningAttempt(history.head.data)
+                ? 'Working… You can write your next message while you wait.'
+                : null;
 
   return (
     <div className="conversation-workspace">
@@ -90,8 +114,21 @@ export function ConversationWorkspace({
           </AlertDescription>
         </Alert>
       ) : null}
-      <ConversationTranscript history={history} />
-      <ConversationComposer />
+      <ConversationTranscript
+        history={history}
+        acceptedRequestId={state.lastAcceptedRequestId}
+      />
+      <ConversationComposer
+        state={state}
+        onDraftChange={submission.edit}
+        onSend={() => {
+          if (!blockedReason && status.data?.limits)
+            void submission.send(status.data.limits.maxMessageBytes);
+        }}
+        onReconcile={() => void submission.reconcile()}
+        blockedReason={blockedReason}
+        disabled={signingOut || state.historyVersion === undefined}
+      />
     </div>
   );
 }

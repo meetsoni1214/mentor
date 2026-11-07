@@ -58,9 +58,9 @@ The Radix-based shadcn `new-york` components live in
 
 | Primitive                                                 | Current use                                                 |
 | --------------------------------------------------------- | ----------------------------------------------------------- |
-| `Button`                                                  | Sign-in/out, refresh, pagination, recovery, disabled Send   |
+| `Button`                                                  | Sign-in/out, refresh, pagination, delivery recovery, Send   |
 | `Input`, `Label`                                          | Sign-in credentials and accessible field names              |
-| `Textarea`                                                | Disabled conversation composer                              |
+| `Textarea`                                                | Controlled conversation composer                            |
 | `Alert`, `AlertDescription`                               | Authentication errors, availability notices, refresh errors |
 | `Collapsible`, `CollapsibleTrigger`, `CollapsibleContent` | Keyboard-accessible run details                             |
 
@@ -108,14 +108,16 @@ keep conversation bubbles, history ordering, scroll preservation, and session
 handling in their feature modules. There is no need to turn message prose into
 cards or replace the native transcript scroller.
 
-The composer remains disabled in the current checkpoint. The owner removed its
+The composer supports sending and in-memory delivery recovery. Its form controls
+reflect pending, uncertain, unavailable, and running states through the same
+primitives. The owner removed its
 cloud-processing line and Privacy & context section; the design system does not
 restore either. Provider processing and retention are documented in the
 [conversation guide](conversation-loop.md#cloud-processing-disclosure-and-current-capability-boundary).
 
 ## Verification
 
-`pnpm check` passes formatting, lint, strict types, all 252 unit/contract tests,
+The shared-brand/shadcn checkpoint passed `pnpm check`, including all 252 tests,
 generated contracts, and the production build. Production browser checks exercise
 the shared sign-in/workspace branding, native button types, and changing the
 primary token across logos, controls, outgoing bubbles, and focus rings while
@@ -130,3 +132,7 @@ including Enter/Space toggling and expanded-state announcements for run details,
 associated sign-in labels, shared Input/Textarea use, the minimal header, and the
 existing conversation regression checks. Screenshots and the acceptance script
 are kept under the ignored `output/playwright/conversation-ui/` directory.
+
+The sending slice repeats these 28 browser regressions with the enabled composer
+and adds 29 sending/recovery scenarios. Controls remain the same local shadcn
+primitives; sending state and recovery belong to the conversation feature.
