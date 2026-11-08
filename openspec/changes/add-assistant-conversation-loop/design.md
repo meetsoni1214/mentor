@@ -10,6 +10,20 @@ The owner subsequently selected task 4.1 as the next focused checkpoint and expl
 
 The owner then requested committing 4.1 and starting the next slice. Commit e46b4e5 captures registration; 4.2 adds bounded observed terminal search activity and final-answer citation normalization. Optional paired source positions (`startIndex`, `endIndex`, UTF-16 with an exclusive end) persist inside the existing JSON source column, requiring only additive OpenAPI/client fields and no migration. Multiple URLs may share a citation range; conflicting overlaps, unsafe URLs, malformed shapes, and unobserved citations are not promoted. Exact marker matching supports character offsets after emoji without guessing a split surrogate boundary. Browser contracts revalidate metadata, and the renderer binds clickable citations to injected link positions rather than trusting generated links or matching URLs. Final answers show inline citations and a visible source list; provisional links remain inert. Stop after 4.2 for review before 4.3–4.5, and leave this slice uncommitted until requested.
 
+The owner committed 4.2 as b4d4404 and selected 4.3. Named synthetic Railway-notice and adversarial email/page fixtures exercise the actual SDK/client with non-stub traffic denied, plus PostgreSQL composition. The general production prompt expresses uncertainty, treats source content as evidence rather than authorization, and states the lack of private-account access, monitoring, and actions. Fixtures illustrate these limits without requiring incident-specific prompt wording. Capability enforcement remains the tool allowlist and SDK rejection of unregistered calls; quoted evidence cannot register tools or access runtime credentials. A test-only function reader delivers the hostile page during SDK continuation, without adding a production fetcher or claiming to verify provider-internal hosted retrieval. Canned honest answers test context/output/persistence; a deliberately false prose fixture demonstrates that evidence normalization does not certify or filter arbitrary model wording. These checks do not establish universal truthfulness, injection resistance, or data-leak prevention. Stop after 4.3 for review before 4.4–4.5; commit only when requested.
+
+The owner then authorized 4.4 and 4.5 together, favoring general-purpose behavior
+over a case-specific workflow. The 4.3 notice is retained only as regression test
+input, with no incident-specific application branch or tool. Integrated phone and
+desktop acceptance now traverses real local auth cookies/CSRF, production Next.js
+rewrites, NestJS, disposable PostgreSQL, and the actual SDK with a localhost stub.
+The separate `pnpm smoke:conversation --live` command runs three synthetic turns
+through the existing adapter without database access. It requires explicit opt-in,
+uses configured model/key, respects input bounds, caps each attempt at 30 seconds
+and each model call at 512 output tokens with one hosted call per Responses
+request, and retains SDK defaults/privacy/retry controls. Live results and deployed
+TLS/proxy behavior remain unverified; fixture output is not live evidence.
+
 The existing broad change puts library capture/retrieval first and excludes external-service actions. The owner prioritizes an assistant conversation runtime as the foundation for later email monitoring and approved actions, and has selected the Agents SDK from the first model integration. This focused change takes priority for that foundation; its narrower scope does not silently complete the older roadmap's recall, SSE, export, or proactivity tasks. Reconcile overlapping artifacts before archive. Update milestone documentation during implementation to distinguish completed work from each new SDK/API checkpoint.
 
 ## Goals / Non-Goals
@@ -413,7 +427,7 @@ A separately enabled, bounded live smoke check requires existing server credenti
 
 ## Migration Plan
 
-1. SSE retry tasks 2.7 and 3.3f–3.3g are complete. Implement the approved Clear history checkpoint, tasks 3.3h–3.3i, then stop for review before broader acceptance or investigation. Earlier SDK/API, browser streaming, and browser submission refactor checkpoints are implemented. Preserve completed work and unrelated local modifications. This slice adds a streaming retry API contract and browser controls, reuses existing execution/persistence rules, and is expected to require no migration.
+1. The SDK/API, browser streaming/submission/retry, Clear history, public-search/evidence, adversarial-fixture, and integrated acceptance checkpoints are complete through tasks 4.4–4.5. Review the complete conversation-loop checkpoint; commit and archive only when requested. Preserve unrelated local modifications. No migration or API contract change is required for the acceptance or smoke-command work. Live provider and deployed TLS/proxy verification remain unperformed.
 2. Apply new migrations only to the disposable integration database during verification. Existing development data is migrated through the normal documented command, without schema push or volume deletion.
 3. Earlier checkpoints removed the stricter budget policy and its model-call setting; obsolete extra environment keys are ignored. Preserve the standard SDK configuration, explicit tracing/storage/retry policies, and existing `.env`. AI execution becomes ready automatically with valid server model/key/finite-limit configuration; missing or invalid settings preserve read-only history. Cloud-processing documentation stays in place without a composer disclosure footer, following the owner's revised UI decision.
 4. Roll back to the prior application version with AI disabled; keep additive tables for a forward fix rather than destructively rolling back private history.

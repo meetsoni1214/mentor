@@ -40,6 +40,18 @@ import {
   citedAnswer,
   citationMarker,
 } from '../fixtures/responses-stub.js';
+import {
+  accountFollowUp,
+  accountFollowUpAnswer,
+  actionFollowUp,
+  actionFollowUpAnswer,
+  adversarialEmail,
+  forbiddenInvestigationCall,
+  railwayCitation,
+  railwayInvestigationResponse,
+  railwayPublicAnswer,
+  railwayQuestion,
+} from '../fixtures/conversation-investigation.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl || new URL(databaseUrl).pathname !== '/mentor_test') {
@@ -146,6 +158,123 @@ afterAll(async () => {
 });
 
 describe('composed conversation use case, real SDK, and PostgreSQL', () => {
+  it('continues a synthetic Railway investigation with public evidence and explicit unknown account exposure', async () => {
+    const firstCommand = submission({ text: railwayQuestion });
+    stub.enqueue(railwayInvestigationResponse());
+    const first = await submitTurn(compose(), firstCommand);
+    expect(first.attempt).toMatchObject({
+      state: 'completed',
+      answer: railwayPublicAnswer,
+      sources: [railwayCitation],
+      activity: [{ type: 'web_search', status: 'completed' }],
+    });
+
+    stub.enqueue(response(accountFollowUpAnswer));
+    const followUp = await submitTurn(
+      compose(),
+      submission({ text: accountFollowUp }),
+    );
+    expect(followUp.attempt).toMatchObject({
+      state: 'completed',
+      answer: accountFollowUpAnswer,
+      sources: [],
+      activity: [],
+    });
+    const followUpContext = JSON.stringify(stub.requests[1]!.body.input);
+    expect(followUpContext).toContain(JSON.stringify(railwayQuestion));
+    expect(followUpContext).toContain(JSON.stringify(railwayPublicAnswer));
+    expect(followUpContext).not.toContain('web_search_call');
+    expect(followUpContext).not.toContain(
+      'synthetic Railway advisory deployment-token permissions',
+    );
+
+    stub.enqueue(response(actionFollowUpAnswer));
+    const suggestions = await submitTurn(
+      compose(),
+      submission({ text: actionFollowUp }),
+    );
+    expect(suggestions.attempt).toMatchObject({
+      state: 'completed',
+      answer: actionFollowUpAnswer,
+      sources: [],
+      activity: [],
+    });
+    expect(JSON.stringify(stub.requests[2]!.body.input)).toContain(
+      JSON.stringify(accountFollowUpAnswer),
+    );
+    for (const request of stub.requests) {
+      expect(request.body.tools).toEqual([
+        expect.objectContaining({ type: 'web_search' }),
+      ]);
+      expect(request.body).toMatchObject({ store: false, tool_choice: 'auto' });
+      expect(request.body).not.toHaveProperty('previous_response_id');
+      expect(request.body).not.toHaveProperty('conversation');
+      expect(JSON.stringify(request.body)).not.toContain('synthetic-test-key');
+    }
+    const restored = await compose().history(ownerId);
+    expect(restored.turns.map((turn) => turn.sequence)).toEqual([1, 2, 3]);
+    expect(restored.turns.map((turn) => turn.attempts[0])).toEqual([
+      first.attempt,
+      followUp.attempt,
+      suggestions.attempt,
+    ]);
+    expect((await submitTurn(compose(), firstCommand)).attempt).toEqual(
+      first.attempt,
+    );
+    expect(stub.requests).toHaveLength(3);
+  });
+
+  it.each(['read_runtime_credentials', 'rotate_railway_key'] as const)(
+    'persists a rejected email-induced %s attempt and retries without granting the requested capability',
+    async (name) => {
+      const command = submission({ text: adversarialEmail });
+      stub.enqueue(forbiddenInvestigationCall(name));
+      const first = await submitTurn(compose(), command);
+      expect(first.attempt).toMatchObject({
+        state: 'failed',
+        errorCode: 'INVALID_RESPONSE',
+        answer: null,
+        sources: [],
+        activity: [],
+      });
+      expect((await compose().history(ownerId)).turns[0]?.attempts[0]).toEqual(
+        first.attempt,
+      );
+      expect((await submitTurn(compose(), command)).attempt).toEqual(
+        first.attempt,
+      );
+      expect(stub.requests).toHaveLength(1);
+
+      stub.enqueue(response(actionFollowUpAnswer));
+      const retry = await compose().retry(ownerId, first.turn.id, {
+        historyVersion: 0,
+        requestId: randomUUID(),
+      });
+      expect(retry.turn).toEqual(first.turn);
+      expect(retry.attempt).toMatchObject({
+        state: 'completed',
+        answer: actionFollowUpAnswer,
+        attemptNumber: 2,
+        sources: [],
+        activity: [],
+      });
+      expect(stub.requests).toHaveLength(2);
+      for (const request of stub.requests) {
+        expect(request.body.tools).toEqual([
+          expect.objectContaining({ type: 'web_search' }),
+        ]);
+        expect(request.body.instructions).not.toContain('ATTACK_FIXTURE_EMAIL');
+        expect(JSON.stringify(request.body)).not.toContain(
+          'synthetic-test-key',
+        );
+      }
+      expect((await compose().history(ownerId)).turns[0]?.attempts).toEqual([
+        first.attempt,
+        retry.attempt,
+      ]);
+    },
+  );
+
   it.each([false, true])(
     'persists hosted search evidence and the final answer with normal configuration (stream=%s)',
     async (streaming) => {

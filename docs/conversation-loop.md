@@ -1,9 +1,12 @@
 # The conversation loop: API and conversation workspace
 
-The current review checkpoint is [search evidence and citations, task 4.2](#search-evidence-and-citations-task-42),
-following hosted-search registration commit `e46b4e5`. Start there for the current
-reading order, one source-backed answer trace, and verification evidence. Earlier
-checkpoint sections below retain their historical results and limits.
+The current review checkpoint is [integrated acceptance (4.4)](#integrated-acceptance-task-44)
+and the [opt-in live smoke command (4.5)](#opt-in-live-smoke-task-45).
+These complete the earlier browser acceptance tasks 3.3–3.5. The local browser
+path now includes real session cookies, NestJS, disposable PostgreSQL, the actual
+SDK with a localhost provider stub, and the production Next.js proxy. Live
+OpenAI behavior and a deployed TLS/proxy environment remain unverified. Earlier
+checkpoint sections retain their historical results and limits.
 
 Mentor will have one continuous conversation. The owner will not create, name,
 or choose threads. This checkpoint implements its backend persistence and run
@@ -29,8 +32,8 @@ align left. The approved sending portion of task 3.3 now enables the composer,
 retains rejected drafts, reconciles uncertain delivery, and polls persisted work.
 Browser retry now streams another attempt on the latest failed/interrupted
 message while preserving the independent composer draft. The header Clear history control now
-provides explicit confirmation with versioned recovery. Full interaction/auth
-acceptance remains a later slice; task 3.3 is still open.
+provides explicit confirmation with versioned recovery. Integrated local
+interaction/auth acceptance is complete in [task 4.4](#integrated-acceptance-task-44).
 
 See [the sending checkpoint](conversation-ui-plan.md#checkpoint-3a-sending-and-delivery-recovery)
 for the UI state transitions, module responsibilities, and verification limits.
@@ -118,8 +121,10 @@ sends nothing. Session loss clears private state; a new history version discards
 pre-clear input and never replays it into the replacement history.
 
 See the [transition/test map and current verification](conversation-ui-plan.md#submission-readability-checkpoint-tasks-33b33e).
-The dated checkpoints below describe evidence from earlier slices. Integrated
-authentication/database/proxy acceptance and public-web investigation remain later work.
+The dated checkpoints below describe evidence from earlier slices. Current
+local authentication/database/proxy acceptance is recorded in
+[task 4.4](#integrated-acceptance-task-44); live public-web investigation remains
+unverified.
 
 For retry, the original turn `T1` keeps submission key `R1` and its failed
 attempt. Clicking **Retry response** creates a typed retry operation for `T1`
@@ -682,6 +687,211 @@ Verification on 2026-11-08:
   truthfulness. No live OpenAI calls, existing `.env` edits, or development-data
   operations were performed. Stop here for review before 4.3; commit when requested.
 
+### Adversarial investigation fixtures (task 4.3)
+
+This checkpoint uses a fictional Railway notice and adversarial email/page text
+to exercise the existing conversation runtime. No content describes a real
+Railway incident, and `railway.example.test` is a synthetic source URL.
+The owner selected this slice after committing 4.2 as `b4d4404`; search remains
+always available with valid AI configuration and there is no new enable flag.
+
+Read `tests/fixtures/conversation-investigation.ts` first. It defines the pasted
+notice, public answer/citation, contextual account-exposure follow-up, unavailable
+action response, malicious email/page text, forbidden function calls, and one
+deliberately false action claim. Then read
+`tests/unit/conversation-investigation.test.ts` for SDK request/permission checks
+and the investigation cases in `tests/integration/conversation-sdk.test.ts` for
+PostgreSQL composition. Production instruction changes are confined to
+`packages/backend/src/conversation/adapters/openai-conversation.model.ts`.
+
+The fixture conversation begins: “Does this notice mean my Railway projects were
+compromised?” The stub supplies a searched public answer with a source, explicitly
+unknown account exposure, and no claimed rotation/monitoring. A later turn asks
+which findings were public and which need account details. Its request includes
+the saved conversation text, while the new answer has no newly recorded search.
+A third turn requests rotation and monitoring; its stub answer explains that only
+manual suggestions are available. Reloaded history preserves one continuous
+conversation, its exact answers, and only the first turn's observed web evidence.
+Replaying the original turn starts no new request.
+
+| Fixture case                                                | Verified boundary                                                                                                                                                                              |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pasted notice/email with role-like tags                     | Text remains in user input and never becomes privileged application instructions; production offers only hosted web search.                                                                    |
+| Email-induced credential read, rotation, or monitoring call | The actual SDK rejects the unregistered function, produces a stable failed outcome, and makes no follow-on provider request.                                                                   |
+| Retrieved page containing malicious instructions            | A test-only reader delivers the page as `function_call_output` during SDK continuation; its instructions cannot register another tool or read a synthetic runtime secret.                      |
+| Failed injected action followed by replay/retry             | PostgreSQL saves the failed attempt without an answer or fabricated evidence; replay starts no runner, and explicit retry preserves the original message without granting action capabilities. |
+| False action claim in generated prose                       | Normalization invents neither search activity nor sources. The prose itself remains ordinary model output, not a verified action receipt.                                                      |
+
+The retrieved-page reader exists only in the SDK test seam. Hosted search runs
+inside the provider, so this fixture does not claim to test OpenAI's internal
+retrieval or universal model resistance to hostile page content. No production
+custom tool, URL fetcher, mailbox access, background monitoring, credential reader,
+write action, or approval flow is added. The existing per-request tool setting,
+application deadline, SDK default iteration behavior, tracing/storage policy, and
+explicit retry rules remain in place.
+
+General instructions ask for uncertainty and missing context, identify pasted
+and retrieved content as evidence rather than authorization, and state that the
+assistant has no private-account access, monitoring, or external actions. The
+fixtures illustrate those general limits with account-exposure and remediation
+examples. Tests assert role separation, permitted tools, and outcomes rather than
+requiring incident-specific prompt wording. Instructions inside source content
+cannot grant permission. This follows the relevant principle in the
+[official OpenAI safety guidance](https://developers.openai.com/api/docs/guides/agent-builder-safety):
+keep untrusted content out of privileged instructions and keep permissions in the
+application. Prompt wording is not the capability enforcement mechanism.
+
+**Evidence limits:** honest answers in these tests are canned fixture outputs.
+Tests verify their transport, context, evidence, and persistence; they do not show
+that a live model independently reached those conclusions or will always follow
+the instructions. A deliberately dishonest stub response is still accepted as
+answer text while producing no source/activity records. This is not a semantic
+truthfulness filter or a universal prompt-injection/data-leakage guarantee. Broader
+integrated browser acceptance and opt-in live verification remain 4.4–4.5.
+
+Verification on 2026-11-08:
+
+- `pnpm check` passes formatting, lint, strict types, all **461** unit/contract
+  tests, and the default production build. Six new SDK fixture cases exercise
+  notice/evidence handling, email-induced credential/rotation/monitoring calls,
+  hostile page text in a test-only tool result, and fabricated prose without
+  invented evidence. Non-stub traffic remains denied through trace flushing and
+  SDK shutdown; the synthetic runtime-secret canary is absent from model context.
+- `pnpm test:integration` passes all **112** disposable PostgreSQL/HTTP/SDK checks.
+  Three new composed cases cover the notice/account/action follow-up conversation
+  and persisted rejection/replay/retry for credential-read and rotation attempts.
+  The disposable container and network are removed after verification.
+- Strict OpenSpec validation and whitespace checks pass. There are no generated
+  API/client, lockfile, or migration changes. Build-generated Next.js type
+  references are restored to their incoming values, and unrelated working-tree
+  edits are preserved.
+- No browser acceptance was rerun because this slice changes no browser behavior;
+  complete-loop acceptance remains 4.4. No live provider calls, actual incident
+  investigation, existing `.env` edits, or development-data operations were
+  performed. This checkpoint does not establish live model truthfulness. Stop
+  here for review before 4.4–4.5; commit only when requested.
+
+### Integrated acceptance (task 4.4)
+
+The owner selected 4.4 and 4.5 together after questioning the case specificity of
+4.3. The fictional Railway notice remains a regression fixture for general
+context, evidence, and permission boundaries. It adds no Railway-specific
+application branch, production tool, or incident workflow. This acceptance uses
+ordinary conversation, a fictional project code, and a synthetic library release.
+
+Read `conversation-workspace.tsx`, `state/conversation-submission.ts`, and
+`api/conversation-stream-api.ts` under `apps/web/src/features/conversation/`, then
+`ConversationStreamService`, `ConversationLoop`, and `openai-conversation.model.ts`
+for the browser → HTTP → admission → SDK → persistence path. The fixture replaces
+only the model transport inside its own process; no production test endpoint or
+configuration bypass is added.
+
+The in-app walkthrough is: sign in to the existing conversation, send a message,
+continue with a context-dependent follow-up, inspect a cited response and its Run
+details, refresh during work, recover a failed response with Retry response, then
+clear history through the header confirmation. Accepted messages are committed
+before acceptance is delivered. The next unsent draft is separate and stays in
+memory: final responses preserve it; reload, history replacement, and sign-out
+remove it. Refresh and sign-in restore accepted work without resending it.
+
+Verification on 2026-11-08:
+
+- `pnpm check` passes formatting, lint, strict types, all **467** unit/contract
+  tests, API regeneration, and the default Turbopack production build.
+  `pnpm test:integration` passes all **112** disposable PostgreSQL/HTTP/SDK checks.
+  Strict OpenSpec validation and `git diff --check` pass with no generated API,
+  lockfile, or migration drift.
+- **24 integrated browser scenarios pass**, twelve each at **1440×1000** and
+  **390×844**, using Chromium and the production frontend on port 3270. The
+  actual Next.js rewrite reaches NestJS on 3271; real login/CSRF routes establish
+  HttpOnly, SameSite=Strict session cookies against an independently created
+  `mentor_test` PostgreSQL/pgvector container with actual migrations.
+- Checks cover automatic singleton access; early SSE while the database still
+  says running; acceptance/next-draft lifetimes; completed-pair follow-up context;
+  persisted search activity, inline references and source-list inspection after
+  refresh; reload during work; a dropped POST response; temporary history-read
+  failure; failed-attempt retry preserving the draft and original message;
+  expired-attempt reconciliation; clearing during retry with dependency deletion
+  and singleton retention; stale-tab admission rejection; logout and actual
+  database-session expiry during streaming; and older-message pagination beyond
+  the model context bound across a date/topic change.
+- A 32-turn fixture with timestamps two days earlier still paginates to its first
+  message. A new topic uses the same singleton, marks omitted context, and sends
+  at most 1024 bytes of application transcript. This excludes the SDK's expanded
+  wire representation, as the production limit does.
+- Database state and local provider-request counts confirm that reload, response
+  loss, sign-in recovery, and failed reads do not create another model call.
+  Private local/session storage stays empty, obsolete private UI/drafts disappear
+  on auth loss, citations are keyboard focusable, and neither viewport overflows
+  horizontally. No uncaught page errors or nonlocal browser requests occur.
+- The ordinary browser path uses no API interception. Two fault cases deliberately
+  abort a proxied POST response after the backend handles it and inject one 503
+  history read. Interruption backdates valid start/deadline timestamps in the
+  disposable database; session expiry changes only its synthetic session rows.
+- Fixture server, CLI scenario code, results, and inspected phone/desktop images
+  are under ignored `output/playwright/integrated/`. Earlier harness failures
+  concerned invalid deadline fixture timestamps, ordering that changed when a
+  timestamp was backdated, and measuring SDK wire bytes instead of application
+  transcript bytes. Corrected complete phone/desktop runs pass; no production
+  behavior changed to satisfy those assertions. The first full check also found
+  stale 4.3 assertions requiring incident-specific prompt phrases; those wording
+  assertions were removed while role, tool, evidence, persistence, and forbidden-call
+  outcome checks remain.
+
+This closes the local browser gaps in 3.3–3.5. Canned SDK answers and search
+annotations verify transport, context, persistence, and rendering, not live
+reasoning or real public investigation. Local HTTP cookies and the Next.js rewrite
+do not verify production Secure cookies, TLS, or a deployed reverse proxy.
+No existing `.env`, development database, migrations, or API contracts are changed.
+The disposable fixture container is removed after acceptance. Commit only when
+requested; archive and older-roadmap reconciliation are separate steps.
+
+### Opt-in live smoke (task 4.5)
+
+With an explicit account-available `OPENAI_CHAT_MODEL`, server `OPENAI_API_KEY`,
+and valid AI limits already configured, run from the repository root:
+
+```bash
+pnpm smoke:conversation --live
+```
+
+This builds the backend and loads the existing `.env` without modifying it.
+Omitting `--live` exits before AI configuration validation or model construction. Missing or
+invalid configuration makes no provider call. The command makes paid requests to
+OpenAI through the existing adapter; it never connects to the database or reads
+owner history. Its three fixed synthetic turns acknowledge a fictional code,
+recall it using the preceding pair, and request the official TypeScript handbook
+through public web search. Search stays automatically available on every turn.
+
+Each attempt uses the configured model, a deadline of at most **30 seconds**, at
+most **512 output tokens per model call**, and **one hosted tool call per Responses
+request**, respecting smaller configured output/deadline and input bounds. There
+are at most three application attempts; failure stops the sequence. SDK default
+iterations, no automatic retries, `store:false`, and disabled tracing remain
+unchanged. These per-call controls are not a cumulative token, tool, or money cap.
+
+The JSON report records UTC time, the exact configured model and applied limits,
+each normalized outcome/answer/source/activity/usage record, a basic fictional-code
+recall check, and whether the investigation recorded completed search plus usable
+sources. A failed run exits nonzero without printing raw provider exceptions or
+credentials. Save and review this report when running live: successful pattern and
+evidence checks do not establish factual accuracy or general model truthfulness.
+The command checks the provider adapter, not browser/auth/database integration.
+The application/SDK responsibility split follows the [official Agents SDK guide](https://developers.openai.com/api/docs/guides/agents/sdk);
+contract verification targets the repository's pinned versions.
+
+Six ordinary tests execute the actual command/SDK in fresh child processes with
+fetch fully intercepted: no opt-in, missing configuration, contextual success with
+observed citations, redacted provider failure with no retry, unobserved citations,
+and deadline cancellation. Real HTTP/network requests are denied by that preload.
+The normal `test`, `check`, and integration commands never invoke the live command;
+existing adapter suites continue denying non-stub outbound traffic.
+
+**Live result for this checkpoint: not run.** No live model identifier or provider
+result is claimed. Configured-model compatibility, real hosted-search output, and
+live answer quality remain unverified until an explicitly opted-in run is made;
+local fixture results do not substitute for it.
+
 Migration `0004_remove_turn_investigation.sql` removes the historical per-turn
 column and recalculates request fingerprints from text alone, preserving
 idempotent replay of previously accepted messages. Migration 0003 remains intact
@@ -794,8 +1004,9 @@ responses on phone and desktop. The sending slice adds 29 browser scenarios and
 repeats the 28 workspace regressions with the enabled composer. All of those
 browser checks intercept API calls with synthetic responses; they do not exercise
 real cookies, PostgreSQL, or a live provider. See [the sending evidence](conversation-ui-plan.md#checkpoint-3a-sending-and-delivery-recovery).
-Full retry/clear-history/auth acceptance and live-provider verification remain open;
-synthetic search fixtures are not live investigation evidence.
+Those historical browser gaps are closed by [task 4.4](#integrated-acceptance-task-44).
+Live-provider verification remains unperformed; synthetic search fixtures are not
+live investigation evidence.
 
 ## Application/API checkpoint (task 2.5)
 

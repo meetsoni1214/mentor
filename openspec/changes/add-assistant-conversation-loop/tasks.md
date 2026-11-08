@@ -27,7 +27,7 @@ This change is the current conversation-loop implementation scope. The older `bu
 
 - [x] 3.1 Add a generated-client-backed frontend conversation API with runtime validation and generalized expired-session handling; verify late responses after logout/history clearing cannot repopulate private query state and no backend package is imported into the browser. Keep HTTP, contracts/errors, request scope, and query-cache responsibilities separate; verify a read discovering a newer history version completes while obsolete pages are removed.
 - [x] 3.2 Replace the signed-in placeholder with one continuous transcript opened automatically after sign-in, older-message pagination, composer, per-response bounded-context notes, and run details; verify keyboard use, readable status announcements, empty/loading/config-disabled states, and phone/desktop layout without horizontal overflow, with no New conversation button, thread list, titles, or topic/day reset. Use the approved monochrome palette with owner messages right and Mentor replies left; keep sending explicitly disabled for this checkpoint. Omit the cloud-processing and Privacy & context footer at the owner's request; document those details instead.
-- [ ] 3.3 Implement draft preservation, submission-key reconciliation, polling while running, explicit retry, and Clear history from the header with stale-version protection; verify browser acceptance with a synthetic provider for a contextual follow-up, long history that remains browsable beyond model-context limits without asking to start over, reload during work, dropped POST response, temporary API failure, interrupted run, history clearing during generation, stale-tab replay rejection, and uninterrupted continuation after returning another day or changing topic.
+- [x] 3.3 Implement draft preservation, submission-key reconciliation, polling while running, explicit retry, and Clear history from the header with stale-version protection; verify browser acceptance with a synthetic provider for a contextual follow-up, long history that remains browsable beyond model-context limits without asking to start over, reload during work, dropped POST response, temporary API failure, interrupted run, history clearing during generation, stale-tab replay rejection, and uninterrupted continuation after returning another day or changing topic.
 - [x] 3.3a Implement browser streaming slice 2: generated-client SSE submission and browser-owned event validation, acceptance separate from completion, ephemeral provisional rendering, saved terminal-state precedence, session/history reader cleanup, and polling only for unresolved delivery or running attempts without a matching live stream. Verify framing/UTF-8, early text, final/failed results, replay, draft preservation, disconnect recovery, and stale-event suppression with deterministic tests and synthetic phone/desktop browser checks; run pnpm check and stop for review before full slice-3 acceptance.
 - [x] 3.3b Establish the browser submission refactor baseline: document events, state transitions, effects, and the behavior-test mapping in docs/conversation-ui-plan.md using design decision 7.1. Run pnpm exec vitest run --config vitest.config.ts apps/web/tests; retain assertions for request identity/counts, draft lifetimes, acceptance through history, saved-terminal precedence, explicit-resend failures, failed history checks, and session/history invalidation. Add only missing behavior/race coverage and record the baseline and unavailable checks before changing production state handling.
 - [x] 3.3c Introduce state/submission-state.ts with pure typed state and named lifecycle transitions; keep the original SubmitInput inside unresolved-delivery states instead of a separate nullable pending field, and keep the next editable draft independent of an accepted live response. Refactor conversation-submission.ts to own HTTP/history/cache effects, confirmation waiting, subscriptions, delivery generation, and cancellation while preserving the existing UI snapshot/hook boundary where possible. Verify browser delivery/stream tests, strict types, stable getSnapshot references between changes, history-confirmed acceptance preserving a live stream, next-draft preservation, and obsolete delivery suppression; update the documented ownership map with the implemented structure.
@@ -35,8 +35,8 @@ This change is the current conversation-loop implementation scope. The older `bu
 - [x] 3.3e Verify and present the complete browser submission refactor checkpoint: run pnpm check, strict OpenSpec validation, and git diff --check; confirm no unexplained generated API drift. Repeat focused synthetic phone/desktop checks for acceptance and next drafts, lost confirmation and same-key recovery, disconnect and saved completion, and session/history cleanup without duplicate writes. Record actual results/limitations in docs/conversation-ui-plan.md and a concise current-state file-reading order plus one send/disconnect/recovery trace in docs/conversation-loop.md, separating historical evidence from the current entry point. Report database integration as not rerun unless the implementation touches backend/database behavior; make no live model calls. Stop for review before remaining task-3.3 features, backend refactoring, tool configuration cleanup, query-adapter contract removal, or search; commit only when requested.
 - [x] 3.3f Implement browser SSE attempt retry using design decision 7.2: generated-client POST and shared bounded SSE validation with retry-specific history-version/turn/attempt-request-ID checks; a typed send-or-retry operation in the existing pure state/coordinator split; Retry response on only the latest failed/interrupted turn with availability, unresolved-delivery, running-attempt, and double-click guards. Preserve drafts on all retry outcomes, preserve previous attempts, publish committed snapshots, and keep provisional text ephemeral. Confirm acceptance from the target attempt's request ID, never the original turn key or an older terminal attempt. Preserve healthy-reader/no-polling behavior, saved-terminal precedence, confirmation/idle bounds, exact-command explicit recovery, no POST after a failed check, safe NOT_FOUND/NOT_RETRYABLE handling, inconclusive replay-failure handling, and session/history/delivery guards. Verify normal send behavior remains intact and no second coordinator, state-machine dependency, or private browser persistence is introduced.
 - [x] 3.3g Verify and present the complete SSE retry checkpoint (2.7 and 3.3f): run pnpm check, pnpm test:integration, strict OpenSpec validation, and git diff --check; inspect generated API changes for only the intended retry route. Add behavior tests and synthetic phone/desktop acceptance for eligibility, one message/multiple attempts, double clicks, early/final/failed responses, healthy streams without polling, current/next-draft preservation, mismatched event identities, history-confirmed acceptance retaining a healthy reader, lost confirmation with exact-key recovery, failed checks without replay, disconnect/reload and saved completion, older-attempt non-settlement, another-tab races, and session/history cleanup with obsolete callbacks. Record actual evidence and limits in docs/conversation-ui-plan.md and docs/conversation-loop.md, including a retry/disconnect/recovery trace, and update AGENTS.md's current milestone. No live model calls, existing .env edits, or development-data operations. Stop for review before Clear history, broader task-3.3/3.4 acceptance, or investigation; commit only when requested.
-- [ ] 3.4 Extend auth browser acceptance to session expiry/logout while conversation requests are in flight; verify sign-in recovery does not resubmit, private caches/drafts clear, browser local/session storage has no transcript, and existing sign-in/logout behavior still works.
-- [ ] 3.5 Document the in-app walkthrough and browser evidence in docs/conversation-loop.md, distinguishing accepted from unsent drafts and fixture output from live output; run relevant checks, present the focused verified checkpoint for review, and commit when requested.
+- [x] 3.4 Extend auth browser acceptance to session expiry/logout while conversation requests are in flight; verify sign-in recovery does not resubmit, private caches/drafts clear, browser local/session storage has no transcript, and existing sign-in/logout behavior still works.
+- [x] 3.5 Document the in-app walkthrough and browser evidence in docs/conversation-loop.md, distinguishing accepted from unsent drafts and fixture output from live output; run relevant checks, present the focused verified checkpoint for review, and commit when requested.
 
 The owner approved the sending portion of task 3.3 as a separate review slice:
 draft preservation, stable submission identity, explicit delivery recovery, and
@@ -104,11 +104,16 @@ The owner then requested committing 4.1 (e46b4e5) and implementing the next slic
 safe inline/source-list presentation, and focused verification, then stop for
 review before 4.3–4.5. Keep always-available search; no new enable flag is needed.
 
+The owner committed 4.2 as b4d4404 and selected 4.3 as the next slice. Add the
+synthetic notice/email/page fixtures and focused permission/context checks, then
+stop for review before 4.4–4.5. Honest prose supplied by local fixtures is not
+live model-quality or universal truthfulness evidence.
+
 - [x] 4.1 Register only the SDK-supported hosted web-search tool through Responses under runtime-controlled availability and disclose assistant-selected search. Let the SDK/model choose when to search, using supported per-request settings and the application deadline, without custom cumulative budgets. Verify searched/unsearched SDK fixtures, unavailable tools omitted, no other production tools, no per-turn toggle, and no search claimed without observed activity.
 - [x] 4.2 Normalize provider-observed search activity and citation annotations exposed through SDK results into bounded persisted records; preserve required continuation items only within the active run. Render answer text safely with separately validated HTTP(S) source links and no raw HTML or promoted invented links; verify unsafe URLs, malformed annotations, unknown output shapes, and fabricated sources are rejected or labelled honestly.
-- [ ] 4.3 Add synthetic Railway-notice and adversarial email/page fixtures; verify conversation continuation, distinction between public evidence and unknown account exposure, no fabricated monitoring/rotation claims, and no write-capable tools or credential access despite embedded instructions. Document that fixture enforcement tests do not establish universal model truthfulness.
-- [ ] 4.4 Run pnpm check, pnpm test:integration, and integrated phone/desktop browser acceptance through conversation, investigation, source inspection, refresh/recovery, history clearing, singleton continuity, and auth loss; record actual results and unavailable checks, keep unverified tasks open, present the focused verified checkpoint for review, and commit when requested.
-- [ ] 4.5 Provide an opt-in live smoke command using configured credentials/model and bounded synthetic requests; verify ordinary tests never call OpenAI, document the command and limits, and record the exact live model/results if run or clearly record that live verification remains unavailable. Never treat stubbed search as live evidence.
+- [x] 4.3 Add synthetic Railway-notice and adversarial email/page fixtures; verify conversation continuation, distinction between public evidence and unknown account exposure, no fabricated monitoring/rotation claims, and no write-capable tools or credential access despite embedded instructions. Document that fixture enforcement tests do not establish universal model truthfulness.
+- [x] 4.4 Run pnpm check, pnpm test:integration, and integrated phone/desktop browser acceptance through conversation, investigation, source inspection, refresh/recovery, history clearing, singleton continuity, and auth loss; record actual results and unavailable checks, keep unverified tasks open, present the focused verified checkpoint for review, and commit when requested.
+- [x] 4.5 Provide an opt-in live smoke command using configured credentials/model and bounded synthetic requests; verify ordinary tests never call OpenAI, document the command and limits, and record the exact live model/results if run or clearly record that live verification remains unavailable. Never treat stubbed search as live evidence.
 
 Task 4.1 is implemented and verified with the real pinned SDK/official client
 against local HTTP stubs. After the owner's always-available-search revision,
@@ -136,9 +141,46 @@ edits, or development-data operations were performed. The synthetic browser
 checks do not complete real-cookie/deployed-proxy acceptance or prove universal
 truthfulness. Stop for review here; 4.3–4.5 remain open. Commit when requested.
 
+Task 4.3 is implemented and verified: `pnpm check` passes all 461 unit/contract
+tests and the production build; all 112 disposable PostgreSQL/HTTP/SDK integration
+checks pass. Strict OpenSpec and whitespace checks pass without generated-contract,
+lockfile, or migration drift. Six SDK cases and three composed cases use named
+synthetic notice/email/page fixtures. Unsupported credential, rotation, and
+monitoring calls are rejected; public evidence and contextual follow-ups are
+preserved. Honest answers are canned, and a deliberately false prose case confirms
+that evidence records are not fabricated without claiming arbitrary prose is
+semantically filtered. The hostile page reader is test-only, not a production
+tool or a test of provider-internal hosted retrieval. No browser acceptance, live
+provider calls, actual incident investigation, existing `.env` edits, or
+development-data operations were performed. Stop for review before 4.4–4.5;
+commit only when requested.
+
+## Complete-loop acceptance checkpoint (4.4–4.5)
+
+The owner authorized 4.4 and 4.5 together, keeping the solution general-purpose.
+The 4.3 notice stays a test example only; stale exact prompt-phrase assertions were
+removed while context roles, tool permissions, evidence, persistence, and rejected
+credential/action calls remain covered. Production behavior is unchanged.
+
+On 2026-11-08, `pnpm check` passes all 467 unit/contract tests and the default
+production build; all 112 disposable PostgreSQL/HTTP/SDK integration checks pass.
+Twenty-four integrated Chromium scenarios pass at 1440×1000 and 390×844 through
+real local cookies/CSRF, the production Next.js rewrite, NestJS, disposable
+PostgreSQL, and the actual SDK with a localhost provider stub. These close the
+remaining local acceptance in 3.3–3.5. Strict OpenSpec and whitespace checks pass
+without generated API, lockfile, or migration drift.
+
+`pnpm smoke:conversation --live` provides the opt-in configured-model synthetic
+multi-turn/public-search check with deadlines and per-request limits. Six ordinary
+subprocess tests intercept all provider fetch traffic; no paid run was performed.
+Live provider compatibility/search/answer quality and deployed TLS/proxy behavior
+remain unverified. See docs/conversation-loop.md for the walkthrough, exact
+verification scope, artifacts, command, and limits. No existing .env or development
+data was changed. Stop here for review; commit/archive only when requested.
+
 ## Workflow follow-up
 
 - Present the proposal, two capability specs, design, and tasks for review. The proposal workflow ends at that checkpoint; implementation uses openspec-apply-change for this named change after the user's next implementation instruction.
-- The earlier SDK/application/API, browser streaming, browser submission refactor, and SSE retry checkpoints are implemented. The owner approved Clear history tasks 3.3h–3.3i as the next focused checkpoint; stop after that slice for review before broader interaction/auth acceptance or investigation. Commit when requested. Do not expand into email observation, long-term personal memory, action execution, SDK approval/session persistence, specialist handoffs, or the older roadmap's remaining groups.
+- All tasks in this change are implemented and locally verified through 4.4–4.5, including overlapping browser acceptance 3.3–3.5. Review the complete-loop checkpoint before committing or archiving. Live provider and deployed TLS/proxy results remain unverified as documented. Do not expand into email observation, long-term personal memory, action execution, SDK approval/session persistence, specialist handoffs, or the older roadmap's remaining groups.
 - Before archive, reconcile overlapping conversation capability ownership and milestone ordering with the older roadmap; do not mark its retrieval, streaming, export, or background work complete based on this narrower change.
 - Archive only after implemented behavior, available verification, limitations, and the requested review are recorded.

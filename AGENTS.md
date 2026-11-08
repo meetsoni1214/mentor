@@ -7,11 +7,18 @@ implemented with local verification. The active change is
 `add-assistant-conversation-loop`: one continuous conversation per owner, with
 no thread creation or selection. Group 1, conversation persistence and run
 lifecycle, and the four architecture follow-ups are implemented. The current
-review checkpoint is search activity and citations (task 4.2), selected by the
-owner after committing hosted web-search registration (4.1) as e46b4e5. Earlier
-checkpoints include Clear history (3.3h–3.3i), SSE attempt retry (3.3f–3.3g), and
-backend retry commit 04f6c8a. Stop after 4.2 for review before adversarial
-investigation (4.3), integrated acceptance (4.4), or opt-in live verification (4.5).
+review checkpoint is integrated phone/desktop acceptance (4.4) and the separate
+opt-in live smoke command (4.5), authorized together by the owner after reviewing
+the case specificity of 4.3. The 4.3 fictional notice is only a regression fixture
+for general evidence/context/permission boundaries; production has no
+Railway-specific behavior. Search activity/citations (4.2) is committed as
+b4d4404 and hosted search registration (4.1) as e46b4e5. Earlier checkpoints include
+Clear history (3.3h–3.3i), SSE attempt retry (3.3f–3.3g), and backend retry commit
+04f6c8a. Local acceptance now traverses real cookies/CSRF, the production Next.js
+rewrite, NestJS, disposable PostgreSQL, and the actual SDK with localhost model
+responses. Live provider and deployed TLS/proxy behavior remain unverified.
+Stop at the completed conversation-loop checkpoint for review; commit and archive
+only when requested.
 Task 2.3 completed API-side composition of the conversation use case,
 Drizzle repository, and pinned Agents SDK/Responses adapter, including persistence
 of available SDK-reported usage for unsuccessful attempts. Tasks 2.2a–2.2c
@@ -231,3 +238,80 @@ add only optional citation positions, with no migration or lockfile changes.
 Browser API interception is synthetic evidence, not real-cookie/deployed-proxy
 acceptance. No live model calls, existing `.env` edits, or development-data
 operations were performed. Keep 4.3–4.5 open and stop here for review.
+
+## Adversarial investigation checkpoint
+
+The owner authorized task 4.3 after committing 4.2 as b4d4404. Named fixtures in
+`tests/fixtures/conversation-investigation.ts` use a fictional Railway notice,
+adversarial pasted email, and a synthetic retrieved page. These are not real
+advisories or incident findings. General instructions express uncertainty,
+treat evidence as untrusted, and state the lack of private-account access,
+monitoring, and actions. The fixtures illustrate these boundaries without
+requiring incident-specific prompt phrases.
+
+Production still registers only hosted web search. Tests exercise the actual
+SDK/client against a localhost stub with other outbound traffic denied. The
+retrieved-page test uses the existing test-only function-tool seam to deliver
+page text as a tool result; it does not register a production URL fetcher or
+simulate OpenAI's internal hosted-page execution. Unregistered credential-read,
+key-rotation, and monitoring calls fail; no runtime secret or provider key is
+inserted into model instructions/input. PostgreSQL composition covers public
+evidence, contextual follow-ups, unknown account exposure, suggested manual
+actions, failure persistence, replay, and explicit retry without new permissions.
+
+Fixtures verify request roles, tool availability, evidence mapping, and saved
+outcomes. Honest answer text is supplied by the stub, so these are not live model
+truthfulness tests. Deliberately false action claims produce no recorded sources
+or activity, but arbitrary generated prose is not semantically filtered. Do not
+claim the application universally blocks fabricated prose, prompt injection, or
+all data leakage. Keep search always available with valid configuration, preserve
+SDK defaults, and add no cumulative budget, execution hook, or approval system.
+Stop after 4.3 for review; keep 4.4–4.5 open and commit only when requested.
+
+Task 4.3 is implemented and verified: `pnpm check` passes 461 unit/contract tests
+and the production build, and `pnpm test:integration` passes 112 disposable
+PostgreSQL/HTTP/SDK checks. Strict OpenSpec and whitespace checks pass without
+generated-contract, lockfile, or migration drift. Browser acceptance was not rerun;
+no live provider calls, actual incident investigation, existing `.env` edits, or
+development-data operations were performed. Test outputs are synthetic and do not
+establish universal model truthfulness. Stop here for review before 4.4–4.5.
+
+## Integrated acceptance and opt-in smoke checkpoint
+
+The owner authorized 4.4 and 4.5 together. Twenty-four browser scenarios pass at
+1440×1000 and 390×844 through real local auth cookies/CSRF, the production Next.js
+rewrite, NestJS, a disposable PostgreSQL/pgvector database with actual migrations,
+and the pinned SDK/client against a localhost provider stub. This closes local
+3.3–3.5 acceptance gaps, including context/follow-up, source inspection, reload and
+lost-response recovery, read failures without replay, failed/interrupted attempts,
+retry/draft lifetimes, clear-during-retry/stale tabs, logout/session expiry with
+in-flight work, empty browser storage, and older history beyond model context
+across date/topic changes. Production behavior needed no changes. Two fault cases
+intercept browser requests; ordinary flows use actual API/database responses.
+Artifacts and the local-only harness are under output/playwright/integrated/.
+
+`pnpm smoke:conversation --live` is a separate opt-in command using the existing
+server key/model and only three fixed synthetic turns with no database access.
+It respects configured input bounds, caps each attempt at 30 seconds and each
+model call at 512 output tokens, and supplies one hosted call per Responses
+request. Preserve SDK default iterations and existing storage/tracing/retry policy;
+these are not cumulative budgets or a spending cap. Six deterministic subprocess
+checks intercept provider traffic and cover opt-in/configuration, contextual
+success/evidence, redacted failure/no retry, unobserved citations, and deadline
+cancellation. Normal verification never invokes paid smoke execution.
+
+Live smoke was not run; do not claim provider compatibility, actual public search,
+or model truthfulness from fixtures. No existing .env, development data, API
+contract, lockfile, or migration is changed. Disposable acceptance infrastructure
+is removed after use. Deployed Secure cookies/TLS/reverse-proxy acceptance remains
+unverified. See docs/conversation-loop.md for the current walkthrough, evidence,
+live command, and limits. Review before committing or archiving; older roadmap
+reconciliation remains a separate step.
+
+Tasks 4.4–4.5 and overlapping browser acceptance tasks 3.3–3.5 are complete:
+`pnpm check` passes 467 unit/contract tests and the default production build;
+`pnpm test:integration` passes 112 disposable PostgreSQL/HTTP/SDK checks; all 24
+integrated phone/desktop scenarios pass. Strict OpenSpec and whitespace checks
+pass without generated API, lockfile, or migration drift. Stale 4.3 assertions of
+incident-specific prompt phrases were removed; role/tool/evidence/persistence and
+forbidden-call outcomes remain tested. No live provider call or commit was made.

@@ -14,6 +14,9 @@ public-web search available whenever assistant execution is configured; the mode
 chooses when to search. Task 4.2 saves observed search activity and validated
 citations, with clickable inline references and a visible source list after
 completion. See the [search evidence checkpoint](docs/conversation-loop.md#search-evidence-and-citations-task-42).
+Task 4.3 adds [synthetic investigation/adversarial fixtures](docs/conversation-loop.md#adversarial-investigation-fixtures-task-43)
+and explicit account-access/action limits in the instructions. Fixture checks
+verify permissions and evidence handling, not universal live-model truthfulness.
 Notes, long-term memory, email access, and external actions remain future work.
 
 Browser branding, design tokens, and reusable controls follow the
@@ -145,8 +148,15 @@ with history or the same request key; it must not cause a new automatic attempt.
 Process failure can leave a running attempt until its deadline is reconciled as
 interrupted. Retry starts fresh and is explicit. The worker does not resume runs.
 The [configuration and recovery guide](docs/conversation-loop.md) records these
-limits and the local verification evidence. Live OpenAI verification and the
-complete conversation interaction walkthrough remain pending.
+limits and the local verification evidence. [Integrated acceptance](docs/conversation-loop.md#integrated-acceptance-task-44)
+now covers real local cookies, API/database, and Next.js proxy behavior on phone
+and desktop with a localhost SDK stub. Live OpenAI and deployed TLS/proxy behavior
+remain unverified.
+
+The separate [live smoke command](docs/conversation-loop.md#opt-in-live-smoke-task-45),
+`pnpm smoke:conversation --live`, uses configured server credentials/model and
+three bounded synthetic turns without accessing owner history or the database.
+It can incur OpenAI charges and is never part of ordinary verification.
 
 ## Daily commands
 

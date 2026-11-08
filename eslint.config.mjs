@@ -14,6 +14,7 @@ export default tseslint.config(
       '.agents/**',
       '.codex/**',
       '.aws/**',
+      'output/playwright/**',
       'packages/api-client/src/generated/**',
       'apps/web/next-env.d.ts',
     ],

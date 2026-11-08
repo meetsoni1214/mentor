@@ -714,3 +714,22 @@ does not jump on refresh completion, no visible loading screen appears, old priv
 content stays hidden on failure, and newer messages are preserved. No development
 API/database or live provider calls are made; all API responses are intercepted.
 The production build and database integration were not rerun for this UI fix.
+
+## Integrated acceptance (tasks 3.3–3.5 and 4.4)
+
+On 2026-11-08, 24 scenarios passed across 1440×1000 desktop and 390×844 phone
+viewports through the real local cookie/CSRF → production Next.js rewrite → NestJS
+→ disposable PostgreSQL → actual SDK → localhost provider-stub path. This closes
+the local authentication/database/proxy gap left by the historical intercepted
+browser checkpoints above. It includes contextual follow-up, persisted sources,
+refresh/lost-response recovery, read failure without replay, failed/interrupted
+attempts, retry/draft lifetimes, clear-during-retry/stale tabs, logout/session
+expiry with in-flight work, empty browser storage, and paginated older history
+outside model context across a date/topic change. No production code changed.
+
+See [task 4.4 in the conversation guide](conversation-loop.md#integrated-acceptance-task-44)
+for the walkthrough, fixture setup, assertions, results, corrected fixture issues,
+and artifacts under `output/playwright/integrated/`. Model answers/search evidence
+remain synthetic. The [opt-in live command](conversation-loop.md#opt-in-live-smoke-task-45)
+is implemented and tested locally; no paid provider run or deployed TLS/proxy
+acceptance is claimed.
