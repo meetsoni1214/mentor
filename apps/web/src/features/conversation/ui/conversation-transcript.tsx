@@ -12,10 +12,18 @@ export function ConversationTranscript({
   history,
   acceptedRequestId,
   provisional,
+  retryTurnId,
+  pendingRetryTurnId,
+  retryDisabled,
+  onRetry,
 }: {
   history: ReturnType<typeof useConversationHistory>;
   acceptedRequestId: string | null;
   provisional: ProvisionalResponse | null;
+  retryTurnId: string | null;
+  pendingRetryTurnId: string | null;
+  retryDisabled: boolean;
+  onRetry: (turnId: string) => void;
 }) {
   const scroll = useRef<HTMLElement>(null);
   const positionedVersion = useRef<number | undefined>(undefined);
@@ -51,7 +59,13 @@ export function ConversationTranscript({
       anchor.current = null;
     } else if (
       (acceptedRequestId !== positionedRequest.current &&
-        turns.some((turn) => turn.requestId === acceptedRequestId)) ||
+        turns.some(
+          (turn) =>
+            turn.requestId === acceptedRequestId ||
+            turn.attempts.some(
+              (attempt) => attempt.requestId === acceptedRequestId,
+            ),
+        )) ||
       followLatest.current
     ) {
       container.scrollTop = container.scrollHeight;
@@ -189,6 +203,11 @@ export function ConversationTranscript({
                 turn={turn}
                 onRefresh={() => void head.refetch()}
                 refreshing={head.isFetching}
+                onRetry={
+                  turn.id === retryTurnId ? () => onRetry(turn.id) : undefined
+                }
+                retryDisabled={retryDisabled}
+                retrying={turn.id === pendingRetryTurnId}
                 provisional={
                   provisional &&
                   provisional.historyVersion === version &&

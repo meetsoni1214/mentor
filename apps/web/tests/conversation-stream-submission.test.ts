@@ -38,7 +38,7 @@ function setup() {
   const refresh = vi.fn(async () => historyOf(running));
   const publish = vi.fn();
   const submission = new ConversationSubmission(
-    { submit, refresh, publish, assertCurrent() {} },
+    { submit, retry: vi.fn(), refresh, publish, assertCurrent() {} },
     () => streamInput.requestId,
   );
   submission.observe(historyOf());

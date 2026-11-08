@@ -4,8 +4,9 @@ Status: checkpoints 1 and 2 (tasks 3.1–3.2) implement the validated browser cl
 session isolation, and a read-only conversation workspace. The owner approved a
 monochrome interface with owner messages on the right and Mentor responses on the
 left. The owner subsequently approved checkpoint 3a: sending, draft preservation,
-delivery reconciliation, and running-attempt polling. Explicit attempt retry,
-Clear history, and complete interaction/auth acceptance are separate follow-ups.
+delivery reconciliation, and running-attempt polling. SSE attempt retry is now
+implemented and verified in tasks 3.3f–3.3g. Clear history and complete
+interaction/auth acceptance remain separate follow-ups.
 Tasks 3.3–3.5 remain open pending their full implementation and verification.
 The owner subsequently approved backend streaming slice 1 (task 2.6). Its opt-in
 SSE endpoint is documented in [the conversation guide](conversation-loop.md#backend-streaming-slice-1).
@@ -536,3 +537,82 @@ Tasks 3.3b–3.3e finish this review checkpoint. Task 3.3 remains open for expli
 model-attempt retry, Clear history, and full acceptance. Backend refactoring,
 reserved tool configuration, query-adapter contract removal, and search remain
 separate follow-ups. No commit is created until requested.
+
+## SSE attempt retry (tasks 3.3f–3.3g)
+
+The browser now offers **Retry response** beneath only the newest turn whose
+latest attempt failed or was interrupted. Completed and older turns are
+ineligible. The action is disabled when status/history is not ready, execution is
+unavailable, sign-out is underway, a mutation is unresolved, or an attempt is
+running. Synchronous coordinator guards prevent double clicks from allocating
+another key. Another client's write can still change eligibility; server
+admission is authoritative and rejection refreshes history without changing the
+draft or submitting a replacement message.
+
+`submission-state.ts` owns a typed `DeliveryOperation`: send carries the exact
+`SubmitInput`; retry carries the target turn ID and exact `RetryInput`. The
+existing coordinator owns both operations' HTTP effects, confirmation wait,
+reader, and cancellation generation. There is no second coordinator or transcript
+store. `SubmissionSnapshot` retains its existing fields and adds
+`pendingRetryTurnId` for pending/recovery copy. Only send acceptance clears its
+submitted draft; all retry outcomes preserve the independent draft except the
+existing session/history replacement policy that clears private state.
+
+`streamRetryConversationTurn` calls the generated POST retry-stream route with
+CSRF and validates the requested turn, history version, retry attempt key, and
+subsequent event identity. Both streaming operations share the bounded parser and
+event reader. The query adapter supplies `retryStream`, scope guards, and saved
+cache publication; the hook connects it to the same coordinator. Previous
+attempts remain in run details, provisional text stays ephemeral, and saved
+terminal snapshots cannot regress to running state.
+
+History acceptance searches the target turn's attempts for the retry key, not the
+original message key. An older unsuccessful attempt cannot settle a new retry.
+A matching live reader survives history-confirmed acceptance and pauses periodic
+polling. Disconnect, invalid events, reload, and running replay use saved history
+and two-second foreground polling. The 15-second confirmation wait, 30-second byte
+idle timeout, and framing/display bounds remain unchanged. Recovery always checks
+fresh history before an explicit same-command resend; failed reads send nothing.
+Inconclusive resend rejection retains the original identity. Initial known
+rejection and definitive conflicts are handled separately. Session/history and
+obsolete-delivery guards suppress late events without automatic replay.
+
+Verification on 2026-11-08:
+
+- `pnpm check` passes formatting, architecture lint, strict types, all 377
+  unit/contract tests, generated-contract checks, and the production build. The
+  browser portion now has 157 tests, including 42 added retry behaviors and
+  identity/race cases. Existing send assertions remain intact.
+- `pnpm test:integration` passes all 104 disposable PostgreSQL/HTTP/SDK checks.
+  The browser slice changes no backend contract or persistence; generated API
+  output has no drift from backend retry commit `04f6c8a`. Strict OpenSpec
+  validation and whitespace checks pass.
+- Twenty-six synthetic scenarios pass at 1365x900 and 390x844, plus a double-click
+  check at each size (28 total). They cover keyboard retry, early/final/failed
+  output, retrying interrupted work, fresh keys for later intentional retries,
+  current/next-draft preservation, preserved prior attempts, normal sending after
+  retry, eligibility/unavailable execution, and another-client eligibility races.
+  Healthy streams do not poll; disconnects poll and recover saved completion.
+- Lost confirmation retains the exact retry path/body: explicit recovery uses two
+  identical POSTs with one synthetic run; failed history checks send nothing.
+  History-confirmed acceptance preserves a healthy reader. Invalid stream
+  identity, reload, history replacement, logout, and expiry recover or clear
+  private state without automatic writes. Both double-click checks record one
+  POST, one run, one message, and two attempts. Browser local/session storage
+  remains empty, screenshots were inspected, and no page overflow was found.
+- The production frontend runs on port 3257 through its Next.js rewrite to a
+  localhost API/SSE fixture on port 4357. Authentication, storage, and model work
+  in the browser fixture are synthetic; the separate integration suite verifies
+  real HTTP/database boundaries. These checks do not complete real-cookie browser
+  integration, a deployed proxy, or broad task-3.4 authentication acceptance.
+  The eligibility race is injected by the fixture as another client's newer turn.
+  No live model calls, `.env` edits, migrations, or development-data changes occur.
+- Fixture, browser scripts, machine-readable scenario results, and phone/desktop
+  screenshots are under ignored `output/playwright/retry/`. Deliberate 401/409/503
+  responses and dropped streams produce expected browser network errors; the
+  initial favicon 404 is unrelated to conversation behavior.
+
+Tasks 3.3f–3.3g complete the retry checkpoint. Task 3.3 remains open for Clear
+history and its remaining acceptance; investigation remains later work. Stop for
+review here. The backend checkpoint is committed as `04f6c8a`. The browser retry checkpoint
+is complete and verified; Clear history remains a separate slice.

@@ -31,11 +31,15 @@ export function ConversationComposer({
     state.phase === 'stale'
       ? 'Refresh conversation'
       : recovering
-        ? 'Check or resend message'
+        ? state.pendingRetryTurnId
+          ? 'Check or resend retry'
+          : 'Check or resend message'
         : 'Send message';
   const hint =
     state.phase === 'sending'
-      ? 'Sending…'
+      ? state.pendingRetryTurnId
+        ? 'Starting retry…'
+        : 'Sending…'
       : state.phase === 'checking'
         ? 'Checking delivery…'
         : state.phase === 'stale'

@@ -22,7 +22,8 @@ Task 3.2 renders the continuous transcript, pagination, and run details in a
 monochrome workspace. Owner messages align right and Mentor replies
 align left. The approved sending portion of task 3.3 now enables the composer,
 retains rejected drafts, reconciles uncertain delivery, and polls persisted work.
-Browser controls for explicit attempt retry, Clear history, and full
+Browser retry now streams another attempt on the latest failed/interrupted
+message while preserving the independent composer draft. Clear history and full
 interaction/auth acceptance remain later slices; task 3.3 is still open.
 
 See [the sending checkpoint](conversation-ui-plan.md#checkpoint-3a-sending-and-delivery-recovery)
@@ -38,13 +39,16 @@ or observation of a new history version. Accepted messages remain in PostgreSQL.
 
 ## Current browser reading order
 
-The submission readability checkpoint is tasks 3.3b–3.3e. Start in
+The current retry checkpoint is tasks 3.3f–3.3g, building on the completed
+submission readability checkpoint (3.3b–3.3e). Start in
 `apps/web/src/features/conversation/`:
 
 1. `conversation-workspace.tsx` composes history, submission, and presentation.
 2. `state/submission-state.ts` defines valid delivery states, named transitions,
    failure categories, and typed notices. Unresolved states own their original
-   `SubmitInput`; accepted work and the next draft have independent lifetimes.
+   send command or target turn plus `RetryInput`; accepted work and the next
+   draft have independent lifetimes. `retryableTurnId` selects the newest eligible
+   turn from saved history.
 3. `state/conversation-submission.ts` coordinates the POST, committed publication,
    confirmation timer, history reads, reader cancellation, and subscriptions.
    It caches the state projection for React's external-store subscription.
@@ -53,8 +57,9 @@ The submission readability checkpoint is tasks 3.3b–3.3e. Start in
 5. `state/conversation-queries.ts` owns saved cache updates;
    `state/conversation-scope.ts` and auth's `session-scope.ts` reject obsolete work.
 6. `api/conversation-stream-api.ts` validates event order and identities;
-   `api/conversation-stream-reader.ts` handles SSE framing, byte timeout, and bounds.
-7. `ui/conversation-composer.tsx` consumes the unchanged snapshot;
+   submit validates message text/key, while retry validates turn/attempt key.
+   Both share `api/conversation-stream-reader.ts` for framing, timeout, and bounds.
+7. `ui/conversation-composer.tsx` consumes the projected snapshot;
    `ui/conversation-transcript.tsx` displays saved turns and ephemeral response text.
 
 For a concrete trace, send “Explain database locks” with request ID `R1` and
@@ -78,9 +83,26 @@ sends nothing. Session loss clears private state; a new history version discards
 pre-clear input and never replays it into the replacement history.
 
 See the [transition/test map and current verification](conversation-ui-plan.md#submission-readability-checkpoint-tasks-33b33e).
-The dated checkpoints below describe evidence from earlier slices. Retry and
-Clear history controls, integrated authentication/database/proxy acceptance, and
-public-web investigation remain later work.
+The dated checkpoints below describe evidence from earlier slices. Clear history
+controls, integrated authentication/database/proxy acceptance, and public-web
+investigation remain later work.
+
+For retry, the original turn `T1` keeps submission key `R1` and its failed
+attempt. Clicking **Retry response** creates a typed retry operation for `T1`
+with fresh key `R2` and the current history version; it never takes text from the
+composer. The retry stream validates `attempt.requestId === R2`, publishes saved
+acceptance, and displays deltas on the same message. Acceptance preserves the
+current draft, including any next draft edited while the response streams.
+
+If that reader disconnects, history reads find `R2` among `T1`'s attempts and
+recover its saved result. The failed `R1` attempt cannot settle `R2`. If acceptance
+was lost and history still lacks `R2`, only **Check or resend retry** may replay
+the identical `T1/R2/version` command after a successful fresh read. A failed
+check sends nothing. Replay returns saved state without a live attachment, so a
+running replay uses foreground polling. A healthy live retry stream does not
+poll. A new intentional retry after another failure gets another fresh key.
+
+See [browser retry verification](conversation-ui-plan.md#sse-attempt-retry-tasks-33f33g).
 
 ## Backend reading order
 
@@ -899,8 +921,8 @@ when requested.
 retry JSON body `{ requestId, historyVersion }`, with the same session, Origin,
 and CSRF protections. It streams `accepted`, `text_delta`, `result`, and `error`
 using the existing event shapes, headers, heartbeats, and buffering limits.
-The compatible JSON retry route remains available. This backend checkpoint
-does not add a browser retry control; that is task 3.3f.
+The compatible JSON retry route remains available. The backend-only task-2.7
+checkpoint preceded the browser control now implemented in task 3.3f.
 
 Follow the request through these files:
 
@@ -952,8 +974,9 @@ Verification on 2026-11-08:
   route; existing paths and schemas are unchanged. No migration was added.
 
 No browser acceptance, live model calls, development-data operations, or `.env`
-changes occurred. Task 2.7 is complete; browser retry and full slice acceptance
-remain tasks 3.3f–3.3g. The owner requested this backend-only review stop.
+changes occurred. Task 2.7 completed the backend-only review stop requested by
+the owner. Tasks 3.3f–3.3g subsequently added and verified browser retry, as
+documented in the current reading order and conversation UI plan.
 
 ## Browser streaming slice 2
 

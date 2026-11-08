@@ -21,7 +21,10 @@ import type {
   ConversationHistory,
 } from '../api/conversation-contracts';
 import { ConversationScope } from './conversation-scope';
-import { streamConversationTurn } from '../api/conversation-stream-api';
+import {
+  streamConversationTurn,
+  streamRetryConversationTurn,
+} from '../api/conversation-stream-api';
 import type { ConversationStreamProgress } from '../api/conversation-stream-contracts';
 
 export function createConversationQueries(
@@ -138,6 +141,27 @@ export function createConversationQueries(
       historyRequest(
         (requestSignal) =>
           streamConversationTurn(
+            input,
+            (event) => {
+              scope.assertCurrent(input.historyVersion);
+              requestSignal.throwIfAborted();
+              onProgress(event);
+            },
+            requestSignal,
+          ),
+        input.historyVersion,
+        signal,
+      ),
+    retryStream: (
+      turnId: string,
+      input: RetryInput,
+      onProgress: (event: ConversationStreamProgress) => void,
+      signal?: AbortSignal,
+    ) =>
+      historyRequest(
+        (requestSignal) =>
+          streamRetryConversationTurn(
+            turnId,
             input,
             (event) => {
               scope.assertCurrent(input.historyVersion);

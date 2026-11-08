@@ -70,3 +70,47 @@ export function historyOf(result?: TurnResult): ConversationHistory {
 export function frame<T extends { type: string }>(event: T) {
   return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
+
+export const failed: TurnResult = {
+  ...running,
+  attempt: {
+    ...running.attempt,
+    state: 'failed',
+    finishedAt: completed.attempt.finishedAt,
+    errorCode: 'PROVIDER_ERROR',
+  },
+};
+export const retryInput = {
+  historyVersion: 0,
+  requestId: '00000000-0000-4000-8000-000000000004',
+};
+export const retryRunning: TurnResult = {
+  ...running,
+  attempt: {
+    ...running.attempt,
+    id: '00000000-0000-4000-8000-000000000005',
+    requestId: retryInput.requestId,
+    attemptNumber: 2,
+  },
+};
+export const retryCompleted: TurnResult = {
+  ...retryRunning,
+  attempt: {
+    ...retryRunning.attempt,
+    state: 'completed',
+    finishedAt: completed.attempt.finishedAt,
+    answer: 'The saved retry answer.',
+  },
+};
+export const retryAccepted = {
+  type: 'accepted' as const,
+  replayed: false,
+  ...retryRunning,
+};
+export const retryDelta = { ...delta, attemptId: retryRunning.attempt.id };
+export function retryHistoryOf(result = retryRunning): ConversationHistory {
+  return {
+    ...historyOf(result),
+    turns: [{ ...result.turn, attempts: [failed.attempt, result.attempt] }],
+  };
+}

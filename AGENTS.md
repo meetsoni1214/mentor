@@ -7,9 +7,10 @@ implemented with local verification. The active change is
 `add-assistant-conversation-loop`: one continuous conversation per owner, with
 no thread creation or selection. Group 1, conversation persistence and run
 lifecycle, and the four architecture follow-ups are implemented. The current
-review checkpoint is backend SSE attempt retry (task 2.7), following committed
-browser streaming, Markdown rendering, and submission-state refactor checkpoints.
-The owner requested task 2.7 on its own; stop before browser retry task 3.3f.
+review checkpoint is the complete SSE attempt-retry slice (tasks 3.3f–3.3g),
+following backend retry commit 04f6c8a and the earlier browser streaming, Markdown,
+and submission-state refactor checkpoints. Stop for review before Clear history,
+broader interaction/auth acceptance, or investigation.
 Task 2.3 completed API-side composition of the conversation use case,
 Drizzle repository, and pinned Agents SDK/Responses adapter, including persistence
 of available SDK-reported usage for unsuccessful attempts. Tasks 2.2a–2.2c
@@ -68,10 +69,9 @@ the reader and clears private state. Disconnect, idle timeout, or invalid events
 recover through history without automatic POST replay. Stream framing and temporary
 display memory are bounded independently of model execution. Full recovery/proxy
 acceptance remains slice 3. Stop after browser streaming for review; commit when
-requested. Browser attempt
-retry, Clear history, full interaction/auth acceptance, and public-web investigation
-remain later checkpoints. Task 3.3 stays open until all of its behavior and
-acceptance checks are complete. Do not add retry or Clear history in this slice.
+requested. Clear history, full interaction/auth acceptance, and public-web
+investigation remain later checkpoints. Task 3.3 stays open until all of its behavior and
+acceptance checks are complete. Do not add Clear history in this slice.
 The older `build-personal-knowledge-assistant` change remains
 a broader historical roadmap, not the next implementation scope.
 
@@ -82,13 +82,23 @@ service shares delivery, error mapping, and cleanup between submit and retry.
 JSON retry remains compatible. An intentional retry keeps the original message
 and creates a fresh attempt key; its accepted event matches attempt.requestId,
 not the original turn.requestId. Replay returns saved snapshots without another
-runner or live attachment. Browser retry controls remain unimplemented, with
-draft preservation and recovery tracked in tasks 3.3f–3.3g. Earlier instructions
-to omit retry controls continue to apply to the browser until that slice begins.
+runner or live attachment. Browser retry controls now use that endpoint, validating
+turn/version and the attempt request ID. Unresolved state owns a typed send or
+retry command in the existing pure state/coordinator split. Retry preserves the
+independent composer draft; only new-message acceptance clears submitted text.
+History acceptance matches retry attempt IDs, and an older terminal attempt cannot
+settle a new unresolved retry. Healthy streams pause polling; unresolved delivery
+or running replays/disconnects recover through history. Only explicit recovery
+may resend the exact original retry command. Eligibility and duplicate-click
+guards complement authoritative backend admission.
 Task 2.7 verification passes pnpm check (335 unit/contract tests and production
 build) and pnpm test:integration (104 disposable PostgreSQL/HTTP/SDK checks), plus
 strict OpenSpec and whitespace checks. Generated API changes add only the retry
 streaming route. No live model calls or database migrations were needed.
+Tasks 3.3f–3.3g pass pnpm check (377 tests and production build), the same 104
+integration checks, and 28 synthetic phone/desktop scenarios. Browser fixture
+authentication/storage/execution do not complete real-cookie/deployed-proxy
+acceptance. Browser changes remain a review checkpoint; commit when requested.
 
 ## Architecture
 

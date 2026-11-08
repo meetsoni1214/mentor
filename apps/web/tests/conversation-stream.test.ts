@@ -3,7 +3,10 @@ import { QueryClient } from '@tanstack/react-query';
 import { SessionState } from '../src/features/auth/session-state';
 import { ObsoleteSessionError } from '../src/features/auth/session-scope';
 import { createConversationQueries } from '../src/features/conversation/state/conversation-queries';
-import { streamConversationTurn } from '../src/features/conversation/api/conversation-stream-api';
+import {
+  streamConversationTurn,
+  streamRetryConversationTurn,
+} from '../src/features/conversation/api/conversation-stream-api';
 import { readEventStream } from '../src/features/conversation/api/conversation-stream-reader';
 import { ConversationApiError } from '../src/features/conversation/api/conversation-errors';
 import { RequestError } from '../src/lib/api-request';
@@ -17,6 +20,13 @@ import {
   historyOf,
   running,
   streamInput,
+  failed,
+  retryInput,
+  retryRunning,
+  retryCompleted,
+  retryAccepted,
+  retryDelta,
+  retryHistoryOf,
 } from './fixtures/conversation-stream';
 
 const transport = vi.hoisted(() => {
@@ -309,5 +319,191 @@ describe('browser streaming through the generated API client', () => {
     expect(progress).toHaveBeenCalledOnce();
     expect(cancelled).toHaveBeenCalledOnce();
     expect(() => conversation.publish(completed)).toThrow(ObsoleteHistoryError);
+  });
+});
+
+describe('retry streaming through the generated API client', () => {
+  it('uses the retry route and attempt request ID, retaining the original turn identity', async () => {
+    const progress = vi.fn();
+    const work = streamRetryConversationTurn(
+      failed.turn.id,
+      retryInput,
+      progress,
+      new AbortController().signal,
+    );
+    emit(frame(retryAccepted));
+    await vi.waitFor(() =>
+      expect(progress).toHaveBeenCalledWith(retryAccepted),
+    );
+    emit(frame(retryDelta));
+    await vi.waitFor(() => expect(progress).toHaveBeenCalledWith(retryDelta));
+    const request = transport.fetch.mock.calls[1]![0];
+    expect(new URL(request.url).pathname).toBe(
+      `/api/v1/conversation/turns/${failed.turn.id}/retry/stream`,
+    );
+    expect(request.credentials).toBe('same-origin');
+    expect(request.headers.get('X-CSRF-Token')).toBe('a'.repeat(64));
+    expect(request.cache).toBe('no-store');
+    expect(await request.json()).toEqual(retryInput);
+    expect(retryAccepted.turn.requestId).not.toBe(retryInput.requestId);
+    emit(frame({ type: 'result', ...retryCompleted }));
+    expect(await work).toEqual({ type: 'result', ...retryCompleted });
+    expect(cancelled).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [
+      'wrong turn',
+      () =>
+        frame({
+          ...retryAccepted,
+          turn: { ...retryAccepted.turn, id: retryInput.requestId },
+        }),
+    ],
+    [
+      'original message key',
+      () =>
+        frame({
+          ...retryAccepted,
+          attempt: {
+            ...retryAccepted.attempt,
+            requestId: failed.turn.requestId,
+          },
+        }),
+    ],
+    [
+      'initial attempt',
+      () =>
+        frame({
+          ...retryAccepted,
+          attempt: { ...retryAccepted.attempt, attemptNumber: 1 },
+        }),
+    ],
+    ['wrong version', () => frame({ ...retryAccepted, historyVersion: 1 })],
+    ['wrong delta identity', () => frame(retryAccepted) + frame(delta)],
+    [
+      'changed final request key',
+      () =>
+        frame(retryAccepted) +
+        frame({
+          type: 'result',
+          ...retryCompleted,
+          attempt: {
+            ...retryCompleted.attempt,
+            requestId: failed.turn.requestId,
+          },
+        }),
+    ],
+    [
+      'changed final turn text',
+      () =>
+        frame(retryAccepted) +
+        frame({
+          type: 'result',
+          ...retryCompleted,
+          turn: { ...retryCompleted.turn, text: 'Changed original text' },
+        }),
+    ],
+    [
+      'changed final attempt number',
+      () =>
+        frame(retryAccepted) +
+        frame({
+          type: 'result',
+          ...retryCompleted,
+          attempt: { ...retryCompleted.attempt, attemptNumber: 3 },
+        }),
+    ],
+    ['unfinished stream', () => frame(retryAccepted) + frame(retryDelta)],
+    [
+      'text on replay',
+      () => frame({ ...retryAccepted, replayed: true }) + frame(retryDelta),
+    ],
+  ] as const)(
+    'rejects %s and releases its reader without replay',
+    async (label, wire) => {
+      const work = streamRetryConversationTurn(
+        failed.turn.id,
+        retryInput,
+        vi.fn(),
+        new AbortController().signal,
+      );
+      const failure = expect(work).rejects.toThrow();
+      emit(wire());
+      if (label === 'unfinished stream') source.close();
+      await failure;
+      expect(response.body?.locked).toBe(false);
+      if (label !== 'unfinished stream')
+        expect(cancelled).toHaveBeenCalledOnce();
+      expect(
+        transport.fetch.mock.calls.filter(
+          ([request]) => request.method === 'POST',
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
+  it('accepts running retry replay as a saved snapshot without text attachment', async () => {
+    const work = streamRetryConversationTurn(
+      failed.turn.id,
+      retryInput,
+      vi.fn(),
+      new AbortController().signal,
+    );
+    emit(
+      frame({ ...retryAccepted, replayed: true }) +
+        frame({ type: 'result', ...retryRunning }),
+    );
+    expect(await work).toMatchObject(retryRunning);
+  });
+
+  it.each(['session', 'history'] as const)(
+    'detaches retry transport and suppresses late events after %s replacement',
+    async (replacement) => {
+      const { session, conversation, queryClient } = setup();
+      const progress = vi.fn();
+      const work = conversation
+        .retryStream(failed.turn.id, retryInput, progress)
+        .catch((error: unknown) => error);
+      emit(frame(retryAccepted));
+      await vi.waitFor(() => expect(progress).toHaveBeenCalledOnce());
+      if (replacement === 'session') session.replace(null);
+      else {
+        response = Response.json({ ...historyOf(), historyVersion: 1 });
+        await conversation.history();
+      }
+      expect(await work).toBeInstanceOf(
+        replacement === 'session' ? ObsoleteSessionError : ObsoleteHistoryError,
+      );
+      expect(progress).toHaveBeenCalledOnce();
+      expect(cancelled).toHaveBeenCalledOnce();
+      if (replacement === 'session')
+        expect(
+          queryClient.getQueryData(conversation.keys.history()),
+        ).toBeUndefined();
+    },
+  );
+
+  it('clears private query state on a rejected retry session', async () => {
+    const { session, conversation, queryClient } = setup();
+    response = new Response(null, { status: 401 });
+    await expect(
+      conversation.retryStream(failed.turn.id, retryInput, vi.fn()),
+    ).rejects.toBeInstanceOf(RequestError);
+    expect(
+      queryClient.getQueryData(conversation.keys.history()),
+    ).toBeUndefined();
+    expect(session.scope().generation).toBe(1);
+  });
+
+  it('keeps previous attempts and saved terminal retry state when a late running snapshot arrives', () => {
+    const { conversation, queryClient } = setup();
+    queryClient.setQueryData(conversation.keys.history(), historyOf(failed));
+    conversation.publish(retryRunning);
+    conversation.publish(retryCompleted);
+    conversation.publish(retryRunning);
+    expect(queryClient.getQueryData(conversation.keys.history())).toEqual(
+      retryHistoryOf(retryCompleted),
+    );
   });
 });

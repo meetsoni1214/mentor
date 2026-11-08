@@ -1,6 +1,7 @@
 import type {
   ConversationHistory,
   SubmitInput,
+  RetryInput,
   TurnResult,
 } from '../api/conversation-contracts';
 import type { ConversationStreamProgress } from '../api/conversation-stream-contracts';
@@ -15,11 +16,17 @@ interface SubmissionPort {
     onProgress: (event: ConversationStreamProgress) => void,
     signal: AbortSignal,
   ): Promise<TurnResult>;
+  retry(
+    turnId: string,
+    input: RetryInput,
+    onProgress: (event: ConversationStreamProgress) => void,
+    signal: AbortSignal,
+  ): Promise<TurnResult>;
   publish?(result: TurnResult): void;
   refresh(): Promise<ConversationHistory>;
 }
 
-type DeliveryMode = 'initial-send' | 'explicit-resend';
+type DeliveryMode = 'initial-delivery' | 'explicit-resend';
 
 // Coordinates effects. Draft/delivery transitions live in submission-state;
 // committed history stays in Query and PostgreSQL.
@@ -104,10 +111,36 @@ export class ConversationSubmission {
       return;
     }
     const input = { text: draft, historyVersion, requestId: this.requestId() };
-    await this.deliver(input, 'initial-send');
+    await this.deliver({ kind: 'send', input }, 'initial-delivery');
   };
 
-  private async deliver(input: Readonly<SubmitInput>, mode: DeliveryMode) {
+  retry = async (turnId: string, history: ConversationHistory) => {
+    if (
+      this.state.delivery.phase !== 'editing' ||
+      this.state.stream ||
+      this.state.historyVersion !== history.historyVersion ||
+      state.retryableTurnId(history) !== turnId ||
+      !this.current(this.deliveryGeneration)
+    )
+      return;
+    await this.deliver(
+      {
+        kind: 'retry',
+        turnId,
+        input: {
+          historyVersion: history.historyVersion,
+          requestId: this.requestId(),
+        },
+      },
+      'initial-delivery',
+    );
+  };
+
+  private async deliver(
+    operation: state.DeliveryOperation,
+    mode: DeliveryMode,
+  ) {
+    const { input } = operation;
     const generation = ++this.deliveryGeneration;
     const controller = new AbortController();
     this.deliveryController?.abort();
@@ -118,7 +151,10 @@ export class ConversationSubmission {
       observedProgress = true;
       if (event.type === 'accepted') {
         this.port.publish?.(event);
-        if (state.unresolvedInput(this.state)?.requestId === input.requestId)
+        if (
+          state.unresolvedOperation(this.state)?.input.requestId ===
+          input.requestId
+        )
           this.stopConfirmation?.();
         this.transition(state.receiveAcceptance(this.state, event));
       } else {
@@ -132,10 +168,10 @@ export class ConversationSubmission {
         this.transition(state.appendText(this.state, event.delta));
       }
     };
-    this.transition(state.beginDelivery(this.state, input));
+    this.transition(state.beginDelivery(this.state, operation));
     try {
       const result = await this.waitForResult(
-        input,
+        operation,
         onProgress,
         controller.signal,
       );
@@ -143,7 +179,10 @@ export class ConversationSubmission {
       this.port.assertCurrent(result.historyVersion);
       this.port.publish?.(result);
       this.transition(state.finishResponse(this.state));
-      if (state.unresolvedInput(this.state)?.requestId === input.requestId) {
+      if (
+        state.unresolvedOperation(this.state)?.input.requestId ===
+        input.requestId
+      ) {
         this.stopConfirmation?.();
         this.deliveryGeneration += 1;
         this.transition(state.confirmAcceptance(this.state, input.requestId));
@@ -156,7 +195,10 @@ export class ConversationSubmission {
         this.state.delivery.phase === 'editing'
       )
         this.transition(
-          state.reportNotice(this.state, { code: 'accepted-refresh-failed' }),
+          state.reportNotice(this.state, {
+            code: 'accepted-refresh-failed',
+            operation: operation.kind,
+          }),
         );
     } catch (cause) {
       if (this.deliveryGeneration !== generation) return;
@@ -171,7 +213,7 @@ export class ConversationSubmission {
         return;
       }
       const accepted =
-        !state.unresolvedInput(this.state) &&
+        !state.unresolvedOperation(this.state) &&
         this.state.lastAcceptedRequestId === input.requestId;
       if (accepted) {
         // Saved history may have deliberately detached this reader already.
@@ -183,10 +225,12 @@ export class ConversationSubmission {
       }
       if (
         failure.kind === 'rejected' &&
-        (failure.reason === 'IDEMPOTENCY_CONFLICT' || mode === 'initial-send')
+        (failure.reason === 'IDEMPOTENCY_CONFLICT' ||
+          mode === 'initial-delivery')
       ) {
         this.transition(state.rejectDelivery(this.state, failure.reason));
-        if (failure.reason === 'BUSY') await this.refreshHistory();
+        if (['BUSY', 'NOT_FOUND', 'NOT_RETRYABLE'].includes(failure.reason))
+          await this.refreshHistory();
         return;
       }
       // A later rejected resend cannot prove the original admission failed.
@@ -200,7 +244,7 @@ export class ConversationSubmission {
   }
 
   private async waitForResult(
-    input: Readonly<SubmitInput>,
+    operation: state.DeliveryOperation,
     onProgress: (event: ConversationStreamProgress) => void,
     signal: AbortSignal,
   ) {
@@ -216,7 +260,14 @@ export class ConversationSubmission {
     // Acceptance stops this wait without cancelling admitted backend work.
     try {
       return await Promise.race([
-        this.port.submit(input, onProgress, signal),
+        operation.kind === 'send'
+          ? this.port.submit(operation.input, onProgress, signal)
+          : this.port.retry(
+              operation.turnId,
+              operation.input,
+              onProgress,
+              signal,
+            ),
         expired,
       ]);
     } finally {
@@ -248,8 +299,8 @@ export class ConversationSubmission {
       return;
     }
     if (!this.current(generation)) return;
-    const input = state.unresolvedInput(this.state);
+    const operation = state.unresolvedOperation(this.state);
     // Only this explicit action may replay a write, with its original payload/key.
-    if (input) await this.deliver(input, 'explicit-resend');
+    if (operation) await this.deliver(operation, 'explicit-resend');
   };
 }

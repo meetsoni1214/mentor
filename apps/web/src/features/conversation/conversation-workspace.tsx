@@ -9,6 +9,7 @@ import { ConversationTranscript } from './ui/conversation-transcript';
 import { useConversationHistory } from './state/use-conversation-history';
 import { BrandLockup } from '../../brand/brand-logo';
 import { useConversationSubmission } from './state/use-conversation-submission';
+import { retryableTurnId } from './state/submission-state';
 import { hasRunningAttempt } from './state/conversation-polling';
 
 export function ConversationWorkspace({
@@ -122,6 +123,13 @@ export function ConversationWorkspace({
         history={history}
         acceptedRequestId={state.lastAcceptedRequestId}
         provisional={state.stream}
+        retryTurnId={retryableTurnId(history.head.data)}
+        pendingRetryTurnId={state.pendingRetryTurnId}
+        retryDisabled={!!blockedReason || state.phase !== 'editing'}
+        onRetry={(turnId) => {
+          if (!blockedReason && state.phase === 'editing' && history.head.data)
+            void submission.retry(turnId, history.head.data);
+        }}
       />
       <ConversationComposer
         state={state}

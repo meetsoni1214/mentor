@@ -23,11 +23,17 @@ export function ConversationMessage({
   onRefresh,
   refreshing,
   provisional,
+  onRetry,
+  retryDisabled = false,
+  retrying = false,
 }: {
   turn: Turn;
   onRefresh: () => void;
   refreshing: boolean;
   provisional: ProvisionalResponse | null;
+  onRetry?: (() => void) | undefined;
+  retryDisabled?: boolean;
+  retrying?: boolean;
 }) {
   const latest = turn.attempts.reduce<Attempt | undefined>(
     (current, attempt) =>
@@ -89,11 +95,24 @@ export function ConversationMessage({
               )}
             </>
           ) : (
-            <p>
-              {latest?.errorCode
-                ? failureMessages[latest.errorCode]
-                : 'No response is available for this message.'}
-            </p>
+            <>
+              <p>
+                {latest?.errorCode
+                  ? failureMessages[latest.errorCode]
+                  : 'No response is available for this message.'}
+              </p>
+              {onRetry && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="outcome-action"
+                  onClick={onRetry}
+                  disabled={retryDisabled}
+                >
+                  {retrying ? 'Retrying…' : 'Retry response'}
+                </Button>
+              )}
+            </>
           )}
         </div>
         {latest?.contextLimited && (

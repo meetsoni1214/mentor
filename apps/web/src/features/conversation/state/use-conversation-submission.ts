@@ -13,6 +13,8 @@ export function useConversationSubmission(
         assertCurrent: conversation.assertCurrent,
         submit: (input, onProgress, signal) =>
           conversation.stream(input, onProgress, signal),
+        retry: (turnId, input, onProgress, signal) =>
+          conversation.retryStream(turnId, input, onProgress, signal),
         publish: conversation.publish,
         refresh: async () => {
           conversation.assertCurrent();

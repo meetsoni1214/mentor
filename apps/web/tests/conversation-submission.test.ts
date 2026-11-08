@@ -76,7 +76,7 @@ function setup() {
   const assertCurrent = vi.fn<(version?: number) => void>();
   const requestId = vi.fn(() => randomUUID());
   const submission = new ConversationSubmission(
-    { submit, refresh, assertCurrent },
+    { submit, retry: vi.fn(), refresh, assertCurrent },
     requestId,
   );
   submission.observe(empty);
