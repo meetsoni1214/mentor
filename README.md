@@ -9,8 +9,11 @@ conversation workspace with history pagination, run details, sending, draft
 recovery, and polling. An opt-in backend SSE submission endpoint now provides
 provisional text and saved results. The browser consumes that stream, keeping
 partial text temporary and recovering through history after a disconnect.
-Explicit attempt retry, history clearing in the UI, and public-web investigation
-remain follow-ups. See the [backend streaming contract](docs/conversation-loop.md#backend-streaming-slice-1).
+Explicit attempt retry and Clear history are implemented. Task 4.1 makes hosted
+public-web search available whenever assistant execution is configured; the model
+chooses when to search. Validated citation/activity persistence and presentation
+remain task 4.2. See the
+[search checkpoint](docs/conversation-loop.md#hosted-web-search-registration-task-41).
 Notes, long-term memory, email access, and external actions remain future work.
 
 Browser branding, design tokens, and reusable controls follow the
@@ -125,9 +128,14 @@ settings do not impose a cumulative token or daily spending cap.
 
 The adapter sets `store: false`, disables automatic retries and tracing/export,
 and omits sensitive SDK logging. This does not promise zero provider retention.
-Messages and selected recent context go to OpenAI; public-web search is currently
-unavailable. Documentation explains cloud processing, limited context, and that
-permitted web search can send derived queries to that service. The composer has
+Messages and selected recent context go to OpenAI. Hosted public-web search is
+always offered with valid AI configuration, and the model chooses when to use it.
+There is no separate search enable flag. Validated citations and activity remain
+task 4.2.
+`AI_MAX_TOOL_CALLS` is the provider's per-Responses-request built-in-tool setting,
+not a whole-run budget. Search may send derived queries to OpenAI and incur
+additional charges; it does not grant private-account access. Restart the API
+after changing server settings. The composer has
 no cloud-processing or privacy footer, at the owner's request. No persisted
 acknowledgement is required. Clearing local
 history cannot retract content already sent externally.

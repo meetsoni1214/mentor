@@ -51,6 +51,22 @@ export function toolResponse(
   };
 }
 
+export function webSearchCall() {
+  return {
+    id: 'ws_stub',
+    type: 'web_search_call',
+    status: 'completed',
+    action: { type: 'search', query: 'synthetic library release notes' },
+  };
+}
+
+export function webSearchResponse(
+  answer = 'The synthetic release adds a feature.',
+) {
+  const result = response(answer);
+  return { ...result, output: [webSearchCall(), ...result.output] };
+}
+
 type Reply = (res: ServerResponse) => void;
 
 export function startResponseStream(res: ServerResponse) {

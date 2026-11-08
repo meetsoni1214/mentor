@@ -7,10 +7,11 @@ implemented with local verification. The active change is
 `add-assistant-conversation-loop`: one continuous conversation per owner, with
 no thread creation or selection. Group 1, conversation persistence and run
 lifecycle, and the four architecture follow-ups are implemented. The current
-review checkpoint is Clear history (tasks 3.3h–3.3i), following the completed SSE
-attempt-retry slice (3.3f–3.3g), backend retry commit 04f6c8a, and the earlier
-browser streaming, Markdown, and submission-state refactor checkpoints. Stop for
-review before broader interaction/auth acceptance or investigation.
+review checkpoint is hosted web-search registration (task 4.1), selected by the
+owner after Clear history (tasks 3.3h–3.3i), SSE attempt retry (3.3f–3.3g), backend
+retry commit 04f6c8a, and the earlier browser streaming, Markdown, and
+submission-state refactor checkpoints. Stop after 4.1 for review before activity
+and citation normalization/presentation (4.2) or broader investigation acceptance.
 Task 2.3 completed API-side composition of the conversation use case,
 Drizzle repository, and pinned Agents SDK/Responses adapter, including persistence
 of available SDK-reported usage for unsuccessful attempts. Tasks 2.2a–2.2c
@@ -165,3 +166,33 @@ keeps old content hidden. The removed composer privacy footer stays absent.
 Broader tasks 3.3–3.5 and public-web investigation remain open. See the Clear history
 sections in docs/conversation-ui-plan.md and docs/conversation-loop.md for current
 behavior, verification, and the review entry point. Commit only when requested.
+
+## Hosted web-search registration checkpoint
+
+The owner authorized task 4.1 only and explicitly requested that web search always
+be available whenever assistant execution is configured. Valid key/model
+configuration determines execution readiness; do not add a search enable flag
+or disable search while 4.2 citation/activity work is pending. Normal server
+configuration always supplies `allowedTools: ['web_search']`.
+The adapter registers only the pinned SDK's `webSearchTool()` when permitted,
+uses automatic tool choice, and sends `AI_MAX_TOOL_CALLS` through standard SDK
+`providerData.max_tool_calls` per Responses request, never as a cumulative budget.
+Unavailable search and its setting are omitted. Existing deadlines, SDK defaults,
+storage/tracing/retry controls, and application-owned history remain in place.
+Conditional instructions require actual search evidence before claiming a search
+and distinguish public evidence from private-account access or executed actions.
+Sources/activity remain empty in this registration slice; raw search metadata
+stays ephemeral. Citation/activity normalization and UI work remain task 4.2.
+See the task-4.1 section of docs/conversation-loop.md for the reading order and
+verification evidence. Do not edit the existing `.env`, add live calls to normal
+tests, or commit unless requested.
+
+Task 4.1's always-available-search revision passes formatting/lint/types and all 408 unit/contract tests,
+plus 107 disposable PostgreSQL/HTTP/SDK integration checks. The default Turbopack
+build still fails at the known CSS-worker subprocess port restriction; `pnpm check`
+therefore did not pass as a whole at initial registration. The documented Webpack production build passed
+without bundler changes. Strict OpenSpec and whitespace checks pass; generated
+contracts and lockfile have no drift. No live calls, migrations, existing `.env`
+edits, or browser acceptance were performed. The frontend build was not repeated
+for the configuration-only revision. Task 4.1 is the review stop; 4.2–4.5
+remain open. Commit only when requested.

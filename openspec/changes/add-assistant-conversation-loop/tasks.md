@@ -92,11 +92,32 @@ Stop here for review. Broader tasks 3.3–3.5 and investigation remain open.
 
 ## 4. Read-only investigation and complete-loop acceptance
 
-- [ ] 4.1 Register only the SDK-supported hosted web-search tool through Responses under runtime-controlled availability and disclose assistant-selected search. Let the SDK/model choose when to search, using supported per-request settings and the application deadline, without custom cumulative budgets. Verify searched/unsearched SDK fixtures, unavailable tools omitted, no other production tools, no per-turn toggle, and no search claimed without observed activity.
+The owner selected 4.1 as the next implementation slice after reviewing the
+conversation foundation. Implement and verify hosted-search registration only,
+then stop for review. Citation/activity normalization and UI remain 4.2, and
+broader investigation/browser/live verification remain 4.3–4.5. The owner requested
+that search always be available with valid AI configuration, without a separate
+enable flag; no existing `.env` is changed.
+
+- [x] 4.1 Register only the SDK-supported hosted web-search tool through Responses under runtime-controlled availability and disclose assistant-selected search. Let the SDK/model choose when to search, using supported per-request settings and the application deadline, without custom cumulative budgets. Verify searched/unsearched SDK fixtures, unavailable tools omitted, no other production tools, no per-turn toggle, and no search claimed without observed activity.
 - [ ] 4.2 Normalize provider-observed search activity and citation annotations exposed through SDK results into bounded persisted records; preserve required continuation items only within the active run. Render answer text safely with separately validated HTTP(S) source links and no raw HTML or promoted invented links; verify unsafe URLs, malformed annotations, unknown output shapes, and fabricated sources are rejected or labelled honestly.
 - [ ] 4.3 Add synthetic Railway-notice and adversarial email/page fixtures; verify conversation continuation, distinction between public evidence and unknown account exposure, no fabricated monitoring/rotation claims, and no write-capable tools or credential access despite embedded instructions. Document that fixture enforcement tests do not establish universal model truthfulness.
 - [ ] 4.4 Run pnpm check, pnpm test:integration, and integrated phone/desktop browser acceptance through conversation, investigation, source inspection, refresh/recovery, history clearing, singleton continuity, and auth loss; record actual results and unavailable checks, keep unverified tasks open, present the focused verified checkpoint for review, and commit when requested.
 - [ ] 4.5 Provide an opt-in live smoke command using configured credentials/model and bounded synthetic requests; verify ordinary tests never call OpenAI, document the command and limits, and record the exact live model/results if run or clearly record that live verification remains unavailable. Never treat stubbed search as live evidence.
+
+Task 4.1 is implemented and verified with the real pinned SDK/official client
+against local HTTP stubs. After the owner's always-available-search revision,
+formatting, lint, types, 408 unit/contract tests, and 107 disposable
+PostgreSQL/HTTP/SDK integration checks pass. Initial registration's `pnpm check`
+stopped at the known Turbopack subprocess-port restriction; its Webpack production
+build passed. The frontend build was not repeated for the configuration-only
+revision. Strict OpenSpec and whitespace checks pass without generated-contract or
+lockfile drift. Search is always available with valid AI configuration while 4.2
+citation/activity handling remains open. The registration slice does not infer activity from permission or persist raw
+search metadata. Prompt policy requires actual supporting search evidence, but
+fixtures do not prove universal model truthfulness. No live calls, browser
+acceptance, migrations, or existing `.env` edits were performed. Stop for review;
+4.2–4.5 and the earlier broad acceptance boxes remain open. Commit when requested.
 
 ## Workflow follow-up
 

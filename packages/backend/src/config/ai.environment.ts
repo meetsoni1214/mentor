@@ -57,7 +57,7 @@ export function readAIEnvironment(
     apiKey: config.OPENAI_API_KEY,
     limits: {
       model: config.OPENAI_CHAT_MODEL,
-      allowedTools: [],
+      allowedTools: ['web_search'],
       maxMessageBytes: config.AI_MAX_MESSAGE_BYTES,
       maxContextBytes: config.AI_MAX_CONTEXT_BYTES,
       maxOutputTokens: config.AI_MAX_OUTPUT_TOKENS,

@@ -36,6 +36,7 @@ import {
   response,
   startResponseStream,
   toolResponse,
+  webSearchResponse,
 } from '../fixtures/responses-stub.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -143,6 +144,121 @@ afterAll(async () => {
 });
 
 describe('composed conversation use case, real SDK, and PostgreSQL', () => {
+  it.each([false, true])(
+    'offers hosted search with normal server configuration and persists only the final answer (stream=%s)',
+    async (streaming) => {
+      const config = readAIEnvironment({
+        OPENAI_API_KEY: 'synthetic-test-key',
+        OPENAI_CHAT_MODEL: 'test-model',
+        AI_MAX_TOOL_CALLS: '3',
+      });
+      const loop = compose(config);
+      const { ownerId: owner, ...command } = submission({
+        text: 'What changed in the latest synthetic library release?',
+      });
+      await expect(
+        loop.submit(owner, { ...command, investigation: true }),
+      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+      expect(stub.requests).toHaveLength(0);
+      const answer = 'The synthetic release adds a feature.';
+      if (streaming) {
+        stub.replies.push((res) => {
+          const stream = startResponseStream(res);
+          stream.delta(answer);
+          stream.event({
+            type: 'response.completed',
+            response: webSearchResponse(answer),
+          });
+          res.end();
+        });
+      } else {
+        stub.enqueue(webSearchResponse(answer));
+      }
+      const progress: ConversationProgress[] = [];
+      const saved = await loop.submit(
+        owner,
+        command,
+        streaming ? (event) => progress.push(event) : undefined,
+      );
+      expect(saved.attempt).toMatchObject({
+        state: 'completed',
+        answer,
+        inputTokens: 11,
+        outputTokens: 7,
+        sources: [],
+        activity: [],
+      });
+      expect(stub.requests).toHaveLength(1);
+      expect(stub.requests[0]!.body).toMatchObject({
+        tools: [{ type: 'web_search' }],
+        tool_choice: 'auto',
+        max_tool_calls: 3,
+        store: false,
+        stream: streaming,
+      });
+      if (streaming) {
+        expect(progress.map((event) => event.type)).toEqual([
+          'accepted',
+          'text_delta',
+        ]);
+      }
+      expect((await compose().history(owner)).turns[0]?.attempts[0]).toEqual(
+        saved.attempt,
+      );
+      expect((await compose().submit(owner, command)).attempt).toEqual(
+        saved.attempt,
+      );
+      expect(stub.requests).toHaveLength(1);
+
+      stub.enqueue(response('A follow-up from saved conversation context.'));
+      await submitTurn(compose(), submission({ text: 'Explain that change.' }));
+      const next = stub.requests[1]!.body;
+      expect(next.tools).toEqual([
+        expect.objectContaining({ type: 'web_search' }),
+      ]);
+      expect(next.max_tool_calls).toBe(limits.maxToolCalls);
+      expect(JSON.stringify(next.input)).toContain(answer);
+      expect(JSON.stringify(next.input)).not.toContain('web_search_call');
+      expect(JSON.stringify(next.input)).not.toContain(
+        'synthetic library release notes',
+      );
+      expect(next).not.toHaveProperty('previous_response_id');
+    },
+  );
+
+  it('applies current search permission to an explicit retry after a search-provider failure', async () => {
+    stub.enqueue(
+      { error: { message: 'Synthetic failure', type: 'api_error' } },
+      503,
+    );
+    const first = await submitTurn(compose(), submission());
+    expect(first.attempt.state).toBe('failed');
+    expect(stub.requests[0]!.body.tools).toEqual([
+      expect.objectContaining({ type: 'web_search' }),
+    ]);
+    stub.enqueue(response('Search is unavailable for this retry.'));
+    const searchUnavailable = {
+      ...configuration,
+      limits: { ...limits, allowedTools: [] },
+    };
+    const retried = await compose(searchUnavailable).retry(
+      ownerId,
+      first.turn.id,
+      {
+        historyVersion: 0,
+        requestId: randomUUID(),
+      },
+    );
+    expect(retried.turn).toEqual(first.turn);
+    expect(retried.attempt).toMatchObject({
+      state: 'completed',
+      attemptNumber: 2,
+    });
+    expect(stub.requests).toHaveLength(2);
+    expect(stub.requests[1]!.body.tools ?? []).toEqual([]);
+    expect(stub.requests[1]!.body).not.toHaveProperty('max_tool_calls');
+  });
+
   it.each(['completed', 'incomplete'] as const)(
     'streams a real SDK retry through %s and replays its persisted attempt without another request',
     async (status) => {
@@ -337,7 +453,10 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
       store: false,
       max_output_tokens: limits.maxOutputTokens,
     });
-    expect(request.tools ?? []).toEqual([]);
+    expect(request.tools).toEqual([
+      expect.objectContaining({ type: 'web_search' }),
+    ]);
+    expect(request.max_tool_calls).toBe(limits.maxToolCalls);
     expect(request).not.toHaveProperty('previous_response_id');
     expect(request).not.toHaveProperty('conversation');
     expect((await loop.history(ownerId)).turns).toHaveLength(2);
@@ -712,7 +831,9 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     });
     expect(stub.requests).toHaveLength(3);
     expect(stub.requests[2]!.body.input).toHaveLength(1);
-    expect(stub.requests[2]!.body.tools ?? []).toEqual([]);
+    expect(stub.requests[2]!.body.tools).toEqual([
+      expect.objectContaining({ type: 'web_search' }),
+    ]);
     expect(stub.requests[2]!.body).not.toHaveProperty('previous_response_id');
   });
 

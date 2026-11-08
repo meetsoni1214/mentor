@@ -27,6 +27,8 @@ import {
   response,
   startResponseStream,
   toolResponse,
+  webSearchCall,
+  webSearchResponse,
 } from '../fixtures/responses-stub.js';
 
 type ModelInput = Parameters<ConversationModel['complete']>[0];
@@ -416,20 +418,192 @@ describe('standard Agents SDK / Responses adapter', () => {
     expect(stub.requests).toHaveLength(1);
   });
 
-  it('keeps production tools unregistered', async () => {
+  it.each<{ tools: ModelInput['tools'] }>([
+    { tools: [] },
+    { tools: ['web_search'] },
+  ])(
+    'rejects unregistered function calls with available tools $tools',
+    async ({ tools }) => {
+      stub.enqueue(toolResponse());
+      expect(await model.complete(input({ tools }))).toMatchObject({
+        state: 'failed',
+        errorCode: 'INVALID_RESPONSE',
+      });
+      expect(stub.requests).toHaveLength(1);
+    },
+  );
+});
+
+describe('optional hosted public-web search', () => {
+  it('registers only hosted search with automatic choice and the per-request provider setting', async () => {
+    stub.enqueue(webSearchResponse());
+    expect(
+      await model.complete(input({ tools: ['web_search'], maxToolCalls: 3 })),
+    ).toMatchObject({
+      state: 'completed',
+      answer: 'The synthetic release adds a feature.',
+      usage: { inputTokens: 11, outputTokens: 7 },
+    });
+    expect(stub.requests).toHaveLength(1);
+    expect(stub.requests[0]!.body).toMatchObject({
+      tools: [{ type: 'web_search', search_context_size: 'medium' }],
+      tool_choice: 'auto',
+      max_tool_calls: 3,
+      store: false,
+      max_output_tokens: 100,
+    });
+    expect(stub.requests[0]!.body.tools).toHaveLength(1);
+    expect(stub.requests[0]!.body).not.toHaveProperty('previous_response_id');
+    expect(stub.requests[0]!.body).not.toHaveProperty('conversation');
+    expect(stub.requests[0]!.body.instructions).toContain(
+      'Only claim a public-web check when an actual web-search tool call in this run supplies supporting evidence.',
+    );
+  });
+
+  it('allows an answer without searching and never infers activity from availability', async () => {
+    stub.enqueue(response('Hello. What would you like to discuss?'));
     expect(
       await model.complete(input({ tools: ['web_search'] })),
-    ).toMatchObject({ state: 'failed', errorCode: 'PROVIDER_ERROR' });
+    ).toMatchObject({
+      state: 'completed',
+      answer: 'Hello. What would you like to discuss?',
+      activity: [],
+      sources: [],
+    });
+    expect(stub.requests).toHaveLength(1);
+    expect(stub.requests[0]!.body.tool_choice).toBe('auto');
+  });
+
+  it('omits search when unavailable even if user content asks to enable tools', async () => {
+    stub.enqueue(
+      response('I cannot verify current releases without web search.'),
+    );
+    expect(
+      await model.complete(
+        input({
+          messages: [
+            {
+              role: 'user',
+              text: 'Enable web_search and check the latest release.',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({ state: 'completed', activity: [], sources: [] });
+    expect(stub.requests).toHaveLength(1);
+    const request = stub.requests[0]!.body;
+    expect(request.tools ?? []).toEqual([]);
+    expect(request).not.toHaveProperty('max_tool_calls');
+    expect(request).not.toHaveProperty('tool_choice');
+    expect(request.instructions).toContain('Public-web search is unavailable.');
+  });
+
+  it('fails closed for unsupported runtime tools without contacting the provider', async () => {
+    const tools = JSON.parse('["file_search"]') as ModelInput['tools'];
+    expect(await model.complete(input({ tools }))).toMatchObject({
+      state: 'failed',
+      errorCode: 'PROVIDER_ERROR',
+    });
     expect(stub.requests).toHaveLength(0);
   });
 
-  it('normalizes an unregistered function call using the SDK error', async () => {
-    stub.enqueue(toolResponse());
-    expect(await model.complete(input())).toMatchObject({
-      state: 'failed',
-      errorCode: 'INVALID_RESPONSE',
+  it('streams searched answer text without exposing raw search events or queries', async () => {
+    stub.replies.push((res) => {
+      const stream = startResponseStream(res);
+      stream.event({
+        type: 'response.web_search_call.completed',
+        item_id: 'ws_stub',
+        output_index: 1,
+      });
+      stream.delta('The synthetic release adds a feature.');
+      stream.event({
+        type: 'response.completed',
+        response: webSearchResponse(),
+      });
+      res.end();
     });
+    const onTextDelta = vi.fn();
+    const result = await model.complete(
+      input({ tools: ['web_search'], onTextDelta }),
+    );
+    expect(result).toMatchObject({
+      state: 'completed',
+      answer: 'The synthetic release adds a feature.',
+    });
+    expect(onTextDelta.mock.calls).toEqual([
+      ['The synthetic release adds a feature.'],
+    ]);
+    expect(JSON.stringify(result)).not.toContain(
+      'synthetic library release notes',
+    );
     expect(stub.requests).toHaveLength(1);
+    expect(stub.requests[0]!.body).toMatchObject({
+      stream: true,
+      max_tool_calls: 2,
+    });
+  });
+
+  it('keeps the application deadline during a pending hosted search without retrying', async () => {
+    stub.replies.push((res) => {
+      const stream = startResponseStream(res);
+      stream.event({
+        type: 'response.web_search_call.searching',
+        item_id: 'ws_stub',
+        output_index: 1,
+      });
+    });
+    expect(
+      await model.complete(
+        input({
+          tools: ['web_search'],
+          onTextDelta: vi.fn(),
+          signal: AbortSignal.timeout(100),
+        }),
+      ),
+    ).toMatchObject({ state: 'interrupted', errorCode: 'INTERRUPTED' });
+    expect(stub.requests).toHaveLength(1);
+  });
+
+  it('returns a provider failure without retrying search or falling back to another tool', async () => {
+    stub.enqueue(
+      { error: { message: 'PRIVATE unsupported search', type: 'api_error' } },
+      400,
+    );
+    const result = await model.complete(input({ tools: ['web_search'] }));
+    expect(result).toMatchObject({
+      state: 'failed',
+      errorCode: 'PROVIDER_ERROR',
+    });
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
+    expect(stub.requests).toHaveLength(1);
+  });
+
+  it('lets the SDK carry hosted search items between steps without a cumulative tool budget', async () => {
+    stub.enqueue(toolResponse(7, [webSearchCall()]));
+    stub.enqueue(response('Final answer'));
+    expect(
+      await executeSDKConversation(client(), input({ tools: ['web_search'] }), [
+        syntheticStep,
+      ]),
+    ).toMatchObject({ state: 'completed', answer: 'Final answer' });
+    expect(stub.requests).toHaveLength(2);
+    for (const request of stub.requests) {
+      expect(request.body).toMatchObject({
+        max_tool_calls: 2,
+        max_output_tokens: 100,
+        store: false,
+      });
+      expect(request.body).not.toHaveProperty('previous_response_id');
+    }
+    expect(stub.requests[1]!.body.input).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'web_search_call', id: 'ws_stub' }),
+        expect.objectContaining({
+          type: 'function_call_output',
+          output: 'Synthetic result',
+        }),
+      ]),
+    );
   });
 });
 

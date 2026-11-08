@@ -27,13 +27,13 @@ describe('server-only AI configuration', () => {
     });
   });
 
-  it('automatically enables complete configuration, with finite defaults and no available tools', () => {
+  it('automatically enables complete configuration with finite defaults and hosted web search', () => {
     expect(readAIEnvironment(configured)).toEqual({
       enabled: true,
       apiKey: configured.OPENAI_API_KEY,
       limits: {
         model: configured.OPENAI_CHAT_MODEL,
-        allowedTools: [],
+        allowedTools: ['web_search'],
         maxMessageBytes: 8192,
         maxContextBytes: 32768,
         maxOutputTokens: 2048,

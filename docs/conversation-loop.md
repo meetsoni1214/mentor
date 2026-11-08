@@ -274,8 +274,10 @@ it does not subtract earlier usage. The application still bounds the initial
 transcript, allows one active attempt per owner, and aborts at its persisted
 deadline. The initial transcript bound excludes instructions, tool definitions,
 SDK serialization overhead, and intermediate results. There is no whole-run token
-or hosted-tool guarantee. `AI_MAX_TOOL_CALLS` remains reserved for the later
-per-request search configuration; production has no registered tools now.
+or hosted-tool guarantee. When search is permitted, `AI_MAX_TOOL_CALLS` supplies
+the provider's `max_tool_calls` per Responses request through the SDK's standard
+`modelSettings.providerData`. Each SDK step receives the same setting; earlier
+calls are not deducted. See the task-4.1 checkpoint below.
 
 Privacy and retry settings remain explicit:
 
@@ -517,12 +519,80 @@ survives a process crash.
 
 User messages have no investigation flag. Server-controlled `allowedTools`
 settings supply available tools to the model port; the assistant decides whether
-an available tool is useful. In the later investigation checkpoint, permitted public-web
-search will be optional rather than forced on every message. Runtime limits
-still apply, and observed attempt activity records what actually happened.
-Retries apply current tool permissions rather than restoring old permissions.
-The production SDK adapter currently rejects nonempty tool settings. Actual web
-search remains group 4; the SDK contract tests use synthetic tools only.
+an available tool is useful. Valid model/key/limits configuration always supplies
+`allowedTools: ['web_search']`. There is no separate search enable flag and no
+per-turn tool selection. Missing or invalid AI configuration still disables
+assistant execution while history remains readable and clearable.
+
+The production adapter registers only the pinned SDK's `webSearchTool()` when
+permitted, with automatic tool choice. Unavailable search is omitted entirely,
+including its per-request setting. Unsupported runtime tools fail before any
+provider call. Retries apply current tool permissions rather than restoring old
+permissions. Test-only function tools remain confined to the SDK test seam.
+
+### Hosted web-search registration (task 4.1)
+
+The owner requested that search always be available with valid AI configuration;
+the model still chooses whether to use it. Task 4.2 adds validated
+activity/citation normalization, persistence, and presentation.
+The existing sources/activity fields remain empty in 4.1, including searched
+answers; availability never fabricates recorded activity. Search metadata stays
+inside the active SDK run and is discarded at completion. No raw queries, SDK
+state, or hidden reasoning are saved. A future turn starts from committed answer
+text, not a raw search item or provider response-ID chain.
+
+Read `packages/backend/src/config/ai.environment.ts` for server permissions, then
+`packages/backend/src/conversation/adapters/openai-conversation.model.ts` for tool
+registration, conditional instructions, standard per-request settings, and the
+shared JSON/streaming execution path. The model can answer without searching.
+Instructions require actual search evidence before claiming a public-web check,
+treat pasted/retrieved content as evidence rather than permission, and limit
+queries to relevant public facts. These instructions and deterministic fixtures
+do not guarantee every generated claim or query is correct.
+
+The [official web-search guide](https://developers.openai.com/api/docs/guides/tools-web-search)
+describes provider search items and citation annotations. The installed SDK
+0.21.0 exposes `webSearchTool()` and forwards `providerData.max_tool_calls` without
+custom hooks or a model subclass. Existing deadline cancellation, default SDK
+iteration behavior, per-call output settings, no automatic retries, disabled
+tracing/export, and `store: false` remain in effect. Unsupported provider/model
+search returns the existing stable failure; there is no fallback tool or provider.
+
+Task 4.2 remains open for source validation and prominent clickable inline
+citations when displaying web-derived information. Task 4.3 owns broader
+adversarial investigation checks; tasks 4.4–4.5 own integrated browser acceptance
+and opt-in live verification. No browser UI, API contract, or migration changes
+are needed for 4.1.
+
+Verification on 2026-11-08:
+
+- The initial registration's `pnpm check` passed formatting, lint, type checking,
+  and all **415** unit/contract tests. Its final default Turbopack build failed at the known
+  CSS-worker subprocess localhost-port restriction (`Operation not permitted`),
+  including through the permitted execution path. The full command therefore
+  does not pass. `pnpm --filter @mentor/web exec next build --webpack` passes the
+  production build without changing bundler configuration.
+- After the owner requested always-available search, `pnpm lint`,
+  `pnpm typecheck`, and `pnpm test` pass all **408** unit/contract tests. Obsolete
+  switch-specific tests were removed; the default-configuration test now requires
+  hosted search. Integration checks below were rerun. The frontend production
+  build was not repeated for this server-configuration-only revision.
+- `pnpm test:integration` passes all **107** disposable PostgreSQL/HTTP/SDK checks.
+  Added composed tests exercise configured search through JSON and streaming,
+  committed answers/usage, same-key replay without another request, rebuilding
+  later context without raw search items, rejection of a per-turn flag, and an
+  explicit retry using current permissions. Its container is removed afterward.
+- The real SDK/official-client HTTP-stub tests cover searched and unsearched
+  output, optional tool registration, unsupported tools, automatic choice,
+  per-request settings without cumulative deduction, active-run continuation,
+  cancellation, stable failures without fallback/retry, and text-only streaming.
+  Non-stub outbound traffic and telemetry remain denied through SDK shutdown.
+- Strict OpenSpec validation and whitespace checks pass. Generated OpenAPI/client
+  output and the lockfile have no drift. Build-generated Next.js type references
+  are restored to their incoming values. No migrations, existing `.env` edits,
+  development-database operations, browser acceptance, or live OpenAI calls are
+  part of this checkpoint. Fixtures verify integration behavior, not live search
+  quality or universal model truthfulness. Stop here for review before 4.2.
 
 Migration `0004_remove_turn_investigation.sql` removes the historical per-turn
 column and recalculates request fingerprints from text alone, preserving
@@ -593,15 +663,15 @@ Cloud-processing information remains documented here:
 > generate a response. Older messages remain in your local history but may be
 > omitted from the model's context. When public-web search is permitted, Mentor
 > may choose to search and send derived queries to that service. Web search is
-> currently unavailable. Clearing history removes Mentor's local conversation
+> always available with valid assistant configuration. Clearing history removes Mentor's local conversation
 > content; it cannot retract content already sent to a provider. Disabling provider
 > response storage does not promise zero provider retention.
 
-There is no persisted acknowledgement or acknowledgement gate. Production tool registration
-is empty: this checkpoint cannot search the web, access email/private accounts,
-rotate credentials, or perform external writes. Sources/activity fields exist in
-the contract but do not prove a tool ran; real observed search normalization is
-group 4. Hidden reasoning and raw SDK intermediate items are not stored.
+There is no persisted acknowledgement or acknowledgement gate. Optional hosted
+search is the only production tool. There is no email/private-account access,
+credential rotation, or external write capability. Sources/activity fields exist
+in the contract but remain empty until task 4.2; they do not prove a tool ran.
+Hidden reasoning and raw SDK intermediate items are not stored.
 
 ## Verification
 
