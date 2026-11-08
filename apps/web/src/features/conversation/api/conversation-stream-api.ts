@@ -1,4 +1,8 @@
-import { apiClient, csrfToken, mutationHeaders } from '../../lib/api-request';
+import {
+  apiClient,
+  csrfToken,
+  mutationHeaders,
+} from '../../../lib/api-request';
 import type { SubmitInput, TurnResult } from './conversation-contracts';
 import {
   ConversationApiError,

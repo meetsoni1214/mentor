@@ -1,10 +1,10 @@
-import { Button } from '../../components/ui/button';
-import { Label } from '../../components/ui/label';
-import { Textarea } from '../../components/ui/textarea';
-import { Alert, AlertDescription } from '../../components/ui/alert';
+import { Button } from '../../../components/ui/button';
+import { Label } from '../../../components/ui/label';
+import { Textarea } from '../../../components/ui/textarea';
+import { Alert, AlertDescription } from '../../../components/ui/alert';
 import { ArrowUp, RotateCcw } from 'lucide-react';
-import { brand } from '../../brand/brand';
-import type { SubmissionSnapshot } from './conversation-submission';
+import { brand } from '../../../brand/brand';
+import type { SubmissionSnapshot } from '../state/conversation-submission';
 
 export function ConversationComposer({
   state,

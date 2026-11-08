@@ -1,4 +1,4 @@
-import { requestFailure } from '../../lib/api-request';
+import { requestFailure } from '../../../lib/api-request';
 import { errorSchema } from './conversation-contracts';
 
 const errorMessages = {

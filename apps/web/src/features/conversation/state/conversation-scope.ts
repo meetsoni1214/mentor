@@ -1,4 +1,4 @@
-import type { SessionScope } from '../auth/session-scope';
+import type { SessionScope } from '../../auth/session-scope';
 
 export class ObsoleteHistoryError extends Error {
   constructor() {

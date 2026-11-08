@@ -3,7 +3,7 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import type {
   ConversationHistory,
   HistoryCursor,
-} from './conversation-contracts';
+} from '../api/conversation-contracts';
 import type { createConversationQueries } from './conversation-queries';
 import { conversationPollInterval } from './conversation-polling';
 

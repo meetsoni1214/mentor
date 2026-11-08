@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { SessionState } from '../src/features/auth/session-state';
 import { ObsoleteSessionError } from '../src/features/auth/session-scope';
-import { createConversationQueries } from '../src/features/conversation/conversation-queries';
-import { streamConversationTurn } from '../src/features/conversation/conversation-stream-api';
-import { readEventStream } from '../src/features/conversation/conversation-stream-reader';
-import { ConversationApiError } from '../src/features/conversation/conversation-errors';
+import { createConversationQueries } from '../src/features/conversation/state/conversation-queries';
+import { streamConversationTurn } from '../src/features/conversation/api/conversation-stream-api';
+import { readEventStream } from '../src/features/conversation/api/conversation-stream-reader';
+import { ConversationApiError } from '../src/features/conversation/api/conversation-errors';
 import { RequestError } from '../src/lib/api-request';
-import { ObsoleteHistoryError } from '../src/features/conversation/conversation-scope';
+import { ObsoleteHistoryError } from '../src/features/conversation/state/conversation-scope';
 import {
   accepted,
   completed,

@@ -8,11 +8,11 @@ import {
   SessionState,
   sessionKey,
 } from '../src/features/auth/session-state.js';
-import { ConversationApiError } from '../src/features/conversation/conversation-errors.js';
-import { createConversationQueries } from '../src/features/conversation/conversation-queries.js';
-import { ObsoleteHistoryError } from '../src/features/conversation/conversation-scope.js';
+import { ConversationApiError } from '../src/features/conversation/api/conversation-errors.js';
+import { createConversationQueries } from '../src/features/conversation/state/conversation-queries.js';
+import { ObsoleteHistoryError } from '../src/features/conversation/state/conversation-scope.js';
 import { RequestError } from '../src/lib/api-request.js';
-import { getConversationHistory } from '../src/features/conversation/conversation-api.js';
+import { getConversationHistory } from '../src/features/conversation/api/conversation-api.js';
 
 // Install before the real generated client captures its browser transport.
 const transport = vi.hoisted(() => {

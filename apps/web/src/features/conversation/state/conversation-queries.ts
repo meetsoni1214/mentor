@@ -4,14 +4,14 @@ import type {
   QueryFilters,
   QueryKey,
 } from '@tanstack/react-query';
-import type { SessionScope } from '../auth/session-scope';
+import type { SessionScope } from '../../auth/session-scope';
 import {
   clearConversationHistory,
   getAssistantStatus,
   getConversationHistory,
   retryConversationTurn,
   submitConversationTurn,
-} from './conversation-api';
+} from '../api/conversation-api';
 import type {
   ClearInput,
   HistoryOptions,
@@ -19,10 +19,10 @@ import type {
   SubmitInput,
   TurnResult,
   ConversationHistory,
-} from './conversation-contracts';
+} from '../api/conversation-contracts';
 import { ConversationScope } from './conversation-scope';
-import { streamConversationTurn } from './conversation-stream-api';
-import type { ConversationStreamProgress } from './conversation-stream-contracts';
+import { streamConversationTurn } from '../api/conversation-stream-api';
+import type { ConversationStreamProgress } from '../api/conversation-stream-contracts';
 
 export function createConversationQueries(
   session: SessionScope,

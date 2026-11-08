@@ -1,12 +1,12 @@
 import { useLayoutEffect, useRef } from 'react';
-import { Button } from '../../components/ui/button';
-import { Alert, AlertDescription } from '../../components/ui/alert';
-import { brand } from '../../brand/brand';
-import { BrandLogo } from '../../brand/brand-logo';
-import { ConversationApiError } from './conversation-errors';
+import { Button } from '../../../components/ui/button';
+import { Alert, AlertDescription } from '../../../components/ui/alert';
+import { brand } from '../../../brand/brand';
+import { BrandLogo } from '../../../brand/brand-logo';
+import { ConversationApiError } from '../api/conversation-errors';
 import { ConversationMessage } from './conversation-message';
-import type { useConversationHistory } from './use-conversation-history';
-import type { ProvisionalResponse } from './conversation-stream-contracts';
+import type { useConversationHistory } from '../state/use-conversation-history';
+import type { ProvisionalResponse } from '../api/conversation-stream-contracts';
 
 export function ConversationTranscript({
   history,

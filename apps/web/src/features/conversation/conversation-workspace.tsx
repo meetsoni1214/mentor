@@ -3,13 +3,13 @@ import { Alert, AlertDescription } from '../../components/ui/alert';
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SessionScope } from '../auth/session-scope';
-import { ConversationComposer } from './conversation-composer';
-import { createConversationQueries } from './conversation-queries';
-import { ConversationTranscript } from './conversation-transcript';
-import { useConversationHistory } from './use-conversation-history';
+import { ConversationComposer } from './ui/conversation-composer';
+import { createConversationQueries } from './state/conversation-queries';
+import { ConversationTranscript } from './ui/conversation-transcript';
+import { useConversationHistory } from './state/use-conversation-history';
 import { BrandLockup } from '../../brand/brand-logo';
-import { useConversationSubmission } from './use-conversation-submission';
-import { hasRunningAttempt } from './conversation-polling';
+import { useConversationSubmission } from './state/use-conversation-submission';
+import { hasRunningAttempt } from './state/conversation-polling';
 
 export function ConversationWorkspace({
   session,

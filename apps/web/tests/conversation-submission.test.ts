@@ -6,11 +6,11 @@ import type {
   ConversationHistory,
   SubmitInput,
   TurnResult,
-} from '../src/features/conversation/conversation-contracts.js';
-import { ConversationApiError } from '../src/features/conversation/conversation-errors.js';
-import { ConversationSubmission } from '../src/features/conversation/conversation-submission.js';
-import { ObsoleteHistoryError } from '../src/features/conversation/conversation-scope.js';
-import { conversationPollInterval } from '../src/features/conversation/conversation-polling.js';
+} from '../src/features/conversation/api/conversation-contracts.js';
+import { ConversationApiError } from '../src/features/conversation/api/conversation-errors.js';
+import { ConversationSubmission } from '../src/features/conversation/state/conversation-submission.js';
+import { ObsoleteHistoryError } from '../src/features/conversation/state/conversation-scope.js';
+import { conversationPollInterval } from '../src/features/conversation/state/conversation-polling.js';
 
 const empty: ConversationHistory = {
   historyVersion: 0,

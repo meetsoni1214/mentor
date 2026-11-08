@@ -30,7 +30,7 @@ the backend contract or introduce a second conversation store for this UI.
 
 Implement only this checkpoint first, then stop for review.
 
-- Add `apps/web/src/features/conversation/conversation-api.ts` using the generated
+- Add `apps/web/src/features/conversation/api/conversation-api.ts` using the generated
   client for status, paginated history, submit, retry, and clearing. Validate
   responses with browser-owned Zod schemas; do not import backend code or edit
   generated types. Preserve stable error codes, versions, attempt states, and
@@ -438,3 +438,26 @@ scroll using the keyboard. Desktop and phone screenshots were inspected; ignored
 artifacts are under `output/playwright/markdown/`. Database integration was not
 rerun for this frontend-only slice. No live model calls or API/storage contract
 changes were made.
+
+## Conversation feature organization
+
+`apps/web/src/features/conversation/` keeps the feature together while grouping
+files by responsibility:
+
+- `conversation-workspace.tsx` remains the composition entry point.
+- `ui/` owns transcript, message, composer, and run-detail presentation.
+- `ui/content/` owns `AssistantContent` and Markdown response rendering, with room
+  for future validated response types.
+- `api/` owns HTTP operations, response/event contracts, error decoding, and SSE
+  framing and validation.
+- `state/` owns query/cache integration, request scope, submission and draft
+  lifecycle, polling decisions, and their React hooks.
+
+This organization changes file locations and imports only. Existing tests remain
+under `apps/web/tests/`, and conversation styles remain in `globals.css`.
+
+Reorganization verification: formatting, lint, strict types, all 322 unit/contract
+tests, and the production build pass. Comparing the moved modules, workspace, and
+existing tests against the Markdown checkpoint confirms that all non-import
+source content is unchanged. Database integration and browser acceptance were not
+repeated for these file moves.

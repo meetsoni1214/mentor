@@ -1,8 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { AssistantContent } from '../src/features/conversation/assistant-content';
-import { ConversationMessage } from '../src/features/conversation/conversation-message';
+import { AssistantContent } from '../src/features/conversation/ui/content/assistant-content';
+import { ConversationMessage } from '../src/features/conversation/ui/conversation-message';
 import { completed, running } from './fixtures/conversation-stream';
 
 const render = (text: string) =>

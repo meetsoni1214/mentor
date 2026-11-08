@@ -5,7 +5,7 @@ import { SessionState } from '../src/features/auth/session-state.js';
 import {
   ConversationScope,
   ObsoleteHistoryError,
-} from '../src/features/conversation/conversation-scope.js';
+} from '../src/features/conversation/state/conversation-scope.js';
 
 const clients: QueryClient[] = [];
 function setup() {

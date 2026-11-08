@@ -1,9 +1,9 @@
-import type { ConversationHistory } from './conversation-contracts';
+import type { ConversationHistory } from '../api/conversation-contracts';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '../../components/ui/collapsible';
+} from '../../../components/ui/collapsible';
 import { ChevronDown } from 'lucide-react';
 
 type Attempt = ConversationHistory['turns'][number]['attempts'][number];

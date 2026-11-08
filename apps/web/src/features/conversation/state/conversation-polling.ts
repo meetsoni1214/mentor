@@ -1,4 +1,4 @@
-import type { ConversationHistory } from './conversation-contracts';
+import type { ConversationHistory } from '../api/conversation-contracts';
 
 export function hasRunningAttempt(history: ConversationHistory | undefined) {
   return (

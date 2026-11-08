@@ -1,16 +1,16 @@
-import { ObsoleteSessionError } from '../auth/session-scope';
-import { RequestError } from '../../lib/api-request';
+import { ObsoleteSessionError } from '../../auth/session-scope';
+import { RequestError } from '../../../lib/api-request';
 import type {
   ConversationHistory,
   SubmitInput,
   TurnResult,
-} from './conversation-contracts';
-import { ConversationApiError } from './conversation-errors';
+} from '../api/conversation-contracts';
+import { ConversationApiError } from '../api/conversation-errors';
 import { ObsoleteHistoryError } from './conversation-scope';
 import type {
   ConversationStreamProgress,
   ProvisionalResponse,
-} from './conversation-stream-contracts';
+} from '../api/conversation-stream-contracts';
 
 const stoppedStreamMessage =
   'The live response stopped. Checking the saved response…';

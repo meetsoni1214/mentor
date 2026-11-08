@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   SubmitInput,
   TurnResult,
-} from '../src/features/conversation/conversation-contracts';
-import type { ConversationStreamProgress } from '../src/features/conversation/conversation-stream-contracts';
-import { ConversationSubmission } from '../src/features/conversation/conversation-submission';
-import { conversationPollInterval } from '../src/features/conversation/conversation-polling';
-import { ConversationApiError } from '../src/features/conversation/conversation-errors';
+} from '../src/features/conversation/api/conversation-contracts';
+import type { ConversationStreamProgress } from '../src/features/conversation/api/conversation-stream-contracts';
+import { ConversationSubmission } from '../src/features/conversation/state/conversation-submission';
+import { conversationPollInterval } from '../src/features/conversation/state/conversation-polling';
+import { ConversationApiError } from '../src/features/conversation/api/conversation-errors';
 import {
   accepted,
   completed,

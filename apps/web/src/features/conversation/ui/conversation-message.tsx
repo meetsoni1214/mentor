@@ -1,9 +1,9 @@
-import { Button } from '../../components/ui/button';
-import type { ConversationHistory } from './conversation-contracts';
+import { Button } from '../../../components/ui/button';
+import type { ConversationHistory } from '../api/conversation-contracts';
 import { MessageTime, RunDetails } from './run-details';
-import { brand } from '../../brand/brand';
-import type { ProvisionalResponse } from './conversation-stream-contracts';
-import { AssistantContent } from './assistant-content';
+import { brand } from '../../../brand/brand';
+import type { ProvisionalResponse } from '../api/conversation-stream-contracts';
+import { AssistantContent } from './content/assistant-content';
 
 type Turn = ConversationHistory['turns'][number];
 type Attempt = Turn['attempts'][number];

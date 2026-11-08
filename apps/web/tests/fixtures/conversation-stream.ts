@@ -2,7 +2,7 @@ import type {
   SubmitInput,
   TurnResult,
   ConversationHistory,
-} from '../../src/features/conversation/conversation-contracts';
+} from '../../src/features/conversation/api/conversation-contracts';
 
 export const streamInput: SubmitInput = {
   historyVersion: 0,
