@@ -11,9 +11,9 @@ provisional text and saved results. The browser consumes that stream, keeping
 partial text temporary and recovering through history after a disconnect.
 Explicit attempt retry and Clear history are implemented. Task 4.1 makes hosted
 public-web search available whenever assistant execution is configured; the model
-chooses when to search. Validated citation/activity persistence and presentation
-remain task 4.2. See the
-[search checkpoint](docs/conversation-loop.md#hosted-web-search-registration-task-41).
+chooses when to search. Task 4.2 saves observed search activity and validated
+citations, with clickable inline references and a visible source list after
+completion. See the [search evidence checkpoint](docs/conversation-loop.md#search-evidence-and-citations-task-42).
 Notes, long-term memory, email access, and external actions remain future work.
 
 Browser branding, design tokens, and reusable controls follow the
@@ -130,8 +130,8 @@ The adapter sets `store: false`, disables automatic retries and tracing/export,
 and omits sensitive SDK logging. This does not promise zero provider retention.
 Messages and selected recent context go to OpenAI. Hosted public-web search is
 always offered with valid AI configuration, and the model chooses when to use it.
-There is no separate search enable flag. Validated citations and activity remain
-task 4.2.
+There is no separate search enable flag. Only observed web activity and validated
+provider annotations become recorded evidence. Generated prose links remain inert.
 `AI_MAX_TOOL_CALLS` is the provider's per-Responses-request built-in-tool setting,
 not a whole-run budget. Search may send derived queries to OpenAI and incur
 additional charges; it does not grant private-account access. Restart the API

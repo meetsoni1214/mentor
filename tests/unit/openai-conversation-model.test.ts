@@ -29,6 +29,9 @@ import {
   toolResponse,
   webSearchCall,
   webSearchResponse,
+  citedWebResponse,
+  citedAnswer,
+  citationMarker,
 } from '../fixtures/responses-stub.js';
 
 type ModelInput = Parameters<ConversationModel['complete']>[0];
@@ -435,6 +438,67 @@ describe('standard Agents SDK / Responses adapter', () => {
 });
 
 describe('optional hosted public-web search', () => {
+  it('normalizes provider character offsets after emoji into saved JavaScript positions', async () => {
+    const answer = '🌱 ' + citedAnswer;
+    const startIndex = answer.indexOf(citationMarker);
+    stub.enqueue(
+      citedWebResponse(answer, [
+        {
+          type: 'url_citation',
+          title: 'Synthetic release notes',
+          url: 'https://example.test/releases',
+          start_index: [...answer.slice(0, startIndex)].length,
+          end_index: [...answer].length,
+        },
+      ]),
+    );
+    expect(
+      await model.complete(input({ tools: ['web_search'] })),
+    ).toMatchObject({
+      state: 'completed',
+      answer,
+      sources: [{ startIndex, endIndex: answer.length }],
+    });
+  });
+
+  it.each([false, true])(
+    'normalizes real SDK citations and activity (stream=%s)',
+    async (streaming) => {
+      const raw = citedWebResponse();
+      if (streaming) {
+        stub.replies.push((res) => {
+          const stream = startResponseStream(res);
+          stream.delta(citedAnswer);
+          stream.event({ type: 'response.completed', response: raw });
+          res.end();
+        });
+      } else stub.enqueue(raw);
+      const result = await model.complete(
+        input({
+          tools: ['web_search'],
+          ...(streaming ? { onTextDelta: vi.fn() } : {}),
+        }),
+      );
+      expect(result).toMatchObject({
+        state: 'completed',
+        answer: citedAnswer,
+        sources: [
+          {
+            title: 'Synthetic release notes',
+            url: 'https://example.test/releases',
+            startIndex: citedAnswer.indexOf(citationMarker),
+            endIndex: citedAnswer.length,
+          },
+        ],
+        activity: [{ type: 'web_search', status: 'completed' }],
+      });
+      expect(stub.requests).toHaveLength(1);
+      expect(JSON.stringify(result)).not.toContain(
+        'synthetic library release notes',
+      );
+    },
+  );
+
   it('registers only hosted search with automatic choice and the per-request provider setting', async () => {
     stub.enqueue(webSearchResponse());
     expect(

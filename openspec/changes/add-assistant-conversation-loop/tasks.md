@@ -99,8 +99,13 @@ broader investigation/browser/live verification remain 4.3–4.5. The owner requ
 that search always be available with valid AI configuration, without a separate
 enable flag; no existing `.env` is changed.
 
+The owner then requested committing 4.1 (e46b4e5) and implementing the next slice,
+4.2. Complete its source/activity normalization, persisted citation positions,
+safe inline/source-list presentation, and focused verification, then stop for
+review before 4.3–4.5. Keep always-available search; no new enable flag is needed.
+
 - [x] 4.1 Register only the SDK-supported hosted web-search tool through Responses under runtime-controlled availability and disclose assistant-selected search. Let the SDK/model choose when to search, using supported per-request settings and the application deadline, without custom cumulative budgets. Verify searched/unsearched SDK fixtures, unavailable tools omitted, no other production tools, no per-turn toggle, and no search claimed without observed activity.
-- [ ] 4.2 Normalize provider-observed search activity and citation annotations exposed through SDK results into bounded persisted records; preserve required continuation items only within the active run. Render answer text safely with separately validated HTTP(S) source links and no raw HTML or promoted invented links; verify unsafe URLs, malformed annotations, unknown output shapes, and fabricated sources are rejected or labelled honestly.
+- [x] 4.2 Normalize provider-observed search activity and citation annotations exposed through SDK results into bounded persisted records; preserve required continuation items only within the active run. Render answer text safely with separately validated HTTP(S) source links and no raw HTML or promoted invented links; verify unsafe URLs, malformed annotations, unknown output shapes, and fabricated sources are rejected or labelled honestly.
 - [ ] 4.3 Add synthetic Railway-notice and adversarial email/page fixtures; verify conversation continuation, distinction between public evidence and unknown account exposure, no fabricated monitoring/rotation claims, and no write-capable tools or credential access despite embedded instructions. Document that fixture enforcement tests do not establish universal model truthfulness.
 - [ ] 4.4 Run pnpm check, pnpm test:integration, and integrated phone/desktop browser acceptance through conversation, investigation, source inspection, refresh/recovery, history clearing, singleton continuity, and auth loss; record actual results and unavailable checks, keep unverified tasks open, present the focused verified checkpoint for review, and commit when requested.
 - [ ] 4.5 Provide an opt-in live smoke command using configured credentials/model and bounded synthetic requests; verify ordinary tests never call OpenAI, document the command and limits, and record the exact live model/results if run or clearly record that live verification remains unavailable. Never treat stubbed search as live evidence.
@@ -118,6 +123,18 @@ search metadata. Prompt policy requires actual supporting search evidence, but
 fixtures do not prove universal model truthfulness. No live calls, browser
 acceptance, migrations, or existing `.env` edits were performed. Stop for review;
 4.2–4.5 and the earlier broad acceptance boxes remain open. Commit when requested.
+
+Task 4.2 is implemented and verified: `pnpm check` passes all 455 unit/contract
+tests and the default Turbopack production build; 109 disposable PostgreSQL/HTTP/SDK
+checks and 12 synthetic phone/desktop scenarios pass. Strict OpenSpec and
+whitespace checks pass. Generated API changes add only optional citation
+positions; existing JSON storage needs no migration. Sources/activity are now
+normalized from observed SDK evidence, bounded and persisted with completed
+answers, and shown as validated inline citations plus visible source links.
+Ordinary generated links stay inert. No live provider calls, existing `.env`
+edits, or development-data operations were performed. The synthetic browser
+checks do not complete real-cookie/deployed-proxy acceptance or prove universal
+truthfulness. Stop for review here; 4.3–4.5 remain open. Commit when requested.
 
 ## Workflow follow-up
 

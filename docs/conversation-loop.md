@@ -1,5 +1,10 @@
 # The conversation loop: API and conversation workspace
 
+The current review checkpoint is [search evidence and citations, task 4.2](#search-evidence-and-citations-task-42),
+following hosted-search registration commit `e46b4e5`. Start there for the current
+reading order, one source-backed answer trace, and verification evidence. Earlier
+checkpoint sections below retain their historical results and limits.
+
 Mentor will have one continuous conversation. The owner will not create, name,
 or choose threads. This checkpoint implements its backend persistence and run
 lifecycle, server-only AI configuration, and a standard Agents SDK adapter verified
@@ -67,7 +72,7 @@ See [Clear history evidence](conversation-ui-plan.md#clear-history-checkpoint-ta
 
 ## Current browser reading order
 
-The current Clear history checkpoint is tasks 3.3h–3.3i, building on completed
+The earlier Clear history checkpoint is tasks 3.3h–3.3i, building on completed
 SSE retry (3.3f–3.3g) and submission readability (3.3b–3.3e). Start in
 `apps/web/src/features/conversation/`:
 
@@ -533,10 +538,9 @@ permissions. Test-only function tools remain confined to the SDK test seam.
 ### Hosted web-search registration (task 4.1)
 
 The owner requested that search always be available with valid AI configuration;
-the model still chooses whether to use it. Task 4.2 adds validated
-activity/citation normalization, persistence, and presentation.
-The existing sources/activity fields remain empty in 4.1, including searched
-answers; availability never fabricates recorded activity. Search metadata stays
+the model still chooses whether to use it. The source/activity fields remained
+empty at the 4.1 registration checkpoint; task 4.2 below now normalizes evidence.
+Availability never fabricates recorded activity. Raw search metadata stays
 inside the active SDK run and is discarded at completion. No raw queries, SDK
 state, or hidden reasoning are saved. A future turn starts from committed answer
 text, not a raw search item or provider response-ID chain.
@@ -558,7 +562,7 @@ iteration behavior, per-call output settings, no automatic retries, disabled
 tracing/export, and `store: false` remain in effect. Unsupported provider/model
 search returns the existing stable failure; there is no fallback tool or provider.
 
-Task 4.2 remains open for source validation and prominent clickable inline
+Task 4.2 below adds source validation and prominent clickable inline
 citations when displaying web-derived information. Task 4.3 owns broader
 adversarial investigation checks; tasks 4.4–4.5 own integrated browser acceptance
 and opt-in live verification. No browser UI, API contract, or migration changes
@@ -593,6 +597,90 @@ Verification on 2026-11-08:
   development-database operations, browser acceptance, or live OpenAI calls are
   part of this checkpoint. Fixtures verify integration behavior, not live search
   quality or universal model truthfulness. Stop here for review before 4.2.
+
+### Search evidence and citations (task 4.2)
+
+Web search stays available whenever AI execution is configured. The SDK/model
+chooses whether to use it. The application distinguishes available tools,
+observed web operations, generated answer text, and annotated sources.
+
+Read this path in order:
+
+1. `packages/backend/src/conversation/adapters/openai-conversation.model.ts`
+   passes completed SDK responses and final answer text to
+   `openai-conversation.evidence.ts`. The helper accepts only known hosted web
+   operation shapes with terminal statuses and records at most 20 unique calls.
+   It never infers activity from tool availability or generated claims.
+2. The helper accepts only URL annotations associated with the exact final answer,
+   after observed completed web activity in that run. Sources contain a trimmed
+   title (1–500 characters), HTTP(S) URL (at most 2,048 characters, no credentials,
+   whitespace, controls, or backslashes), and valid answer positions. At most 20
+   are retained. Unknown shapes and malformed/unsafe annotations are ignored;
+   conflicting overlapping ranges and duplicates are rejected. Distinct sources
+   sharing one marker are retained.
+3. Existing repository completion writes answer, sources, activity, and usage
+   together under its deadline/history-version checks. The existing JSONB source
+   column holds the additive optional `startIndex`/`endIndex` fields without a
+   migration. Replays and history return the same records. Clearing removes them
+   with the attempts; raw SDK continuation items, queries, pages, and reasoning
+   are never stored as evidence or restored into later SDK runs.
+4. HTTP presenters preserve the optional paired positions. OpenAPI and generated
+   browser types are regenerated. Positions are UTF-16 code units into the saved
+   answer, with an exclusive end. Exact marker matching can translate provider
+   character offsets after emoji; split surrogate pairs and invalid ranges are
+   rejected. Browser-owned contracts validate the URL, bounds, paired fields, and
+   overlap rules again. Older source records without positions remain readable.
+5. `conversation-message.tsx` passes committed sources to `AssistantContent`.
+   `citation-markdown.ts` inserts inline links only at validated annotation
+   locations, replacing only annotated provider markers and preserving cited
+   prose. `markdown-content.tsx` makes a link clickable only if its parsed position
+   matches an inserted citation. A model-written link remains inert even when its
+   URL or token matches a real source. Several sources can cite one marker.
+
+Final answers display numbered, keyboard-accessible inline citations plus a
+visible source list with protected external links. Run details show recorded
+activity and sources. Raw HTML remains inert, generated images are not fetched,
+and provisional text has no clickable source links. If web activity is recorded
+but no source survives validation, the answer says no usable source references
+were recorded. Citations establish attribution, not universal factual correctness
+or private-account findings. Deterministic fixtures are not live search evidence.
+
+For example, the provider emits a hosted search item, answer text, and a URL
+annotation around one marker. The adapter records only `{ type, status }` for the
+operation and `{ title, url, startIndex, endIndex }` for that citation. Completion
+saves them with the final answer. The browser replaces that marker with `[1]` and
+shows its source title below the answer. A disconnect followed by history recovery
+gets those same saved fields, without another search or a raw SDK transcript.
+
+Task 4.2 stops at this evidence path. The broader adversarial investigation
+fixtures, complete-loop acceptance, and opt-in live smoke remain tasks 4.3–4.5.
+
+Verification on 2026-11-08:
+
+- `pnpm check` passes formatting, lint, strict types, all **455** unit/contract
+  tests, regenerated API contracts, and the default Turbopack production build.
+  The earlier 4.1 build restriction did not recur in these permitted runs. After
+  the final build, generated Next.js type references are restored to their
+  incoming values.
+- `pnpm test:integration` passes all **109** disposable PostgreSQL/HTTP/SDK checks.
+  Real SDK fixtures cover JSON and streaming citations, continued runs, Unicode
+  positions, usage, and no non-stub/trace traffic. Database composition saves and
+  reloads evidence; actual authenticated HTTP JSON/SSE routes preserve its
+  positions through history and same-key replay, and clearing removes it.
+- Twelve synthetic production-browser scenarios pass at **1440x1000** and
+  **390x844**. They cover visible inline/source-list citations, keyboard focus,
+  protected destinations, refresh, several sources on one marker, long-title
+  wrapping, fabricated URLs/tokens, inert HTML/images, unusable-source copy,
+  provisional-to-final replacement, preserved next drafts, and history clearing.
+  There are no page errors, remote requests, or horizontal overflow. Screenshots,
+  scenario code, and results are under `output/playwright/investigation-sources/`.
+- Strict OpenSpec validation and whitespace checks pass. The generated-contract
+  diff adds only optional citation positions; the lockfile and migrations are
+  unchanged. This slice uses the actual SDK/client with synthetic provider
+  responses, and an API-intercepted production frontend. It does not establish
+  live search quality, real-cookie/deployed-proxy acceptance, or universal model
+  truthfulness. No live OpenAI calls, existing `.env` edits, or development-data
+  operations were performed. Stop here for review before 4.3; commit when requested.
 
 Migration `0004_remove_turn_investigation.sql` removes the historical per-turn
 column and recalculates request fingerprints from text alone, preserving
@@ -670,7 +758,8 @@ Cloud-processing information remains documented here:
 There is no persisted acknowledgement or acknowledgement gate. Optional hosted
 search is the only production tool. There is no email/private-account access,
 credential rotation, or external write capability. Sources/activity fields exist
-in the contract but remain empty until task 4.2; they do not prove a tool ran.
+in the contract are populated only from validated observed evidence; availability
+alone does not prove a tool ran.
 Hidden reasoning and raw SDK intermediate items are not stored.
 
 ## Verification

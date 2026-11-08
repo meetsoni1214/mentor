@@ -68,7 +68,10 @@ export function ConversationMessage({
           className={`message-bubble${latest?.state === 'completed' ? '' : ' message-outcome'}`}
         >
           {latest?.state === 'completed' ? (
-            <AssistantContent text={latest.answer ?? ''} />
+            <AssistantContent
+              text={latest.answer ?? ''}
+              sources={latest.sources}
+            />
           ) : latest?.state === 'running' ? (
             <>
               {provisional?.attemptId === latest.id && provisional.text ? (
@@ -120,6 +123,13 @@ export function ConversationMessage({
             Some older messages were outside this response’s context.
           </p>
         )}
+        {latest?.state === 'completed' &&
+          latest.activity.length > 0 &&
+          latest.sources.length === 0 && (
+            <p className="context-note">
+              No usable source references were recorded for this response.
+            </p>
+          )}
         <RunDetails attempts={turn.attempts} />
       </div>
     </article>

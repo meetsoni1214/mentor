@@ -67,6 +67,32 @@ export function webSearchResponse(
   return { ...result, output: [webSearchCall(), ...result.output] };
 }
 
+export const citationMarker = '\uE200cite\uE202turn0search0\uE201';
+export const citedAnswer = `The synthetic release adds a feature. ${citationMarker}`;
+export function citedWebResponse(
+  answer = citedAnswer,
+  annotations: unknown = [
+    {
+      type: 'url_citation',
+      title: 'Synthetic release notes',
+      url: 'https://example.test/releases',
+      start_index: answer.indexOf(citationMarker),
+      end_index: answer.indexOf(citationMarker) + citationMarker.length,
+    },
+  ],
+) {
+  return {
+    ...response(answer),
+    output: [
+      webSearchCall(),
+      {
+        ...response(answer).output[0],
+        content: [{ type: 'output_text', text: answer, annotations }],
+      },
+    ],
+  };
+}
+
 type Reply = (res: ServerResponse) => void;
 
 export function startResponseStream(res: ServerResponse) {

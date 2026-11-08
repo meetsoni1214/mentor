@@ -11,20 +11,54 @@ export const versionSchema = z.object({ historyVersion: nonnegativeInteger });
 export const cursorSchema = versionSchema.extend({
   beforeSequence: positiveInteger,
 });
-const sourceSchema = z.object({
-  title: z.string().max(500),
-  url: z
-    .url()
-    .max(2048)
-    .refine((value) => {
-      const url = new URL(value);
-      return (
-        ['http:', 'https:'].includes(url.protocol) &&
-        !url.username &&
-        !url.password
-      );
-    }),
-});
+export const sourceSchema = z
+  .object({
+    title: z.string().trim().min(1).max(500),
+    url: z
+      .url()
+      .max(2048)
+      .refine((value) => {
+        if (
+          /\s/.test(value) ||
+          value.includes('\\') ||
+          [...value].some(
+            (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
+          )
+        )
+          return false;
+        try {
+          const url = new URL(value);
+          return (
+            ['http:', 'https:'].includes(url.protocol) &&
+            !url.username &&
+            !url.password
+          );
+        } catch {
+          return false;
+        }
+      }),
+    startIndex: nonnegativeInteger.optional(),
+    endIndex: positiveInteger.optional(),
+  })
+  .refine((source) =>
+    source.startIndex === undefined
+      ? source.endIndex === undefined
+      : source.endIndex !== undefined && source.endIndex > source.startIndex,
+  )
+  .transform(({ title, url, startIndex, endIndex }) => ({
+    title,
+    url,
+    ...(startIndex === undefined || endIndex === undefined
+      ? {}
+      : { startIndex, endIndex }),
+  }));
+
+function splitsUnicodeCharacter(text: string, offset: number): boolean {
+  // A boundary on the second UTF-16 unit would split a character such as an emoji.
+  const characterCode = text.charCodeAt(offset);
+  return characterCode >= 0xdc00 && characterCode <= 0xdfff;
+}
+
 const attemptSchema = z
   .object({
     id: z.uuid(),
@@ -60,6 +94,37 @@ const attemptSchema = z
     inputTokens: nonnegativeInteger.nullable(),
     outputTokens: nonnegativeInteger.nullable(),
     contextLimited: z.boolean(),
+  })
+  .refine((attempt) => {
+    const citationRanges = attempt.sources.flatMap(
+      ({ startIndex, endIndex }) => {
+        if (startIndex === undefined || endIndex === undefined) return [];
+        return [{ startIndex, endIndex }];
+      },
+    );
+    if (citationRanges.length === 0) return true;
+
+    const { state, answer } = attempt;
+    if (state !== 'completed' || answer === null) return false;
+
+    citationRanges.sort((a, b) => a.startIndex - b.startIndex);
+    for (const [index, citation] of citationRanges.entries()) {
+      const { startIndex, endIndex } = citation;
+      if (endIndex > answer.length) return false;
+
+      const startsInsideCharacter = splitsUnicodeCharacter(answer, startIndex);
+      const endsInsideCharacter = splitsUnicodeCharacter(answer, endIndex);
+      if (startsInsideCharacter || endsInsideCharacter) return false;
+
+      const previous = citationRanges[index - 1];
+      if (!previous) continue;
+
+      const followsPrevious = startIndex >= previous.endIndex;
+      const sharesSameSpan =
+        startIndex === previous.startIndex && endIndex === previous.endIndex;
+      if (!followsPrevious && !sharesSameSpan) return false;
+    }
+    return true;
   })
   .refine((attempt) => {
     switch (attempt.state) {

@@ -15,6 +15,7 @@ import type { AgentInputItem, Tool, Usage } from '@openai/agents';
 import OpenAI from 'openai';
 import type { ConversationModel } from '../application/ports/conversation.model.js';
 import type { RunOutcome, TokenUsage } from '../domain/conversation.js';
+import { normalizeWebEvidence } from './openai-conversation.evidence.js';
 
 type ModelInput = Parameters<ConversationModel['complete']>[0];
 function instructions(webSearchAvailable: boolean): string {
@@ -141,8 +142,11 @@ export async function executeSDKConversation(
     return {
       state: 'completed',
       answer: result.finalOutput,
-      sources: [],
-      activity: [],
+      ...normalizeWebEvidence(
+        result.rawResponses,
+        result.finalOutput,
+        webSearchAvailable,
+      ),
       usage,
       contextLimited: false,
     };

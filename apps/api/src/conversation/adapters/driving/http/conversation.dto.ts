@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AssistantLimitsDto {
   @ApiProperty() model!: string;
@@ -54,6 +54,20 @@ export class RetryTurnDto extends HistoryVersionDto {
 export class SourceDto {
   @ApiProperty() title!: string;
   @ApiProperty({ format: 'uri' }) url!: string;
+  @ApiPropertyOptional({
+    type: 'integer',
+    minimum: 0,
+    description:
+      'Start of the citation in the saved answer, in UTF-16 code units.',
+  })
+  startIndex?: number;
+  @ApiPropertyOptional({
+    type: 'integer',
+    minimum: 1,
+    description:
+      'Exclusive end of the citation in the saved answer, in UTF-16 code units.',
+  })
+  endIndex?: number;
 }
 
 export class ActivityDto {

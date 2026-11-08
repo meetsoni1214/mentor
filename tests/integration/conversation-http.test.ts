@@ -23,6 +23,7 @@ import type {
   ConversationHistoryDto,
   TurnResultDto,
 } from '../../apps/api/src/conversation/adapters/driving/http/conversation.dto.js';
+import { citedAnswer, citationMarker } from '../fixtures/responses-stub.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl || new URL(databaseUrl).pathname !== '/mentor_test') {
@@ -442,6 +443,58 @@ describe('actual conversation HTTP boundary', () => {
     ]);
     expect(complete).toHaveBeenCalledTimes(2);
   });
+
+  it.each([false, true])(
+    'preserves citation positions and activity through HTTP, history and replay (stream=%s)',
+    async (streaming) => {
+      const sources = [
+        {
+          title: 'Synthetic release notes',
+          url: 'https://example.test/releases',
+          startIndex: citedAnswer.indexOf(citationMarker),
+          endIndex: citedAnswer.length,
+        },
+      ];
+      complete.mockResolvedValueOnce({
+        ...completed,
+        answer: citedAnswer,
+        sources,
+        activity: [{ type: 'web_search', status: 'completed' }],
+      });
+      const input = submission();
+      const path = streaming
+        ? '/conversation/turns/stream'
+        : '/conversation/turns';
+      const read = async (response: Response) => {
+        if (!streaming) return json<TurnResultDto>(response);
+        const events = await collectEvents(conversationEvents(response));
+        const final = events.find((event) => event.type === 'result');
+        if (!final || final.type !== 'result')
+          throw new Error('Missing saved result');
+        return final;
+      };
+      const first = await read(await request(path, 'POST', input));
+      expect(first.attempt).toMatchObject({
+        sources,
+        activity: [{ type: 'web_search', status: 'completed' }],
+      });
+      expect((await read(await request(path, 'POST', input))).attempt).toEqual(
+        first.attempt,
+      );
+      const history = await json<ConversationHistoryDto>(
+        await request('/conversation'),
+      );
+      expect(history.turns[0]?.attempts[0]).toEqual(first.attempt);
+      expect(complete).toHaveBeenCalledTimes(1);
+      await json(
+        await request('/conversation/history', 'DELETE', { historyVersion: 0 }),
+      );
+      expect(
+        (await json<ConversationHistoryDto>(await request('/conversation')))
+          .turns,
+      ).toEqual([]);
+    },
+  );
 
   it('streams early text, replays running and completed snapshots, and returns the saved result', async () => {
     let finish!: (outcome: RunOutcome) => void;

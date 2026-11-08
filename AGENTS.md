@@ -7,11 +7,11 @@ implemented with local verification. The active change is
 `add-assistant-conversation-loop`: one continuous conversation per owner, with
 no thread creation or selection. Group 1, conversation persistence and run
 lifecycle, and the four architecture follow-ups are implemented. The current
-review checkpoint is hosted web-search registration (task 4.1), selected by the
-owner after Clear history (tasks 3.3h–3.3i), SSE attempt retry (3.3f–3.3g), backend
-retry commit 04f6c8a, and the earlier browser streaming, Markdown, and
-submission-state refactor checkpoints. Stop after 4.1 for review before activity
-and citation normalization/presentation (4.2) or broader investigation acceptance.
+review checkpoint is search activity and citations (task 4.2), selected by the
+owner after committing hosted web-search registration (4.1) as e46b4e5. Earlier
+checkpoints include Clear history (3.3h–3.3i), SSE attempt retry (3.3f–3.3g), and
+backend retry commit 04f6c8a. Stop after 4.2 for review before adversarial
+investigation (4.3), integrated acceptance (4.4), or opt-in live verification (4.5).
 Task 2.3 completed API-side composition of the conversation use case,
 Drizzle repository, and pinned Agents SDK/Responses adapter, including persistence
 of available SDK-reported usage for unsuccessful attempts. Tasks 2.2a–2.2c
@@ -129,6 +129,7 @@ acceptance. Browser changes remain a review checkpoint; commit when requested.
   claim a commit was created.
 - Explain the request/data flow and important tradeoffs in plain language.
 - Keep strict typing, meaningful validation, and explicit error handling.
+- Keep code easy to read; refactor complex logic into clear steps with descriptive names while preserving behavior.
 - Do not add unexplained `any`, suppress compiler errors, or weaken lint to pass.
 - Keep secrets and personal content out of commits, logs, and browser bundles.
 - Do not overwrite `.env` or remove database volumes without explicit intent.
@@ -181,8 +182,8 @@ Unavailable search and its setting are omitted. Existing deadlines, SDK defaults
 storage/tracing/retry controls, and application-owned history remain in place.
 Conditional instructions require actual search evidence before claiming a search
 and distinguish public evidence from private-account access or executed actions.
-Sources/activity remain empty in this registration slice; raw search metadata
-stays ephemeral. Citation/activity normalization and UI work remain task 4.2.
+Sources/activity remained empty in the registration slice; task 4.2 below now
+normalizes that evidence. Raw search metadata stays ephemeral.
 See the task-4.1 section of docs/conversation-loop.md for the reading order and
 verification evidence. Do not edit the existing `.env`, add live calls to normal
 tests, or commit unless requested.
@@ -194,5 +195,39 @@ therefore did not pass as a whole at initial registration. The documented Webpac
 without bundler changes. Strict OpenSpec and whitespace checks pass; generated
 contracts and lockfile have no drift. No live calls, migrations, existing `.env`
 edits, or browser acceptance were performed. The frontend build was not repeated
-for the configuration-only revision. Task 4.1 is the review stop; 4.2–4.5
-remain open. Commit only when requested.
+for the configuration-only revision. This was the 4.1 review stop; the owner then
+requested committing it and starting 4.2 below.
+
+## Search evidence and citations checkpoint
+
+The owner authorized 4.2 after committing 4.1. Web search remains always available
+with valid AI configuration; do not introduce another enable flag.
+`openai-conversation.evidence.ts` normalizes SDK-hosted search operations and final
+answer URL annotations into at most 20 activity/source records. Unknown shapes,
+unsafe destinations, invalid or conflicting positions, and fabricated prose are
+not promoted to evidence. Several URLs can share one citation marker. Sources
+require observed completed web activity and annotations matching the saved answer.
+Raw SDK continuation items, queries, page content, and reasoning remain ephemeral.
+
+Optional paired `startIndex`/`endIndex` fields on sources use saved-answer UTF-16
+positions with an exclusive end. Existing JSON source storage supports them
+without a migration; OpenAPI/client types are regenerated. Legacy source records
+without positions still display as sources. Browser contracts reject malformed
+positions/URLs; final answers render validated inline citations and a visible
+source list. Generated Markdown links remain inert even if a URL or citation
+token matches a real source. Provisional text has no clickable source links.
+If an observed search yields no usable sources, the UI says so.
+
+Keep the existing submission/query/recovery lifecycle and composer privacy-footer
+decision intact. See docs/conversation-loop.md for the reading order, data trace,
+verification evidence, and limits. Stop after this checkpoint for review; do not
+advance 4.3–4.5 or commit this slice unless requested.
+
+Task 4.2 is implemented and verified: `pnpm check` passes all 455 unit/contract
+tests and the default Turbopack production build; all 109 disposable
+PostgreSQL/HTTP/SDK integration checks and 12 synthetic phone/desktop browser
+scenarios pass. Strict OpenSpec and whitespace checks pass. Generated contracts
+add only optional citation positions, with no migration or lockfile changes.
+Browser API interception is synthetic evidence, not real-cookie/deployed-proxy
+acceptance. No live model calls, existing `.env` edits, or development-data
+operations were performed. Keep 4.3–4.5 open and stop here for review.

@@ -36,7 +36,9 @@ import {
   response,
   startResponseStream,
   toolResponse,
-  webSearchResponse,
+  citedWebResponse,
+  citedAnswer,
+  citationMarker,
 } from '../fixtures/responses-stub.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -145,7 +147,7 @@ afterAll(async () => {
 
 describe('composed conversation use case, real SDK, and PostgreSQL', () => {
   it.each([false, true])(
-    'offers hosted search with normal server configuration and persists only the final answer (stream=%s)',
+    'persists hosted search evidence and the final answer with normal configuration (stream=%s)',
     async (streaming) => {
       const config = readAIEnvironment({
         OPENAI_API_KEY: 'synthetic-test-key',
@@ -160,19 +162,19 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
         loop.submit(owner, { ...command, investigation: true }),
       ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
       expect(stub.requests).toHaveLength(0);
-      const answer = 'The synthetic release adds a feature.';
+      const answer = citedAnswer;
       if (streaming) {
         stub.replies.push((res) => {
           const stream = startResponseStream(res);
           stream.delta(answer);
           stream.event({
             type: 'response.completed',
-            response: webSearchResponse(answer),
+            response: citedWebResponse(answer),
           });
           res.end();
         });
       } else {
-        stub.enqueue(webSearchResponse(answer));
+        stub.enqueue(citedWebResponse(answer));
       }
       const progress: ConversationProgress[] = [];
       const saved = await loop.submit(
@@ -185,8 +187,15 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
         answer,
         inputTokens: 11,
         outputTokens: 7,
-        sources: [],
-        activity: [],
+        sources: [
+          {
+            title: 'Synthetic release notes',
+            url: 'https://example.test/releases',
+            startIndex: citedAnswer.indexOf(citationMarker),
+            endIndex: citedAnswer.length,
+          },
+        ],
+        activity: [{ type: 'web_search', status: 'completed' }],
       });
       expect(stub.requests).toHaveLength(1);
       expect(stub.requests[0]!.body).toMatchObject({
@@ -223,6 +232,8 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
         'synthetic library release notes',
       );
       expect(next).not.toHaveProperty('previous_response_id');
+      await compose().clear(owner, { historyVersion: 0 });
+      expect((await compose().history(owner)).turns).toEqual([]);
     },
   );
 

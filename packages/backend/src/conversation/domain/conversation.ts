@@ -11,6 +11,8 @@ export type RunErrorCode =
 export interface SourceReference {
   title: string;
   url: string;
+  startIndex?: number;
+  endIndex?: number;
 }
 
 export interface RunActivity {

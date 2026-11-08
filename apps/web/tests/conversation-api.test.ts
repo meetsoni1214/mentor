@@ -288,6 +288,70 @@ describe('validated conversation HTTP boundary', () => {
       },
     ],
     [
+      'malformed source URL',
+      'submit',
+      {
+        ...result,
+        attempt: { ...attempt, sources: [{ title: 'bad', url: 'not a URL' }] },
+      },
+    ],
+    [
+      'unpaired citation position',
+      'submit',
+      {
+        ...result,
+        attempt: {
+          ...attempt,
+          sources: [
+            { title: 'Source', url: 'https://example.test', startIndex: 0 },
+          ],
+        },
+      },
+    ],
+    [
+      'out-of-range citation',
+      'submit',
+      {
+        ...result,
+        attempt: {
+          ...attempt,
+          sources: [
+            {
+              title: 'Source',
+              url: 'https://example.test',
+              startIndex: 0,
+              endIndex: 999999,
+            },
+          ],
+        },
+      },
+    ],
+    [
+      'overlapping citations',
+      'submit',
+      {
+        ...result,
+        attempt: {
+          ...attempt,
+          answer: 'A supported claim.',
+          sources: [
+            {
+              title: 'Source',
+              url: 'https://example.test',
+              startIndex: 0,
+              endIndex: 10,
+            },
+            {
+              title: 'Other',
+              url: 'https://other.test',
+              startIndex: 5,
+              endIndex: 15,
+            },
+          ],
+        },
+      },
+    ],
+    [
       'turn identity',
       'submit',
       { ...result, attempt: { ...attempt, turnId: randomUUID() } },

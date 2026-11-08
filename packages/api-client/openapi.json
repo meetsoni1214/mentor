@@ -1563,6 +1563,16 @@
           "url": {
             "type": "string",
             "format": "uri"
+          },
+          "startIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Start of the citation in the saved answer, in UTF-16 code units."
+          },
+          "endIndex": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Exclusive end of the citation in the saved answer, in UTF-16 code units."
           }
         },
         "required": [

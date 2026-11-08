@@ -4,11 +4,144 @@ import { describe, expect, it } from 'vitest';
 import { AssistantContent } from '../src/features/conversation/ui/content/assistant-content';
 import { ConversationMessage } from '../src/features/conversation/ui/conversation-message';
 import { completed, running } from './fixtures/conversation-stream';
+import type { AnswerSource } from '../src/features/conversation/ui/content/citation-markdown';
 
 const render = (text: string) =>
   renderToStaticMarkup(createElement(AssistantContent, { text }));
 
 describe('assistant content', () => {
+  const marker = '\uE200cite\uE202turn0search0\uE201';
+  const cited = `**Supported claim.** ${marker}`;
+  const source = {
+    title: 'Release notes',
+    url: 'https://example.test/releases',
+    startIndex: cited.indexOf(marker),
+    endIndex: cited.length,
+  };
+  const renderSources = (text: string, sources: readonly AnswerSource[]) =>
+    renderToStaticMarkup(createElement(AssistantContent, { text, sources }));
+
+  it('renders provider citations inline and keeps recorded sources visible', () => {
+    const html = renderSources(cited, [source]);
+    expect(html).toContain('<strong>Supported claim.</strong>');
+    expect(html).toContain('class="answer-citation"');
+    expect(html).toContain('aria-label="Source 1: Release notes"');
+    expect(html).toContain('href="https://example.test/releases"');
+    expect(html).toContain('rel="noopener noreferrer"');
+    expect(html).toContain('aria-label="Response sources"');
+    expect(html).not.toContain(marker);
+  });
+
+  it('keeps generated links inert even when their destination or marker matches a real source', () => {
+    const prefix =
+      '[Invented](https://example.test/releases) [Fake](#mentor-citation-1) ';
+    const html = renderSources(prefix + cited, [
+      {
+        ...source,
+        startIndex: prefix.length + source.startIndex,
+        endIndex: prefix.length + source.endIndex,
+      },
+    ]);
+    expect(html).toContain('<span>Invented</span>');
+    expect(html).toContain('<span>Fake</span>');
+    expect((html.match(/class="answer-citation"/g) ?? []).length).toBe(1);
+  });
+
+  it('renders several sources for one provider marker without duplicating the marker text', () => {
+    const html = renderSources(cited, [
+      source,
+      { ...source, title: 'Another source', url: 'https://other.test/release' },
+    ]);
+    expect((html.match(/class="answer-citation"/g) ?? []).length).toBe(2);
+    expect(html).toContain('aria-label="Source 2: Another source"');
+    expect(html).not.toContain(marker);
+  });
+
+  it('explains when a completed search has no usable recorded source', () => {
+    const html = renderToStaticMarkup(
+      createElement(ConversationMessage, {
+        turn: {
+          ...completed.turn,
+          attempts: [
+            {
+              ...completed.attempt,
+              activity: [{ type: 'web_search', status: 'completed' }],
+            },
+          ],
+        },
+        refreshing: false,
+        onRefresh: () => {},
+        provisional: null,
+      }),
+    );
+    expect(html).toContain('No usable source references were recorded');
+  });
+
+  it('exposes recorded citation links only after committed completion', () => {
+    const turn = {
+      ...completed.turn,
+      attempts: [{ ...completed.attempt, answer: cited, sources: [source] }],
+    };
+    const final = renderToStaticMarkup(
+      createElement(ConversationMessage, {
+        turn,
+        refreshing: false,
+        onRefresh: () => {},
+        provisional: null,
+      }),
+    );
+    const partial = renderToStaticMarkup(
+      createElement(ConversationMessage, {
+        turn: { ...turn, attempts: [running.attempt] },
+        refreshing: false,
+        onRefresh: () => {},
+        provisional: {
+          historyVersion: 0,
+          turnId: turn.id,
+          attemptId: running.attempt.id,
+          text: cited,
+        },
+      }),
+    );
+    expect(final).toContain('class="answer-citation"');
+    expect(partial).not.toContain('href=');
+    expect(partial).toContain('Responding…');
+  });
+
+  it('preserves cited prose and uses UTF-16 positions after emoji', () => {
+    const text = '🌱 A supported claim.';
+    const html = renderSources(text, [
+      { ...source, startIndex: 3, endIndex: text.length },
+    ]);
+    expect(html).toContain('🌱 A supported claim. ');
+    expect(html).toContain('class="answer-citation"');
+  });
+
+  it('does not turn citations inside a code block into navigable code', () => {
+    const text = '```\n' + cited + '\n```';
+    const html = renderSources(text, [
+      {
+        ...source,
+        startIndex: 4 + source.startIndex,
+        endIndex: 4 + source.endIndex,
+      },
+    ]);
+    expect(html).toContain('<pre tabindex="0"><code>');
+    expect(html).not.toContain('class="answer-citation"');
+    expect(html).toContain('aria-label="Response sources"');
+  });
+
+  it.each([
+    'javascript:alert(1)',
+    'data:text/html,unsafe',
+    'https://user:secret@example.test',
+    'not a URL',
+  ])('never displays an unsafe source link: %s', (url) => {
+    const html = renderSources(cited, [{ ...source, url }]);
+    expect(html).not.toContain('href=');
+    expect(html).not.toContain('answer-citation');
+  });
+
   it('renders paragraphs, emphasis and nested lists as semantic content', () => {
     const html = render(
       'Here is the basic idea:\n\n- **Training:** patterns\n- *Context:* your message\n  - A nested item\n\n1. First step\n2. Second step',

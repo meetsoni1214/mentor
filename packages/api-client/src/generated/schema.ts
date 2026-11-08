@@ -276,6 +276,10 @@ export interface components {
             title: string;
             /** Format: uri */
             url: string;
+            /** @description Start of the citation in the saved answer, in UTF-16 code units. */
+            startIndex?: number;
+            /** @description Exclusive end of the citation in the saved answer, in UTF-16 code units. */
+            endIndex?: number;
         };
         ActivityDto: {
             /** @enum {string} */

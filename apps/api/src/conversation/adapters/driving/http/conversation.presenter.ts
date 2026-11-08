@@ -32,7 +32,12 @@ export function describeAttempt(attempt: RunAttempt): RunAttemptDto {
     finishedAt: attempt.finishedAt?.toISOString() ?? null,
     answer: attempt.answer,
     errorCode: attempt.errorCode,
-    sources: attempt.sources.map(({ title, url }) => ({ title, url })),
+    sources: attempt.sources.map(({ title, url, startIndex, endIndex }) => ({
+      title,
+      url,
+      ...(startIndex === undefined ? {} : { startIndex }),
+      ...(endIndex === undefined ? {} : { endIndex }),
+    })),
     activity: attempt.activity.map(({ type, status }) => ({ type, status })),
     inputTokens: attempt.inputTokens,
     outputTokens: attempt.outputTokens,

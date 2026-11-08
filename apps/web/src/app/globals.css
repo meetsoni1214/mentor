@@ -283,6 +283,31 @@
 .markdown-content > :last-child {
   margin-bottom: 0;
 }
+.answer-citation {
+  display: inline-block;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.markdown-content .answer-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  list-style: none;
+  padding: 0;
+  margin-top: var(--space-4);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+.answer-sources a {
+  text-decoration: underline;
+  text-decoration-color: var(--color-link-underline);
+  text-underline-offset: 0.2em;
+}
+.markdown-content .answer-sources li {
+  margin: 0;
+}
 .markdown-content :is(h2, h3, h4, h5, h6) {
   font-weight: var(--font-weight-semibold);
   line-height: 1.4;
