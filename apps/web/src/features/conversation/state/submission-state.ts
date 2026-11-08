@@ -4,6 +4,7 @@ import type {
   ConversationHistory,
   SubmitInput,
   RetryInput,
+  ClearInput,
 } from '../api/conversation-contracts';
 import { ConversationApiError } from '../api/conversation-errors';
 import type {
@@ -79,6 +80,15 @@ type Delivery =
       operation: DeliveryOperation;
     };
 
+export type HistoryClearState =
+  | { phase: 'idle'; notice: null | 'cleared' | 'changed' | 'rejected' }
+  | {
+      phase: 'clearing' | 'uncertain' | 'checking';
+      input: Readonly<ClearInput>;
+      checkFailed: boolean;
+    }
+  | { phase: 'refreshing' | 'refresh-failed' };
+
 export interface SubmissionState {
   readonly draft: string;
   readonly delivery: Delivery;
@@ -86,6 +96,7 @@ export interface SubmissionState {
   readonly historyVersion: number | undefined;
   readonly lastAcceptedRequestId: string | null;
   readonly stream: ProvisionalResponse | null;
+  readonly historyClear: HistoryClearState;
 }
 
 export interface SubmissionSnapshot {
@@ -96,6 +107,7 @@ export interface SubmissionSnapshot {
   lastAcceptedRequestId: string | null;
   stream: ProvisionalResponse | null;
   pendingRetryTurnId: string | null;
+  historyClear: HistoryClearState;
 }
 
 export function initialState(historyVersion?: number): SubmissionState {
@@ -106,6 +118,7 @@ export function initialState(historyVersion?: number): SubmissionState {
     historyVersion,
     lastAcceptedRequestId: null,
     stream: null,
+    historyClear: { phase: 'idle', notice: null },
   };
 }
 
@@ -117,7 +130,8 @@ export function editDraft(
   state: SubmissionState,
   draft: string,
 ): SubmissionState {
-  return state.delivery.phase === 'editing' &&
+  return state.historyClear.phase === 'idle' &&
+    state.delivery.phase === 'editing' &&
     (state.draft !== draft || state.notice !== null)
     ? { ...state, draft, notice: null }
     : state;
@@ -257,6 +271,54 @@ export function invalidateHistory(state: SubmissionState): SubmissionState {
   };
 }
 
+export function beginClear(
+  state: SubmissionState,
+  input: Readonly<ClearInput>,
+): SubmissionState {
+  return {
+    ...state,
+    historyClear: { phase: 'clearing', input, checkFailed: false },
+  };
+}
+
+export function confirmClear(
+  state: SubmissionState,
+  historyVersion?: number,
+): SubmissionState {
+  return {
+    ...initialState(historyVersion ?? state.historyVersion),
+    historyClear: { phase: 'refreshing' },
+  };
+}
+
+export function clearNoticeText(clear: HistoryClearState): string {
+  switch (clear.phase) {
+    case 'clearing':
+      return '';
+    case 'checking':
+      return 'Checking saved history…';
+    case 'uncertain':
+      return clear.checkFailed
+        ? 'History could not be checked. Clearing is still unconfirmed. Check your connection and try again.'
+        : 'Clearing is unconfirmed. Check history or retry the original clear. Sending is paused until the outcome is known.';
+    case 'refreshing':
+      return '';
+    case 'refresh-failed':
+      return 'History changed, but the current conversation could not be loaded. Check history before continuing.';
+    case 'idle':
+      switch (clear.notice) {
+        case 'cleared':
+          return '';
+        case 'changed':
+          return 'History changed. Current history is loaded and the previous draft was cleared.';
+        case 'rejected':
+          return 'History was not cleared. Your draft is kept. Refresh and try again.';
+        case null:
+          return '';
+      }
+  }
+}
+
 export function observeHistory(
   state: SubmissionState,
   history: ConversationHistory,
@@ -268,6 +330,10 @@ export function observeHistory(
     ? {
         ...initialState(history.historyVersion),
         notice: { code: 'history-replaced' } as const,
+        historyClear: {
+          phase: 'idle',
+          notice: state.historyClear.phase === 'idle' ? null : 'changed',
+        } as const,
       }
     : state.historyVersion === undefined
       ? { ...state, historyVersion: history.historyVersion }
@@ -385,5 +451,6 @@ export function projectSnapshot(state: SubmissionState): SubmissionSnapshot {
     lastAcceptedRequestId: state.lastAcceptedRequestId,
     stream: state.stream,
     pendingRetryTurnId: operation?.kind === 'retry' ? operation.turnId : null,
+    historyClear: state.historyClear,
   };
 }

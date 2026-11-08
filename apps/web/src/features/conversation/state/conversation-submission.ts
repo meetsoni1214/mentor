@@ -3,6 +3,7 @@ import type {
   SubmitInput,
   RetryInput,
   TurnResult,
+  ClearInput,
 } from '../api/conversation-contracts';
 import type { ConversationStreamProgress } from '../api/conversation-stream-contracts';
 import * as state from './submission-state';
@@ -23,6 +24,10 @@ interface SubmissionPort {
     signal: AbortSignal,
   ): Promise<TurnResult>;
   publish?(result: TurnResult): void;
+  clear(
+    input: ClearInput,
+    signal: AbortSignal,
+  ): Promise<{ historyVersion: number }>;
   refresh(): Promise<ConversationHistory>;
 }
 
@@ -36,6 +41,8 @@ export class ConversationSubmission {
   private deliveryGeneration = 0;
   private stopConfirmation: (() => void) | undefined;
   private deliveryController: AbortController | undefined;
+  private clearController: AbortController | undefined;
+  private clearGeneration = 0;
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -65,6 +72,7 @@ export class ConversationSubmission {
 
   reset = () => {
     this.invalidateDelivery();
+    this.invalidateClear();
     this.transition(state.initialState(this.state.historyVersion));
   };
 
@@ -79,7 +87,10 @@ export class ConversationSubmission {
       return;
     }
     const observed = state.observeHistory(this.state, history);
-    if (observed.historyChanged) this.invalidateDelivery();
+    if (observed.historyChanged) {
+      this.invalidateDelivery();
+      this.invalidateClear();
+    }
     if (observed.accepted) this.stopConfirmation?.();
     this.transition(observed.state);
     if (observed.settled) this.deliveryController?.abort();
@@ -103,7 +114,12 @@ export class ConversationSubmission {
 
   send = async (maxMessageBytes: number) => {
     const { draft, delivery, historyVersion, stream } = this.state;
-    if (delivery.phase !== 'editing' || historyVersion === undefined || stream)
+    if (
+      this.state.historyClear.phase !== 'idle' ||
+      delivery.phase !== 'editing' ||
+      historyVersion === undefined ||
+      stream
+    )
       return;
     const notice = state.validateDraft(draft, maxMessageBytes);
     if (notice) {
@@ -116,6 +132,7 @@ export class ConversationSubmission {
 
   retry = async (turnId: string, history: ConversationHistory) => {
     if (
+      this.state.historyClear.phase !== 'idle' ||
       this.state.delivery.phase !== 'editing' ||
       this.state.stream ||
       this.state.historyVersion !== history.historyVersion ||
@@ -288,6 +305,7 @@ export class ConversationSubmission {
   }
 
   reconcile = async () => {
+    if (this.state.historyClear.phase !== 'idle') return;
     const phase = this.state.delivery.phase;
     if (phase !== 'uncertain' && phase !== 'stale') return;
     const generation = ++this.deliveryGeneration;
@@ -299,8 +317,156 @@ export class ConversationSubmission {
       return;
     }
     if (!this.current(generation)) return;
+    if (this.state.historyClear.phase !== 'idle') {
+      this.transition(state.markUncertain(this.state));
+      return;
+    }
     const operation = state.unresolvedOperation(this.state);
     // Only this explicit action may replay a write, with its original payload/key.
     if (operation) await this.deliver(operation, 'explicit-resend');
+  };
+
+  private invalidateClear() {
+    this.clearGeneration += 1;
+    this.clearController?.abort();
+    this.clearController = undefined;
+  }
+
+  private clearIsCurrent(generation: number) {
+    if (generation !== this.clearGeneration) return false;
+    try {
+      this.port.assertCurrent();
+      return true;
+    } catch (cause) {
+      if (state.classifyFailure(cause).kind === 'session-lost') this.reset();
+      return false;
+    }
+  }
+
+  clear = async (historyVersion: number) => {
+    if (
+      this.state.historyClear.phase !== 'idle' ||
+      this.state.historyVersion !== historyVersion
+    )
+      return;
+    await this.executeClear({ historyVersion }, 'initial-delivery');
+  };
+
+  retryClear = async () => {
+    const clear = this.state.historyClear;
+    if (clear.phase !== 'uncertain') return;
+    await this.executeClear(clear.input, 'explicit-resend');
+  };
+
+  private async executeClear(input: ClearInput, mode: DeliveryMode) {
+    const generation = ++this.clearGeneration;
+    if (!this.clearIsCurrent(generation)) return;
+    const controller = new AbortController();
+    this.clearController = controller;
+    this.transition(state.beginClear(this.state, input));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      // Losing the response or aborting delivery never proves deletion rolled back.
+      const result = await Promise.race([
+        this.port.clear(input, controller.signal),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Clear confirmation timed out.')),
+            15_000,
+          );
+        }),
+      ]);
+      if (!this.clearIsCurrent(generation)) return;
+      this.port.assertCurrent(result.historyVersion);
+      this.invalidateDelivery();
+      this.transition(state.confirmClear(this.state, result.historyVersion));
+      await this.loadAfterClear(generation);
+    } catch (cause) {
+      if (!this.clearIsCurrent(generation)) return;
+      const failure = state.classifyFailure(cause);
+      if (failure.kind === 'session-lost') {
+        this.reset();
+      } else if (failure.kind === 'history-changed') {
+        this.invalidateDelivery();
+        this.transition(state.confirmClear(this.state));
+        await this.loadAfterClear(generation, 'changed');
+      } else if (failure.kind === 'rejected' && mode === 'initial-delivery') {
+        this.transition({
+          ...this.state,
+          historyClear: { phase: 'idle', notice: 'rejected' },
+        });
+      } else {
+        this.transition({
+          ...this.state,
+          historyClear: { phase: 'uncertain', input, checkFailed: false },
+        });
+      }
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+      if (this.clearController === controller) this.clearController = undefined;
+    }
+  }
+
+  private async loadAfterClear(
+    generation: number,
+    notice: 'cleared' | 'changed' = 'cleared',
+  ) {
+    try {
+      const history = await this.port.refresh();
+      if (!this.clearIsCurrent(generation)) return;
+      this.port.assertCurrent(history.historyVersion);
+      this.observe(history);
+      // observe may itself settle a newer-version history and invalidate this work.
+      if (!this.clearIsCurrent(generation)) return;
+      this.transition({
+        ...this.state,
+        historyClear: { phase: 'idle', notice },
+      });
+    } catch (cause) {
+      if (!this.clearIsCurrent(generation)) return;
+      if (state.classifyFailure(cause).kind === 'session-lost') this.reset();
+      else
+        this.transition({
+          ...this.state,
+          historyClear: { phase: 'refresh-failed' },
+        });
+    }
+  }
+
+  checkClear = async () => {
+    const clear = this.state.historyClear;
+    if (clear.phase !== 'uncertain' && clear.phase !== 'refresh-failed') return;
+    const generation = ++this.clearGeneration;
+    if (!this.clearIsCurrent(generation)) return;
+    if (clear.phase === 'refresh-failed') {
+      this.transition({ ...this.state, historyClear: { phase: 'refreshing' } });
+      await this.loadAfterClear(generation, 'changed');
+      return;
+    }
+    if (clear.phase !== 'uncertain') return;
+    this.transition({
+      ...this.state,
+      historyClear: { ...clear, phase: 'checking' },
+    });
+    try {
+      const history = await this.port.refresh();
+      if (!this.clearIsCurrent(generation)) return;
+      this.observe(history);
+      if (!this.clearIsCurrent(generation)) return;
+      // An old-version read can finish before a previously admitted DELETE.
+      this.transition({
+        ...this.state,
+        historyClear: { ...clear, checkFailed: false },
+      });
+    } catch (cause) {
+      if (!this.clearIsCurrent(generation)) return;
+      if (state.classifyFailure(cause).kind === 'session-lost') this.reset();
+      else
+        this.transition({
+          ...this.state,
+          historyClear: { ...clear, checkFailed: true },
+        });
+    }
   };
 }

@@ -13,6 +13,7 @@ import { createConversationQueries } from '../src/features/conversation/state/co
 import { ObsoleteHistoryError } from '../src/features/conversation/state/conversation-scope.js';
 import { RequestError } from '../src/lib/api-request.js';
 import { getConversationHistory } from '../src/features/conversation/api/conversation-api.js';
+import { ConversationSubmission } from '../src/features/conversation/state/conversation-submission.js';
 
 // Install before the real generated client captures its browser transport.
 const transport = vi.hoisted(() => {
@@ -595,6 +596,42 @@ describe('session and history isolation with deferred HTTP', () => {
     );
     expect(queries.getQueryData(api.keys.status)).toEqual(ready);
     expect(mutations.getAll()).toEqual([unrelated]);
+  });
+
+  it('loads messages added after clearing instead of installing an assumed empty head', async () => {
+    const { api, queries } = setup();
+    respond = () => json(history);
+    const initial = await queries.fetchQuery(api.historyOptions());
+    const latest = { ...history, historyVersion: 1, nextCursor: null };
+    respond = (request) =>
+      request.url.endsWith('/csrf')
+        ? json(csrf)
+        : request.method === 'DELETE'
+          ? json({ historyVersion: 1 })
+          : json(latest);
+    const submission = new ConversationSubmission({
+      assertCurrent: api.assertCurrent,
+      clear: api.clear,
+      refresh: () =>
+        queries.fetchQuery({ ...api.historyOptions(), staleTime: 0 }),
+      submit: vi.fn(),
+      retry: vi.fn(),
+    });
+    submission.observe(initial);
+    submission.edit('A draft to discard');
+    await submission.clear(0);
+    expect(queries.getQueryData(api.keys.history())).toEqual(latest);
+    expect(submission.getSnapshot()).toMatchObject({
+      draft: '',
+      historyVersion: 1,
+      historyClear: { phase: 'idle' },
+    });
+    expect(
+      requests.filter((request) => request.method === 'DELETE'),
+    ).toHaveLength(1);
+    expect(
+      requests.filter((request) => request.method === 'POST'),
+    ).toHaveLength(0);
   });
 
   it('keeps query keys scoped to a sign-in and rejects obsolete query options before HTTP', async () => {

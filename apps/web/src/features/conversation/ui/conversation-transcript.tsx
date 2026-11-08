@@ -10,6 +10,7 @@ import type { ProvisionalResponse } from '../api/conversation-stream-contracts';
 
 export function ConversationTranscript({
   history,
+  resettingHistory = false,
   acceptedRequestId,
   provisional,
   retryTurnId,
@@ -18,6 +19,7 @@ export function ConversationTranscript({
   onRetry,
 }: {
   history: ReturnType<typeof useConversationHistory>;
+  resettingHistory?: boolean;
   acceptedRequestId: string | null;
   provisional: ProvisionalResponse | null;
   retryTurnId: string | null;
@@ -35,8 +37,9 @@ export function ConversationTranscript({
     version: number | undefined;
     restoreFocus: boolean;
   } | null>(null);
-  const { head, turns } = history;
-  const version = head.data?.historyVersion;
+  const { head } = history;
+  const turns = resettingHistory ? [] : history.turns;
+  const version = resettingHistory ? undefined : head.data?.historyVersion;
   const stalePage =
     history.olderError instanceof ConversationApiError &&
     history.olderError.code === 'STALE_HISTORY';
@@ -113,6 +116,7 @@ export function ConversationTranscript({
       ref={scroll}
       tabIndex={-1}
       aria-label="Conversation history"
+      aria-busy={resettingHistory && head.isFetching}
       onScroll={(event) => {
         const container = event.currentTarget;
         followLatest.current =
@@ -124,7 +128,7 @@ export function ConversationTranscript({
     >
       <div className="transcript-content">
         <h1 className="sr-only">Conversation with {brand.name}</h1>
-        {head.isError && head.data && (
+        {!resettingHistory && head.isError && head.data && (
           <Alert className="conversation-alert">
             <AlertDescription className="text-inherit">
               Couldn’t refresh your conversation. Your loaded history is still
@@ -132,12 +136,12 @@ export function ConversationTranscript({
             </AlertDescription>
           </Alert>
         )}
-        {head.isPending ? (
+        {!resettingHistory && head.isPending ? (
           <div className="transcript-state" role="status">
             <span className="loading-mark" aria-hidden="true" />
             <p>Loading your conversation…</p>
           </div>
-        ) : head.isError && !head.data ? (
+        ) : !resettingHistory && head.isError && !head.data ? (
           <div className="transcript-state">
             <h2>Your conversation couldn’t be loaded.</h2>
             <p role="alert">Check your connection and try again.</p>

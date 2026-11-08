@@ -5,8 +5,9 @@ session isolation, and a read-only conversation workspace. The owner approved a
 monochrome interface with owner messages on the right and Mentor responses on the
 left. The owner subsequently approved checkpoint 3a: sending, draft preservation,
 delivery reconciliation, and running-attempt polling. SSE attempt retry is now
-implemented and verified in tasks 3.3f–3.3g. Clear history and complete
-interaction/auth acceptance remain separate follow-ups.
+implemented and verified in tasks 3.3f–3.3g. The approved Clear history
+checkpoint is tasks 3.3h–3.3i; its implementation and evidence are below. Complete
+interaction/auth acceptance remains a separate follow-up.
 Tasks 3.3–3.5 remain open pending their full implementation and verification.
 The owner subsequently approved backend streaming slice 1 (task 2.6). Its opt-in
 SSE endpoint is documented in [the conversation guide](conversation-loop.md#backend-streaming-slice-1).
@@ -162,7 +163,7 @@ Use white, black, and neutral gray with readable typography. The owner replaced
 the earlier green direction with a focused monochrome interface. Owner messages
 align right in dark bubbles and Mentor replies align left in light bubbles. The
 main layout is a writing workspace with the transcript and composer as its focus,
-account controls nearby, and Clear history in privacy settings in its later slice. There is no
+account controls nearby, and Clear history from the header in its later slice. There is no
 thread sidebar, title editor, or New conversation flow. Review the phone/desktop
 composition, keyboard navigation, focus behavior, and status announcements.
 
@@ -616,3 +617,100 @@ Tasks 3.3f–3.3g complete the retry checkpoint. Task 3.3 remains open for Clear
 history and its remaining acceptance; investigation remains later work. Stop for
 review here. The backend checkpoint is committed as `04f6c8a`. The browser retry checkpoint
 is complete and verified; Clear history remains a separate slice.
+
+## Clear history checkpoint (tasks 3.3h–3.3i)
+
+The header's Clear history button opens one confirmation modal directly, with
+Cancel initially focused. Cancel or Escape closes it and returns focus to the
+header trigger; Tab remains within the modal. Confirming closes it and starts
+clearing. Pending status and recovery controls appear in the workspace. The confirmation
+explains permanent removal of messages, attempts, sources/activity, and the draft,
+and that provider-sent content cannot be retracted. This adds no composer footer.
+The captured confirmation version is not silently retargeted when history changes.
+
+`ui/clear-history-dialog.tsx` owns only dialog presentation and confirmation.
+`components/ui/dialog.tsx` is a reusable native modal primitive with brand-token
+styles. `state/submission-state.ts` describes clear state and safe notices;
+`ConversationSubmission` owns DELETE, the 15-second confirmation bound, canonical
+reads, cancellation, and generation guards. `use-conversation-submission.ts`
+injects the existing query adapter's clear operation. The workspace gates send,
+retry, editing, and delivery recovery while clearing is pending or uncertain.
+Even an already-started delivery recovery cannot POST after its read completes
+during clearing. Model availability does not gate deletion.
+
+| Clear state    | Behavior                                                                           |
+| -------------- | ---------------------------------------------------------------------------------- |
+| idle           | Fresh confirmation may clear the currently observed version.                       |
+| clearing       | Keep the draft until confirmation; block duplicate clear and other writes.         |
+| uncertain      | Preserve the exact original version; offer Check history and Retry original clear. |
+| checking       | Perform only GET; an unchanged version retains uncertainty.                        |
+| refreshing     | Remove obsolete private state and load current server history.                     |
+| refresh-failed | Keep removed content hidden; allow only read recovery before continuing.           |
+
+A definitive initial rejection preserves the draft and active stream. An explicit
+repeat's rejection cannot prove the first DELETE failed. Successful DELETE or
+observed history replacement clears the draft, unresolved send/retry, provisional
+answer, timers, and obsolete reader. Query scope already drops old pages and
+rejects late reads, stream events, and mutation responses. The post-clear read
+preserves messages another tab adds at the new version rather than setting an
+assumed empty head. Stale rejection reads the new history without deleting it.
+Logout/session replacement/unmount invalidates clear callbacks. No private draft,
+transcript, or clear command is written to local/session storage.
+
+Behavior verification is in `apps/web/tests/conversation-clear.test.ts`, with a
+real generated-client/query-cache composition check in `conversation-api.test.ts`.
+The earlier adapter/session/stream tests remain intact. Browser acceptance uses
+synthetic API routes and in-browser held SSE responses, never the development
+database or a live provider.
+
+Verification on 2026-11-08:
+
+- `pnpm check` passes all 397 unit/contract tests and the production build,
+  including 177 browser unit/contract tests. SDK HTTP stubs require the permitted
+  localhost execution path; the initial sandbox run failed to bind its stub.
+- 30 synthetic Chromium scenarios pass at 1440×1000 and 390×844: cancel/focus
+  return, success, disabled model execution, definitive rejection, lost response,
+  failed/same-version checks, explicit original-version retry, stale clear,
+  newer-version messages, post-clear read failure, session expiry, pending-clear
+  duplicate/composer guards, stale confirmation, and clearing active send/retry
+  streams with late text suppressed. Tab remains in the modal, phone/desktop have
+  no horizontal overflow, and local/session storage remain empty.
+- Strict OpenSpec validation and `git diff --check` pass. Generated OpenAPI/client
+  output has no drift. No backend/database code changed, so disposable database
+  integration was not rerun for this browser slice; the prior 104 checks remain
+  historical evidence.
+- Synthetic route authentication and in-browser SSE do not establish real-cookie,
+  database-authenticated, network-streaming, or deployed-proxy acceptance. No live
+  model calls, development-data operations, `.env` edits, or migrations occurred.
+
+Stop for review here. Task 3.3 remains open for broader acceptance, and tasks
+3.4–3.5 and investigation remain later checkpoints.
+
+The owner subsequently simplified the entry point: the header is labelled
+Clear history and opens confirmation directly. The intermediate Privacy settings
+view was removed. For this revision, formatting, lint, type checking, all 397 unit/contract tests
+(including 177 browser checks), and 30 adapted phone/desktop scenarios pass. The
+standard Turbopack build hit the environment's CSS-worker localhost-port restriction
+(`Operation not permitted`), including through the permitted execution path.
+`pnpm --filter @mentor/web exec next build --webpack` passes, and the updated
+browser scenarios run against that production build. No bundler configuration,
+execution policy, or deletion policy was changed.
+
+The owner subsequently removed the normal clear-success notice and requested a
+stable post-clear transition. The transcript now stays mounted; after confirmed
+clearing, its existing empty layout is shown during canonical refresh and on
+refresh failure. Obsolete cached content remains hidden. Ordinary clear/refresh
+status is announced to assistive technology without inserting a visible banner.
+Failure and explicit recovery messages remain visible. No fabricated empty query
+snapshot is installed, and a new-version message returned by the server is shown.
+
+For this presentation fix, 180 browser unit/contract tests pass, including three
+transcript-rendering regressions covering removed/obsolete history and normal
+initial loading. Component-test asset declarations describe CSS class-name maps without changing shared backend environment types. Web/test type
+checks, focused lint, formatting, and whitespace checks pass. Eight synthetic
+phone/desktop scenarios on the existing development frontend hold history reads
+open and sample animation frames: the transcript stays mounted, the empty layout
+does not jump on refresh completion, no visible loading screen appears, old private
+content stays hidden on failure, and newer messages are preserved. No development
+API/database or live provider calls are made; all API responses are intercepted.
+The production build and database integration were not rerun for this UI fix.

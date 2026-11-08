@@ -23,8 +23,9 @@ monochrome workspace. Owner messages align right and Mentor replies
 align left. The approved sending portion of task 3.3 now enables the composer,
 retains rejected drafts, reconciles uncertain delivery, and polls persisted work.
 Browser retry now streams another attempt on the latest failed/interrupted
-message while preserving the independent composer draft. Clear history and full
-interaction/auth acceptance remain later slices; task 3.3 is still open.
+message while preserving the independent composer draft. The header Clear history control now
+provides explicit confirmation with versioned recovery. Full interaction/auth
+acceptance remains a later slice; task 3.3 is still open.
 
 See [the sending checkpoint](conversation-ui-plan.md#checkpoint-3a-sending-and-delivery-recovery)
 for the UI state transitions, module responsibilities, and verification limits.
@@ -37,20 +38,47 @@ This replay recovers delivery and never creates a fresh attempt for a failed run
 Unsent drafts are not durable and are cleared on reload, logout/session change,
 or observation of a new history version. Accepted messages remain in PostgreSQL.
 
+## Clear history walkthrough
+
+Choose **Clear history** in the header to open its confirmation directly.
+Cancel or Escape sends no DELETE. The confirmation explains saved-content and
+draft deletion and provider-retention limits. Clearing works while an answer runs
+or model execution is unavailable. No composer privacy footer is restored.
+
+For example, confirm history version `0`. The coordinator pauses sending, retry,
+and delivery reconciliation and calls the existing versioned DELETE. A confirmed
+response advances the request scope to version `1`, removes old query pages,
+detaches the reader, stops confirmation waiting, and clears the draft, unresolved
+command, and provisional answer. It then reads actual current history. Messages
+another tab saved at version `1` survive; the browser never installs a fabricated
+empty head. Old version-`0` callbacks cannot publish content again.
+
+If the response is lost, **Check history** reads without deleting. A version-`0`
+read leaves clearing unresolved because it may precede the admitted DELETE.
+**Retry original clear** is an explicit repeat with version `0`, never a new
+version. A rejected repeat also cannot establish that the first request failed.
+A newer-version read settles uncertainty and clears obsolete private state.
+Clearing that newer version requires another confirmation. Definitive initial
+rejection preserves the draft and active delivery. A stale clear reloads history
+without deleting its new version. After confirmed deletion, a failed history read
+keeps old content hidden and offers read-only recovery.
+
+See [Clear history evidence](conversation-ui-plan.md#clear-history-checkpoint-tasks-33h33i).
+
 ## Current browser reading order
 
-The current retry checkpoint is tasks 3.3f–3.3g, building on the completed
-submission readability checkpoint (3.3b–3.3e). Start in
+The current Clear history checkpoint is tasks 3.3h–3.3i, building on completed
+SSE retry (3.3f–3.3g) and submission readability (3.3b–3.3e). Start in
 `apps/web/src/features/conversation/`:
 
 1. `conversation-workspace.tsx` composes history, submission, and presentation.
 2. `state/submission-state.ts` defines valid delivery states, named transitions,
-   failure categories, and typed notices. Unresolved states own their original
+   failure categories, typed notices, and the history-clear lifecycle. Unresolved states own their original
    send command or target turn plus `RetryInput`; accepted work and the next
    draft have independent lifetimes. `retryableTurnId` selects the newest eligible
    turn from saved history.
 3. `state/conversation-submission.ts` coordinates the POST, committed publication,
-   confirmation timer, history reads, reader cancellation, and subscriptions.
+   confirmation timers, versioned DELETE, history reads, reader cancellation, and subscriptions.
    It caches the state projection for React's external-store subscription.
 4. `state/use-conversation-submission.ts` connects that coordinator to React and
    the query adapter. `state/conversation-polling.ts` decides when recovery polls.
@@ -59,7 +87,9 @@ submission readability checkpoint (3.3b–3.3e). Start in
 6. `api/conversation-stream-api.ts` validates event order and identities;
    submit validates message text/key, while retry validates turn/attempt key.
    Both share `api/conversation-stream-reader.ts` for framing, timeout, and bounds.
-7. `ui/conversation-composer.tsx` consumes the projected snapshot;
+7. `ui/clear-history-dialog.tsx` owns confirmation presentation and recovery controls;
+   `components/ui/dialog.tsx` supplies native modal focus containment and Escape.
+8. `ui/conversation-composer.tsx` consumes the projected snapshot;
    `ui/conversation-transcript.tsx` displays saved turns and ephemeral response text.
 
 For a concrete trace, send “Explain database locks” with request ID `R1` and
@@ -83,9 +113,8 @@ sends nothing. Session loss clears private state; a new history version discards
 pre-clear input and never replays it into the replacement history.
 
 See the [transition/test map and current verification](conversation-ui-plan.md#submission-readability-checkpoint-tasks-33b33e).
-The dated checkpoints below describe evidence from earlier slices. Clear history
-controls, integrated authentication/database/proxy acceptance, and public-web
-investigation remain later work.
+The dated checkpoints below describe evidence from earlier slices. Integrated
+authentication/database/proxy acceptance and public-web investigation remain later work.
 
 For retry, the original turn `T1` keeps submission key `R1` and its failed
 attempt. Clicking **Retry response** creates a typed retry operation for `T1`

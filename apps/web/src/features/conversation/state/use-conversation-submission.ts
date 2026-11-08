@@ -16,6 +16,7 @@ export function useConversationSubmission(
         retry: (turnId, input, onProgress, signal) =>
           conversation.retryStream(turnId, input, onProgress, signal),
         publish: conversation.publish,
+        clear: conversation.clear,
         refresh: async () => {
           conversation.assertCurrent();
           const options = conversation.historyOptions();

@@ -7,10 +7,10 @@ implemented with local verification. The active change is
 `add-assistant-conversation-loop`: one continuous conversation per owner, with
 no thread creation or selection. Group 1, conversation persistence and run
 lifecycle, and the four architecture follow-ups are implemented. The current
-review checkpoint is the complete SSE attempt-retry slice (tasks 3.3f–3.3g),
-following backend retry commit 04f6c8a and the earlier browser streaming, Markdown,
-and submission-state refactor checkpoints. Stop for review before Clear history,
-broader interaction/auth acceptance, or investigation.
+review checkpoint is Clear history (tasks 3.3h–3.3i), following the completed SSE
+attempt-retry slice (3.3f–3.3g), backend retry commit 04f6c8a, and the earlier
+browser streaming, Markdown, and submission-state refactor checkpoints. Stop for
+review before broader interaction/auth acceptance or investigation.
 Task 2.3 completed API-side composition of the conversation use case,
 Drizzle repository, and pinned Agents SDK/Responses adapter, including persistence
 of available SDK-reported usage for unsuccessful attempts. Tasks 2.2a–2.2c
@@ -144,3 +144,24 @@ acceptance. Browser changes remain a review checkpoint; commit when requested.
 - Report unavailable checks and their reasons. Do not mark OpenSpec tasks complete
   when their specified validation has not been performed.
 - Live OpenAI access is not part of bootstrap verification.
+
+## Clear history checkpoint
+
+Tasks 3.3h–3.3i are implemented and verified: pnpm check passes all 397 tests and
+the production build, and 30 synthetic phone/desktop scenarios pass. Strict
+OpenSpec and whitespace checks pass with no generated-contract drift. Database
+integration was not rerun because this slice changes no backend/database behavior.
+Real-cookie and deployed-proxy acceptance remain later work. The Clear history button
+in the header opens one version-captured confirmation directly. Reuse the existing
+DELETE endpoint and query scope; no migration or backend contract change is needed.
+The existing submission state/coordinator owns pending/uncertain clearing, the
+15-second confirmation bound, exact-version explicit retry, canonical history reads,
+and private-state cleanup. A same-version read does not prove a pending clear
+failed. No automatic DELETE replay or resending into the newer history is allowed.
+A definitive initial rejection preserves drafts and active delivery. Confirmed
+clearing or observed version replacement drops obsolete draft/command/stream state;
+read current history rather than assuming it is empty. A post-clear read failure
+keeps old content hidden. The removed composer privacy footer stays absent.
+Broader tasks 3.3–3.5 and public-web investigation remain open. See the Clear history
+sections in docs/conversation-ui-plan.md and docs/conversation-loop.md for current
+behavior, verification, and the review entry point. Commit only when requested.

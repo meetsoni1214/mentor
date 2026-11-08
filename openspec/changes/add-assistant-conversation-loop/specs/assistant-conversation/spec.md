@@ -140,7 +140,7 @@ The app SHALL open directly to an accessible continuous transcript, history pagi
 
 ### Requirement: Explicit history clearing
 
-The owner SHALL be able to clear all messages, attempts, and source/activity records through a privacy setting while retaining the empty conversation. Application version/completion checks SHALL exclude cleared content from reads and future context and reject stale submissions and late SDK output. Cancellation SHALL propagate to the runner where possible. The app SHALL explain that local clearing cannot retract content already sent to a provider.
+The owner SHALL be able to clear all messages, attempts, and source/activity records through explicit header confirmation while retaining the empty conversation. Application version/completion checks SHALL exclude cleared content from reads and future context and reject stale submissions and late SDK output. Cancellation SHALL propagate to the runner where possible. The app SHALL explain that local clearing cannot retract content already sent to a provider.
 
 #### Scenario: Clear during investigation
 
@@ -156,6 +156,31 @@ The owner SHALL be able to clear all messages, attempts, and source/activity rec
 
 - **WHEN** another tab retries a pre-clear submission, retry, or clear request
 - **THEN** it is rejected as stale without new model work or removal of newer messages, and the tab reloads current state
+
+#### Scenario: Cancel history-clear confirmation
+
+- **WHEN** the owner cancels the clear confirmation or presses Escape before confirming
+- **THEN** no deletion occurs, the draft and conversation remain, and keyboard focus returns to the invoking control
+
+#### Scenario: Lost clear response
+
+- **WHEN** a confirmed clear has no trustworthy response
+- **THEN** the browser retains the original expected history version, pauses new sends and retries, and offers read-only history checking and explicit same-version clear recovery without automatic deletion replay
+
+#### Scenario: History read precedes pending deletion
+
+- **WHEN** a recovery read returns the original history version while a clear remains unconfirmed
+- **THEN** the browser preserves uncertainty because that read does not prove deletion failed, and a failed check issues no write
+
+#### Scenario: Messages arrive after clearing
+
+- **WHEN** another tab adds a message under the new version before the post-clear read
+- **THEN** the browser loads that current history instead of overwriting it with an assumed empty transcript, and clearing the newer version requires fresh confirmation
+
+#### Scenario: Clear confirmed but history refresh fails
+
+- **WHEN** deletion succeeds but current history cannot be loaded
+- **THEN** old drafts, provisional text, and saved pages remain absent from the displayed conversation, and recovery reads history without repeating deletion
 
 ### Requirement: Provisional browser response display
 

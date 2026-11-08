@@ -50,7 +50,7 @@ function setup() {
   const publish = vi.fn<(result: TurnResult) => void>();
   const requestId = vi.fn(() => retryInput.requestId);
   const submission = new ConversationSubmission(
-    { retry, submit, refresh, publish, assertCurrent() {} },
+    { retry, submit, clear: vi.fn(), refresh, publish, assertCurrent() {} },
     requestId,
   );
   submission.observe(historyOf(failed));

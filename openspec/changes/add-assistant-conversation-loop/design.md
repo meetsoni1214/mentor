@@ -4,7 +4,7 @@
 
 See proposal.md for motivation and scope. The repository has Next.js presentation, NestJS API and worker entry points, Drizzle/PostgreSQL, generated OpenAPI types, and owner authentication. Conversation persistence, run lifecycle, AI configuration, SDK/API composition, protected routes, and backend streaming are implemented. The browser workspace implements history pagination, sending, draft preservation, delivery recovery, and streaming through task 3.3a. Assistant Markdown rendering and organization into `api/`, `state/`, and `ui/` are also implemented. Recorded local verification is in docs/conversation-loop.md and docs/conversation-ui-plan.md; ordinary model verification uses injected fakes or the actual SDK against localhost HTTP stubs. The worker exposes health checks only.
 
-The behavior-preserving browser submission refactor in tasks 3.3b–3.3e is implemented. Explicit attempt retry with SSE extends the existing streaming path rather than using JSON plus polling as the normal retry experience. Backend task 2.7 is committed as 04f6c8a after its separate review stop. Browser retry and verification (tasks 3.3f–3.3g) are now implemented and verified, and form the current review checkpoint. Clear history controls, full interaction/auth recovery acceptance, public-web investigation, and live-model verification remain pending. Task 3.3 stays open. Existing authentication browser acceptance is documented in docs/sign-in.md.
+The behavior-preserving browser submission refactor in tasks 3.3b–3.3e is implemented. Explicit attempt retry with SSE extends the existing streaming path rather than using JSON plus polling as the normal retry experience. Backend task 2.7 is committed as 04f6c8a after its separate review stop. Browser retry and verification (tasks 3.3f–3.3g) are implemented and verified. Clear history (tasks 3.3h–3.3i) is also implemented and verified, and forms the current review checkpoint. Full interaction/auth recovery acceptance, public-web investigation, and live-model verification remain pending. Task 3.3 stays open. Existing authentication browser acceptance is documented in docs/sign-in.md.
 
 The existing broad change puts library capture/retrieval first and excludes external-service actions. The owner prioritizes an assistant conversation runtime as the foundation for later email monitoring and approved actions, and has selected the Agents SDK from the first model integration. This focused change takes priority for that foundation; its narrower scope does not silently complete the older roadmap's recall, SSE, export, or proactivity tasks. Reconcile overlapping artifacts before archive. Update milestone documentation during implementation to distinguish completed work from each new SDK/API checkpoint.
 
@@ -142,7 +142,7 @@ primary controls, neutral gray surfaces/dividers, and readable typography. Owner
 messages align right in white bubbles with dark text; Mentor responses align left
 on dark surfaces with light text. Content plan: open directly to the
 continuous transcript, with older-message pagination, composer, and expandable run
-details; keep Clear history in privacy settings in its later interaction slice.
+details; keep Clear history from the header in its later interaction slice.
 Interaction thesis: preserve reading position and keyboard focus when prepending
 history, expose details on demand, and respect reduced motion. The historical
 task-3.2 checkpoint kept sending disabled; the current workspace enables Send
@@ -160,7 +160,7 @@ alerts, and collapsible run details. Tailwind utilities map to the shared brand
 tokens instead of introducing a second palette. Raw palette codes stay in the token file;
 feature styles own layout. See `docs/design-system.md` for extension examples.
 
-Use TanStack Query and generated API types, with runtime validation at frontend boundaries. A text draft stays in memory until admission is known; uncertain submissions keep their original key and reconcile through the same idempotent operation or restored history. Do not store private drafts or transcripts in browser local/session storage. Refresh restores accepted text from the backend; it does not promise recovery of an unsent in-memory draft. History pagination and privacy settings must retain keyboard focus, readable status announcements, and the composer within the mobile viewport. There is no thread sidebar, conversation picker, title, or New conversation button.
+Use TanStack Query and generated API types, with runtime validation at frontend boundaries. A text draft stays in memory until admission is known; uncertain submissions keep their original key and reconcile through the same idempotent operation or restored history. Do not store private drafts or transcripts in browser local/session storage. Refresh restores accepted text from the backend; it does not promise recovery of an unsent in-memory draft. History pagination and the clear confirmation must retain keyboard focus, readable status announcements, and the composer within the mobile viewport. There is no thread sidebar, conversation picker, title, or New conversation button.
 
 Documentation covers selected content, cloud processing, local history, provider-retention limits, and assistant-selected public-web search with derived queries. The owner removed the cloud-processing line and Privacy & context section beneath the composer; do not render that footer. Tool availability must not silently add unrelated owner data to search queries. No persisted acknowledgement or submission gate is required. Clear history is an explicit destructive privacy action. Under the owner lock, atomically increment history version and remove turns, attempts, and dependent sources/activity, retaining the same singleton conversation row. Abort local work where possible. Completion checks both the attempt state and captured history version, so late writes cannot restore removed content. Version checks also prevent old tabs from replaying cleared input or repeating a clear against newer messages. Refresh stale tabs to the current empty or updated history, without automatically resubmitting. Clearing cannot revoke content already sent externally.
 
@@ -301,6 +301,46 @@ and session-loss handling distinct. Neither connection loss nor reload starts a
 fresh attempt automatically. Reload restores persisted history, not an unsent
 draft or a durable live-stream subscription.
 
+### 7.3. Explicit Clear history and uncertain deletion recovery
+
+The owner requested a header Clear history button opening its confirmation directly, without an intermediate privacy-settings dialog.
+The confirmation captures the currently observed history version; a version change
+requires reviewing current history and confirming again. Explain removal of saved
+messages, attempts, sources/activity, and the in-memory draft, plus the inability
+to retract provider-sent content. Use shared brand tokens, existing controls, and
+a native modal dialog primitive for focus containment, Escape, and focus return.
+The removed composer privacy footer stays absent.
+
+Reuse the generated-client DELETE and shared session/history query scope. The
+existing pure submission-state module represents clear lifecycle and notices;
+ConversationSubmission coordinates deletion, bounded confirmation, reads, and
+cleanup. The dialog owns only presentation and confirmation; it closes on confirm or cancel. Progress and uncertain-outcome recovery remain in the workspace. Clearing is available
+while model execution is unavailable or a send/retry is running. While deletion is
+pending or uncertain, block send, retry, draft editing, duplicate clear, and send
+reconciliation, including a reconciliation read started before the clear.
+
+Only confirmed clearing or an observed history-version replacement discards the
+draft, unresolved command, provisional text, timer, reader, and obsolete pages.
+Keep the singleton. Read canonical history after successful deletion instead of
+publishing a fabricated empty head: another tab can add messages at the new
+version before that read. Late results cannot restore old content. On definitive
+initial rejection preserve the draft and active delivery. A stale-version
+rejection removes obsolete local content and reads current history without
+repeating deletion against the newer version.
+
+A lost, invalid, failed, or 15-second-expired clear response is uncertain, not
+rollback. Offer read-only Check history and explicit Retry original clear. The
+latter retains the original expected version, with no automatic DELETE retry. A
+same-version read may precede an admitted DELETE and must not unlock sending or
+claim failure. A rejected explicit resend cannot establish that the original
+request failed. A newer-version read settles uncertainty, drops old private state,
+and requires fresh confirmation for another clear. If the post-clear read fails,
+keep removed content hidden and offer read-only recovery. Session replacement,
+logout, and disposal invalidate clear callbacks and never replay deletion.
+
+Stop after this checkpoint for review. Broader tasks 3.3–3.5 and investigation
+remain open; this slice adds no server contract, migration, or live-model traffic.
+
 ### 8. Verification and learning checkpoints
 
 Use injected provider fakes for normal application tests and the actual Agents SDK/Responses provider against a local HTTP stub for adapter contract tests. Intercept or deny all non-stub outbound traffic, including trace export, so tests never use real credentials or paid requests. Verify serialized `store: false`, no provider-managed conversation state, retry request counts, redaction, cancellation before/between requests, and aggregation of usage. Use synthetic test-only tools to exercise SDK iterations, default iteration-limit errors, and cancellation; never register them in production or treat their output as real investigation. Extend the existing disposable PostgreSQL integration suite; update its fixed expected migration count only if an additional migration is needed. Cover real HTTP authorization and CSRF, concurrent/idempotent admission, deadline races, history-clear races, stale-tab replays, singleton first-use concurrency, retry ordering, and limit persistence across API restart.
@@ -369,7 +409,7 @@ A separately enabled, bounded live smoke check requires existing server credenti
 
 ## Migration Plan
 
-1. Implement task 2.7 and tasks 3.3f–3.3g as one SSE attempt-retry checkpoint, then stop for review before Clear history, broader acceptance, or investigation. Earlier SDK/API, browser streaming, and browser submission refactor checkpoints are implemented. Preserve completed work and unrelated local modifications. This slice adds a streaming retry API contract and browser controls, reuses existing execution/persistence rules, and is expected to require no migration.
+1. SSE retry tasks 2.7 and 3.3f–3.3g are complete. Implement the approved Clear history checkpoint, tasks 3.3h–3.3i, then stop for review before broader acceptance or investigation. Earlier SDK/API, browser streaming, and browser submission refactor checkpoints are implemented. Preserve completed work and unrelated local modifications. This slice adds a streaming retry API contract and browser controls, reuses existing execution/persistence rules, and is expected to require no migration.
 2. Apply new migrations only to the disposable integration database during verification. Existing development data is migrated through the normal documented command, without schema push or volume deletion.
 3. Earlier checkpoints removed the stricter budget policy and its model-call setting; obsolete extra environment keys are ignored. Preserve the standard SDK configuration, explicit tracing/storage/retry policies, and existing `.env`. AI execution becomes ready automatically with valid server model/key/finite-limit configuration; missing or invalid settings preserve read-only history. Cloud-processing documentation stays in place without a composer disclosure footer, following the owner's revised UI decision.
 4. Roll back to the prior application version with AI disabled; keep additive tables for a forward fix rather than destructively rolling back private history.

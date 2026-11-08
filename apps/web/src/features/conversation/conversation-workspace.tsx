@@ -9,8 +9,12 @@ import { ConversationTranscript } from './ui/conversation-transcript';
 import { useConversationHistory } from './state/use-conversation-history';
 import { BrandLockup } from '../../brand/brand-logo';
 import { useConversationSubmission } from './state/use-conversation-submission';
-import { retryableTurnId } from './state/submission-state';
+import { clearNoticeText, retryableTurnId } from './state/submission-state';
 import { hasRunningAttempt } from './state/conversation-polling';
+import {
+  ClearHistoryDialog,
+  HistoryClearNotice,
+} from './ui/clear-history-dialog';
 
 export function ConversationWorkspace({
   session,
@@ -30,6 +34,11 @@ export function ConversationWorkspace({
     createConversationQueries(session, queryClient),
   );
   const { submission, state } = useConversationSubmission(conversation);
+  const [clearVersion, setClearVersion] = useState<number | null>(null);
+  const clearing = state.historyClear.phase !== 'idle';
+  const loadingClearedHistory = ['refreshing', 'refresh-failed'].includes(
+    state.historyClear.phase,
+  );
   const deliveryPending = ['sending', 'checking', 'uncertain'].includes(
     state.phase,
   );
@@ -42,21 +51,29 @@ export function ConversationWorkspace({
   useEffect(() => {
     if (history.head.data) submission.observe(history.head.data);
   }, [submission, history.head.data]);
-  const blockedReason = signingOut
-    ? 'Signing out…'
-    : !history.head.data
-      ? 'Load your conversation before sending.'
-      : history.head.isError
-        ? 'Refresh your conversation before sending.'
-        : status.isPending
-          ? 'Checking assistant availability…'
-          : status.isError
-            ? 'Check assistant availability before sending.'
-            : !status.data.enabled
-              ? 'Assistant responses are unavailable. Your draft stays here.'
-              : state.stream || hasRunningAttempt(history.head.data)
-                ? 'Working… You can write your next message while you wait.'
-                : null;
+  const canClear =
+    !signingOut &&
+    !clearing &&
+    !!history.head.data &&
+    !history.head.isError &&
+    state.historyVersion !== undefined;
+  const blockedReason = clearing
+    ? 'Resolve history clearing before continuing.'
+    : signingOut
+      ? 'Signing out…'
+      : !history.head.data
+        ? 'Load your conversation before sending.'
+        : history.head.isError
+          ? 'Refresh your conversation before sending.'
+          : status.isPending
+            ? 'Checking assistant availability…'
+            : status.isError
+              ? 'Check assistant availability before sending.'
+              : !status.data.enabled
+                ? 'Assistant responses are unavailable. Your draft stays here.'
+                : state.stream || hasRunningAttempt(history.head.data)
+                  ? 'Working… You can write your next message while you wait.'
+                  : null;
 
   return (
     <div className="conversation-workspace">
@@ -65,15 +82,39 @@ export function ConversationWorkspace({
       </a>
       <header className="workspace-header">
         <BrandLockup />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onSignOut}
-          disabled={signingOut}
-        >
-          {signingOut ? 'Signing out…' : 'Sign out'}
-        </Button>
+        <div className="workspace-account-actions">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              if (canClear && state.historyVersion !== undefined)
+                setClearVersion(state.historyVersion);
+            }}
+            aria-haspopup="dialog"
+            disabled={!canClear}
+          >
+            Clear history
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onSignOut}
+            disabled={signingOut}
+          >
+            {signingOut ? 'Signing out…' : 'Sign out'}
+          </Button>
+        </div>
       </header>
+      <ClearHistoryDialog
+        version={clearVersion}
+        currentVersion={state.historyVersion}
+        disabled={!canClear}
+        onClose={() => setClearVersion(null)}
+        onConfirm={(version) => {
+          setClearVersion(null);
+          void submission.clear(version);
+        }}
+      />
       <div className="conversation-toolbar">
         <Button
           variant="ghost"
@@ -90,6 +131,23 @@ export function ConversationWorkspace({
             {signOutError}
           </AlertDescription>
         </Alert>
+      )}
+      {clearNoticeText(state.historyClear) && (
+        <div className="workspace-notice">
+          <HistoryClearNotice
+            state={state.historyClear}
+            onCheck={() => void submission.checkClear()}
+            onRetry={() => void submission.retryClear()}
+          />
+        </div>
+      )}
+      {(state.historyClear.phase === 'clearing' ||
+        state.historyClear.phase === 'refreshing') && (
+        <span className="sr-only" role="status">
+          {state.historyClear.phase === 'clearing'
+            ? 'Clearing conversation history…'
+            : 'Loading the current conversation…'}
+        </span>
       )}
       {status.isPending ? (
         <Alert className="workspace-notice" role="status">
@@ -120,6 +178,7 @@ export function ConversationWorkspace({
         </Alert>
       ) : null}
       <ConversationTranscript
+        resettingHistory={loadingClearedHistory}
         history={history}
         acceptedRequestId={state.lastAcceptedRequestId}
         provisional={state.stream}
@@ -140,7 +199,7 @@ export function ConversationWorkspace({
         }}
         onReconcile={() => void submission.reconcile()}
         blockedReason={blockedReason}
-        disabled={signingOut || state.historyVersion === undefined}
+        disabled={signingOut || clearing || state.historyVersion === undefined}
       />
     </div>
   );
