@@ -5,4 +5,4 @@ export function createApiClient(baseUrl = '') {
   return createClient<paths>({ baseUrl, credentials: 'same-origin' });
 }
 
-export type { paths } from './generated/schema.js';
+export type { paths, components } from './generated/schema.js';

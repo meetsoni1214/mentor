@@ -117,3 +117,22 @@ The owner SHALL be able to clear all messages, attempts, and source/activity rec
 
 - **WHEN** another tab retries a pre-clear submission, retry, or clear request
 - **THEN** it is rejected as stale without new model work or removal of newer messages, and the tab reloads current state
+
+### Requirement: Provisional browser response display
+
+The browser SHALL consume authenticated SSE submission using the existing session and mutation protections. It SHALL validate event identities and display provisional answer text separately from saved history. Committed admission SHALL clear only the submitted draft and end delivery confirmation waiting; final output SHALL NOT clear the next draft. Saved terminal results SHALL supersede provisional text.
+
+#### Scenario: Healthy live response
+
+- **WHEN** admission and text events arrive for the current session, history version, turn, and attempt
+- **THEN** the submitted draft clears on acceptance, provisional text appears before completion, the next draft remains editable, and periodic history polling pauses for that live attempt
+
+#### Scenario: Lost or invalid stream
+
+- **WHEN** a stream disconnects, becomes silent, or delivers invalid events before a final result
+- **THEN** provisional text is discarded, accepted work is reconciled through saved history and foreground polling, and no mutation is automatically replayed
+
+#### Scenario: Saved failure or obsolete stream
+
+- **WHEN** saved history settles an attempt, history changes, or the session is replaced
+- **THEN** terminal history takes precedence and obsolete provisional text and late events cannot restore private content

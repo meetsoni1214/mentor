@@ -7,7 +7,8 @@ bounded context, an OpenAI Agents SDK/Responses adapter, and protected conversat
 HTTP endpoints with generated client types. The signed-in web screen now shows a
 conversation workspace with history pagination, run details, sending, draft
 recovery, and polling. An opt-in backend SSE submission endpoint now provides
-provisional text and saved results; browser streaming is the next slice.
+provisional text and saved results. The browser consumes that stream, keeping
+partial text temporary and recovering through history after a disconnect.
 Explicit attempt retry, history clearing in the UI, and public-web investigation
 remain follow-ups. See the [backend streaming contract](docs/conversation-loop.md#backend-streaming-slice-1).
 Notes, long-term memory, email access, and external actions remain future work.

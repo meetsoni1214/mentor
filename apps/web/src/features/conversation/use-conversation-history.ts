@@ -12,11 +12,16 @@ export type ConversationQueries = ReturnType<typeof createConversationQueries>;
 export function useConversationHistory(
   conversation: ConversationQueries,
   deliveryPending = false,
+  liveAttemptId?: string,
 ) {
   const head = useQuery({
     ...conversation.historyOptions(),
     refetchInterval: (query) =>
-      conversationPollInterval(query.state.data, deliveryPending),
+      conversationPollInterval(
+        query.state.data,
+        deliveryPending,
+        liveAttemptId,
+      ),
     refetchIntervalInBackground: false,
   });
   const [requestedPages, setRequestedPages] = useState<HistoryCursor[]>([]);

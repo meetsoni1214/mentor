@@ -9,7 +9,8 @@ status and singleton conversation routes with generated OpenAPI/client types.
 Application-owned Zod schemas validate commands; shared HTTP presenters map
 responses and a dedicated streaming HTTP service owns SSE delivery.
 The backend also exposes opt-in [SSE submission](#backend-streaming-slice-1).
-The current web screen still uses JSON submission and polling. Verification uses
+The current web screen consumes SSE submission and uses history polling for
+recovery when no matching live stream exists. Verification uses
 synthetic credentials and responses; no paid calls, email connection, or
 background jobs are involved.
 
@@ -756,7 +757,7 @@ Task 2.6 adds `POST /api/v1/conversation/turns/stream`. Send the same JSON
 `{ text, requestId, historyVersion }` command as the existing submission route,
 with the signed-in session cookie, configured Origin, and session-bound
 `X-CSRF-Token`. Consume the response body incrementally through fetch. The
-existing JSON route and browser remain compatible; UI streaming is slice 2.
+existing JSON route remains compatible. Browser streaming is described below.
 
 The controller checks the request media type, obtains the session owner, and
 delegates to `ConversationStreamService` in the HTTP adapter. That service calls
@@ -808,8 +809,8 @@ Provider failure after text produces a saved unsuccessful result with no answer;
 available SDK usage remains persisted. Failures after headers that prevent
 confirmed persistence emit only a fixed `INTERNAL_ERROR` or `STALE_HISTORY`
 stream error. Never treat previously received text as a completed answer in
-those cases. Session/history guards and provisional rendering in the browser
-remain slice 2; complete recovery acceptance is slice 3.
+those cases. Session/history guards and provisional rendering are implemented in browser
+streaming slice 2; complete recovery acceptance remains slice 3.
 
 The original request handler awaits execution even if its reader disconnects.
 Reader failures and observer exceptions cannot cancel or replace the run. A
@@ -842,3 +843,23 @@ passes. No live OpenAI call, existing `.env` edit, database migration, or
 development-data operation occurred. Task 2.6 is complete; browser streaming and
 end-to-end recovery/proxy acceptance remain open. Stop here for review; commit
 when requested.
+
+## Browser streaming slice 2
+
+The browser now consumes the SSE endpoint. Committed acceptance clears the
+submitted draft before generation finishes, and provisional text appears in the
+matching running response. The next draft survives final completion. Temporary
+text remains outside saved history; a persisted final or failed result replaces
+it. A successful HTTP status or EOF without a valid result does not establish
+completion.
+
+Polling pauses while the browser has a matching live stream. After reload,
+running replay, disconnect, invalid stream data, or a silent connection, it reads
+saved history every two seconds in the foreground until the attempt settles.
+Recovery never automatically resends a message or resumes a model run. A stream
+reader closes on session/history changes; late events cannot restore private
+content. Full recovery/authenticated API acceptance remains a separate slice.
+
+See [browser streaming evidence](conversation-ui-plan.md#checkpoint-3b-browser-streaming-slice-2-task-33a)
+for module responsibilities, deterministic checks, synthetic browser verification,
+and its limits. Browser tests use synthetic output, not live provider responses.

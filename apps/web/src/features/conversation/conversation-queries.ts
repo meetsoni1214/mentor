@@ -17,8 +17,12 @@ import type {
   HistoryOptions,
   RetryInput,
   SubmitInput,
+  TurnResult,
+  ConversationHistory,
 } from './conversation-contracts';
 import { ConversationScope } from './conversation-scope';
+import { streamConversationTurn } from './conversation-stream-api';
+import type { ConversationStreamProgress } from './conversation-stream-contracts';
 
 export function createConversationQueries(
   session: SessionScope,
@@ -126,6 +130,60 @@ export function createConversationQueries(
         input.historyVersion,
         signal,
       ),
+    stream: (
+      input: SubmitInput,
+      onProgress: (event: ConversationStreamProgress) => void,
+      signal?: AbortSignal,
+    ) =>
+      historyRequest(
+        (requestSignal) =>
+          streamConversationTurn(
+            input,
+            (event) => {
+              scope.assertCurrent(input.historyVersion);
+              requestSignal.throwIfAborted();
+              onProgress(event);
+            },
+            requestSignal,
+          ),
+        input.historyVersion,
+        signal,
+      ),
+    publish: (result: TurnResult) => {
+      scope.assertCurrent(result.historyVersion);
+      const key = keys.history();
+      // An older in-flight read must not replace a just-committed stream result.
+      void queries.cancelQueries({ queryKey: key, exact: true });
+      queries.setQueryData<ConversationHistory>(key, (current) => {
+        if (!current || current.historyVersion !== result.historyVersion)
+          return current;
+        const existing = current.turns.find(
+          (turn) => turn.id === result.turn.id,
+        );
+        const previous = existing?.attempts.find(
+          (attempt) => attempt.id === result.attempt.id,
+        );
+        if (
+          previous &&
+          previous.state !== 'running' &&
+          result.attempt.state === 'running'
+        )
+          return current;
+        const attempts = [
+          ...(existing?.attempts.filter(
+            (attempt) => attempt.id !== result.attempt.id,
+          ) ?? []),
+          result.attempt,
+        ];
+        return {
+          ...current,
+          turns: [
+            ...current.turns.filter((turn) => turn.id !== result.turn.id),
+            { ...result.turn, attempts },
+          ].sort((a, b) => a.sequence - b.sequence),
+        };
+      });
+    },
     retry: (turnId: string, input: RetryInput, signal?: AbortSignal) =>
       historyRequest(
         (requestSignal) => retryConversationTurn(turnId, input, requestSignal),

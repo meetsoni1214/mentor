@@ -11,7 +11,9 @@ export function useConversationSubmission(
     () =>
       new ConversationSubmission({
         assertCurrent: conversation.assertCurrent,
-        submit: conversation.submit,
+        submit: (input, onProgress, signal) =>
+          conversation.stream(input, onProgress, signal),
+        publish: conversation.publish,
         refresh: async () => {
           conversation.assertCurrent();
           const options = conversation.historyOptions();

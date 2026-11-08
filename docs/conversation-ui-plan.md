@@ -9,8 +9,9 @@ Clear history, and complete interaction/auth acceptance are separate follow-ups.
 Tasks 3.3–3.5 remain open pending their full implementation and verification.
 The owner subsequently approved backend streaming slice 1 (task 2.6). Its opt-in
 SSE endpoint is documented in [the conversation guide](conversation-loop.md#backend-streaming-slice-1).
-Browser streaming and recovery/proxy acceptance are separate later slices; this
-workspace still uses JSON submission and polling.
+Browser streaming slice 2 is implemented below; full recovery/proxy acceptance
+is a separate later slice. The historical checkpoints below describe the
+earlier JSON submission and polling behavior.
 
 ## Starting point before checkpoint 1
 
@@ -339,3 +340,70 @@ background monitoring, long-term memory, and external actions remain outside
 this change. Streaming now has its own approved backend checkpoint, followed by
 browser rendering and recovery acceptance; durable token replay remains outside
 that scope.
+
+## Checkpoint 3b: browser streaming slice 2 (task 3.3a)
+
+The composer now uses `POST /api/v1/conversation/turns/stream` through the generated
+client with its streaming response parser, shared CSRF handling, and existing
+session/history request scope. The compatible JSON operation remains available.
+`conversation-stream-reader.ts` owns incremental UTF-8/SSE framing, comment
+heartbeats, bounded frame parsing, idle timeout, and reader cleanup.
+`conversation-stream-contracts.ts` owns runtime event validation checked against
+generated component types. `conversation-stream-api.ts` validates event order,
+submission identity, attempt/version identity, and final state; server error text
+never becomes a user-facing exception message. HTTP chunks are not SSE frames.
+
+`ConversationSubmission` separates admission from stream completion. Acceptance
+or a matching head read clears only the submitted draft and stops the 15-second
+confirmation wait. The owner can then write the next draft; neither subsequent
+acceptance confirmation nor final completion may clear it. Text is held only in
+one temporary attempt/version-scoped response, never in query history or browser
+storage. Committed admission/result snapshots update the head cache and cancel
+older in-flight head reads; terminal saved state supersedes provisional text.
+The transcript follows growing text only when already following the latest
+content, preserving its existing pagination and reading-position behavior.
+Readable run status is announced without making every text fragment a live-region
+announcement. Model-attempt retry and Clear history controls are still absent.
+
+History polling is a recovery path. It pauses for a running attempt with a matching
+live stream. Uncertain delivery or a running attempt without a live stream uses
+foreground two-second polling, including after reload or a running replay.
+Disconnect, invalid events, a 30-second absence of any stream bytes, or exceeding
+temporary display limits detaches the reader, discards partial text, and reads
+saved history. It never automatically replays a POST or cancels admitted backend
+execution. Session/history changes discard private local state and gate all late
+events; observing a terminal result also detaches any obsolete reader.
+
+Verification on 2026-11-07:
+
+- 32 additional deterministic checks cover stream framing across single-byte UTF-8
+  chunks, LF/CRLF/CR, comments and multiline data, delivery before completion,
+  identity/order validation, final-state validation, JSON and redacted SSE errors,
+  replay, incomplete EOF, frame/idle bounds, session/history cancellation, saved
+  snapshot precedence, draft lifetimes, and recovery polling. The existing 17
+  delivery tests also pass.
+- `pnpm check` passes formatting, architecture lint, strict types, all 317
+  unit/contract tests, contract regeneration, and the production build. Strict
+  OpenSpec validation and diff whitespace checks pass. Generated API output is
+  unchanged; the API-client entrypoint additionally exports generated component
+  types for browser contract checking. Build-generated Next.js references are
+  restored to their incoming values.
+- Synthetic browser checks use a separate production frontend on port 3217 and a
+  localhost SSE fixture on port 4317. They verify desktop/phone early text,
+  submitted/next-draft behavior, no concurrent Send, saved-final replacement,
+  no horizontal overflow or transcript storage, no polling during a healthy live
+  stream, dropped-stream polling without duplicate writes, saved completion after
+  disconnect, known admission rejection, failure after deltas, reload recovery,
+  and logout cleanup. Screenshots were inspected at 1365x900 and 390x844. Scripts,
+  server fixture, CLI results, and screenshots remain under ignored
+  `output/playwright/conversation-ui/streaming/`.
+- The fixture exercises the actual production Next.js rewrite and frontend, but
+  replaces authentication, API execution, and persistence with synthetic local
+  responses. This is evidence of incremental proxy delivery in this setup, not
+  full slice-3 acceptance with real cookies, NestJS, PostgreSQL, or a deployed
+  proxy. Database integration was not rerun for this browser-only slice; the
+  previous backend checkpoint passed 95 checks. No live model calls, existing
+  `.env` edits, or development-data operations occurred.
+
+Stop here for review. Task 3.3 remains open for retry, Clear history, and full
+acceptance; task 3.4 and full recovery/proxy acceptance remain open as well.

@@ -32,7 +32,11 @@ export function ConversationWorkspace({
   const deliveryPending = ['sending', 'checking', 'uncertain'].includes(
     state.phase,
   );
-  const history = useConversationHistory(conversation, deliveryPending);
+  const history = useConversationHistory(
+    conversation,
+    deliveryPending,
+    state.stream?.attemptId,
+  );
   const status = useQuery(conversation.statusOptions());
   useEffect(() => {
     if (history.head.data) submission.observe(history.head.data);
@@ -49,7 +53,7 @@ export function ConversationWorkspace({
             ? 'Check assistant availability before sending.'
             : !status.data.enabled
               ? 'Assistant responses are unavailable. Your draft stays here.'
-              : hasRunningAttempt(history.head.data)
+              : state.stream || hasRunningAttempt(history.head.data)
                 ? 'Working… You can write your next message while you wait.'
                 : null;
 
@@ -117,6 +121,7 @@ export function ConversationWorkspace({
       <ConversationTranscript
         history={history}
         acceptedRequestId={state.lastAcceptedRequestId}
+        provisional={state.stream}
       />
       <ConversationComposer
         state={state}

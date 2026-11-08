@@ -7,8 +7,8 @@ implemented with local verification. The active change is
 `add-assistant-conversation-loop`: one continuous conversation per owner, with
 no thread creation or selection. Group 1, conversation persistence and run
 lifecycle, and the four architecture follow-ups are implemented. The current
-review checkpoint is backend streaming slice 1 (task 2.6), following the sending
-portion of task 3.3 and the committed task 3.2 workspace.
+review checkpoint is browser streaming slice 2 (task 3.3a), following committed
+backend streaming and browser sending checkpoints.
 Task 2.3 completed API-side composition of the conversation use case,
 Drizzle repository, and pinned Agents SDK/Responses adapter, including persistence
 of available SDK-reported usage for unsuccessful attempts. Tasks 2.2a–2.2c
@@ -44,8 +44,8 @@ The owner requested
 black, white, and neutral gray instead of green. The owner has now approved the
 sending slice: the composer preserves drafts on rejected admission, retains the
 same request ID/payload for uncertain delivery, and offers explicit recovery.
-Poll head history every two seconds while delivery is unresolved or an attempt
-is running; pause background polling. A 15-second confirmation wait exposes
+Poll head history every two seconds while delivery is unresolved or a running
+attempt has no matching live stream; pause background polling. A 15-second confirmation wait exposes
 recovery without cancelling or automatically replaying backend work. Drafts are
 in memory only and clear on unmount/session replacement/history-version change.
 One query
@@ -58,9 +58,16 @@ SSE accepted/text_delta/result/error events. Only committed final results enter
 history/context; provisional text stays ephemeral. Replays return persisted
 snapshots without another runner or stream attachment. Reader disconnect or bounded
 output buffering detaches delivery without cancelling admitted execution.
-Browser streaming and recovery/proxy acceptance are later slices; the current
-browser still uses JSON submission and polling. Stop after backend streaming
-for review; commit when requested. Explicit attempt
+Browser streaming uses generated-client POST with CSRF and validates SSE events
+against browser-owned contracts. Acceptance clears only the submitted draft and
+stops the confirmation timer; completion never clears the next draft. Provisional
+text stays outside query history. Committed snapshots update the head cache,
+terminal history supersedes partial text, and session/history replacement detaches
+the reader and clears private state. Disconnect, idle timeout, or invalid events
+recover through history without automatic POST replay. Stream framing and temporary
+display memory are bounded independently of model execution. Full recovery/proxy
+acceptance remains slice 3. Stop after browser streaming for review; commit when
+requested. Explicit attempt
 retry, Clear history, full interaction/auth acceptance, and public-web investigation
 remain later checkpoints. Task 3.3 stays open until all of its behavior and
 acceptance checks are complete. Do not add retry or Clear history in this slice.

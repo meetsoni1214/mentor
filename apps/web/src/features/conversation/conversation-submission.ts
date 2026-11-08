@@ -7,10 +7,22 @@ import type {
 } from './conversation-contracts';
 import { ConversationApiError } from './conversation-errors';
 import { ObsoleteHistoryError } from './conversation-scope';
+import type {
+  ConversationStreamProgress,
+  ProvisionalResponse,
+} from './conversation-stream-contracts';
+
+const stoppedStreamMessage =
+  'The live response stopped. Checking the saved response…';
 
 interface SubmissionPort {
   assertCurrent(version?: number): void;
-  submit(input: SubmitInput): Promise<TurnResult>;
+  submit(
+    input: SubmitInput,
+    onProgress: (event: ConversationStreamProgress) => void,
+    signal: AbortSignal,
+  ): Promise<TurnResult>;
+  publish?(result: TurnResult): void;
   refresh(): Promise<ConversationHistory>;
 }
 
@@ -20,9 +32,10 @@ export interface SubmissionSnapshot {
   error: string;
   historyVersion: number | undefined;
   lastAcceptedRequestId: string | null;
+  stream: ProvisionalResponse | null;
 }
 
-// Owns only an unsent draft and its delivery identity. History stays in Query.
+// Owns the draft, delivery identity, and temporary stream text. Saved history stays in Query.
 export class ConversationSubmission {
   private snapshot: SubmissionSnapshot = {
     draft: '',
@@ -30,10 +43,12 @@ export class ConversationSubmission {
     error: '',
     historyVersion: undefined,
     lastAcceptedRequestId: null,
+    stream: null,
   };
   private pending: SubmitInput | null = null;
   private operation = 0;
   private stopConfirmation: (() => void) | undefined;
+  private delivery: AbortController | undefined;
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -54,6 +69,8 @@ export class ConversationSubmission {
 
   reset = () => {
     this.stopConfirmation?.();
+    this.delivery?.abort();
+    this.delivery = undefined;
     this.operation += 1;
     this.pending = null;
     this.update({
@@ -61,6 +78,7 @@ export class ConversationSubmission {
       phase: 'editing',
       error: '',
       lastAcceptedRequestId: null,
+      stream: null,
     });
   };
 
@@ -89,12 +107,35 @@ export class ConversationSubmission {
     const input = this.pending;
     const accepted =
       input && history.turns.find((turn) => turn.requestId === input.requestId);
-    if (accepted && accepted.text === input.text) this.accept(input.requestId);
+    if (accepted && accepted.text === input.text)
+      this.accept(input.requestId, true);
+    const stream = this.snapshot.stream;
+    const settled = history.turns.some(
+      (turn) =>
+        turn.requestId === this.snapshot.lastAcceptedRequestId &&
+        turn.attempts.length > 0 &&
+        turn.attempts.every((attempt) => attempt.state !== 'running'),
+    );
+    if (settled && this.snapshot.error === stoppedStreamMessage)
+      this.update({ error: '' });
+    if (
+      settled ||
+      (stream &&
+        history.turns.some((turn) =>
+          turn.attempts.some(
+            (attempt) =>
+              attempt.id === stream.attemptId && attempt.state !== 'running',
+          ),
+        ))
+    ) {
+      this.update({ stream: null });
+      this.delivery?.abort();
+    }
   };
 
-  private accept(requestId: string) {
+  private accept(requestId: string, preserveDelivery = false) {
     this.stopConfirmation?.();
-    this.operation += 1;
+    if (!preserveDelivery) this.operation += 1;
     this.pending = null;
     this.update({
       draft: '',
@@ -107,7 +148,7 @@ export class ConversationSubmission {
   private current(operation: number) {
     if (this.operation !== operation) return false;
     try {
-      this.port.assertCurrent(this.pending?.historyVersion);
+      this.port.assertCurrent(this.snapshot.historyVersion);
       return true;
     } catch (cause) {
       if (cause instanceof ObsoleteSessionError) {
@@ -127,7 +168,12 @@ export class ConversationSubmission {
 
   send = async (maxMessageBytes: number) => {
     const { draft, phase, historyVersion } = this.snapshot;
-    if (phase !== 'editing' || historyVersion === undefined) return;
+    if (
+      phase !== 'editing' ||
+      historyVersion === undefined ||
+      this.snapshot.stream
+    )
+      return;
     if (!draft.trim()) {
       this.update({ error: 'Write a message first.' });
       return;
@@ -146,12 +192,53 @@ export class ConversationSubmission {
     const input = this.pending;
     if (!input) return;
     const operation = ++this.operation;
+    const controller = new AbortController();
+    this.delivery?.abort();
+    this.delivery = controller;
+    let observedProgress = false;
+    const onProgress = (event: ConversationStreamProgress) => {
+      if (!this.current(operation) || controller.signal.aborted) return;
+      observedProgress = true;
+      if (event.type === 'accepted') {
+        this.port.publish?.(event);
+        if (this.pending?.requestId === input.requestId)
+          this.accept(input.requestId, true);
+        this.update({
+          stream:
+            !event.replayed && event.attempt.state === 'running'
+              ? {
+                  historyVersion: event.historyVersion,
+                  turnId: event.turn.id,
+                  attemptId: event.attempt.id,
+                  text: '',
+                }
+              : null,
+        });
+      } else {
+        const stream = this.snapshot.stream;
+        if (!stream || stream.attemptId !== event.attemptId) return;
+        // Bound temporary display memory only. The backend still completes and
+        // persists the full answer; a detached reader falls back to history.
+        if (stream.text.length + event.delta.length > 256 * 1024) {
+          controller.abort();
+          throw new Error('Provisional display limit reached.');
+        }
+        this.update({ stream: { ...stream, text: stream.text + event.delta } });
+      }
+    };
     this.update({ phase: 'sending', error: '' });
     try {
-      const result = await this.waitForResult(input);
+      const result = await this.waitForResult(
+        input,
+        onProgress,
+        controller.signal,
+      );
       if (!this.current(operation)) return;
       this.port.assertCurrent(result.historyVersion);
-      this.accept(input.requestId);
+      this.port.publish?.(result);
+      this.update({ stream: null });
+      if (this.pending?.requestId === input.requestId)
+        this.accept(input.requestId);
       // A foreground POST may finish before the next poll. Read canonical history.
       try {
         const history = await this.port.refresh();
@@ -184,10 +271,29 @@ export class ConversationSubmission {
         return;
       }
       if (
+        !this.pending &&
+        this.snapshot.lastAcceptedRequestId === input.requestId &&
+        !(cause instanceof ObsoleteHistoryError) &&
+        !(
+          cause instanceof ConversationApiError &&
+          cause.code === 'STALE_HISTORY'
+        )
+      ) {
+        this.update({ stream: null });
+        // History may have settled the run and deliberately detached this reader.
+        if (observedProgress && !controller.signal.aborted)
+          this.update({
+            error: stoppedStreamMessage,
+          });
+        await this.refreshHistory();
+        return;
+      }
+      if (
         cause instanceof ObsoleteHistoryError ||
         (cause instanceof ConversationApiError &&
           cause.code === 'STALE_HISTORY')
       ) {
+        this.update({ stream: null });
         this.pending = null;
         this.update({
           draft: '',
@@ -224,10 +330,17 @@ export class ConversationSubmission {
           'Delivery is uncertain. Your message is kept below. Check or resend to continue.',
       });
       await this.refreshHistory();
+    } finally {
+      if (this.delivery === controller) this.delivery = undefined;
+      controller.abort();
     }
   }
 
-  private waitForResult(input: SubmitInput) {
+  private async waitForResult(
+    input: SubmitInput,
+    onProgress: (event: ConversationStreamProgress) => void,
+    signal: AbortSignal,
+  ) {
     let timer: ReturnType<typeof setTimeout>;
     const expired = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(
@@ -238,10 +351,15 @@ export class ConversationSubmission {
     const stop = () => clearTimeout(timer);
     this.stopConfirmation = stop;
     // Stop waiting for confirmation without claiming to cancel backend work.
-    return Promise.race([this.port.submit(input), expired]).finally(() => {
+    try {
+      return await Promise.race([
+        this.port.submit(input, onProgress, signal),
+        expired,
+      ]);
+    } finally {
       stop();
       if (this.stopConfirmation === stop) this.stopConfirmation = undefined;
-    });
+    }
   }
 
   private async refreshHistory() {

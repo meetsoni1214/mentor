@@ -2,6 +2,7 @@ import { Button } from '../../components/ui/button';
 import type { ConversationHistory } from './conversation-contracts';
 import { MessageTime, RunDetails } from './run-details';
 import { brand } from '../../brand/brand';
+import type { ProvisionalResponse } from './conversation-stream-contracts';
 
 type Turn = ConversationHistory['turns'][number];
 type Attempt = Turn['attempts'][number];
@@ -20,10 +21,12 @@ export function ConversationMessage({
   turn,
   onRefresh,
   refreshing,
+  provisional,
 }: {
   turn: Turn;
   onRefresh: () => void;
   refreshing: boolean;
+  provisional: ProvisionalResponse | null;
 }) {
   const latest = turn.attempts.reduce<Attempt | undefined>(
     (current, attempt) =>
@@ -61,19 +64,26 @@ export function ConversationMessage({
             latest.answer
           ) : latest?.state === 'running' ? (
             <>
+              {provisional?.attemptId === latest.id && provisional.text ? (
+                <div className="provisional-answer">{provisional.text}</div>
+              ) : null}
               <p role="status">
                 <span className="working-dot" aria-hidden="true" />
-                Working…
+                {provisional?.attemptId === latest.id
+                  ? 'Responding…'
+                  : 'Working…'}
               </p>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="outcome-action"
-                onClick={onRefresh}
-                disabled={refreshing}
-              >
-                {refreshing ? 'Checking…' : 'Check for updates'}
-              </Button>
+              {provisional?.attemptId !== latest.id && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="outcome-action"
+                  onClick={onRefresh}
+                  disabled={refreshing}
+                >
+                  {refreshing ? 'Checking…' : 'Check for updates'}
+                </Button>
+              )}
             </>
           ) : (
             <p>

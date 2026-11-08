@@ -6,13 +6,16 @@ import { BrandLogo } from '../../brand/brand-logo';
 import { ConversationApiError } from './conversation-errors';
 import { ConversationMessage } from './conversation-message';
 import type { useConversationHistory } from './use-conversation-history';
+import type { ProvisionalResponse } from './conversation-stream-contracts';
 
 export function ConversationTranscript({
   history,
   acceptedRequestId,
+  provisional,
 }: {
   history: ReturnType<typeof useConversationHistory>;
   acceptedRequestId: string | null;
+  provisional: ProvisionalResponse | null;
 }) {
   const scroll = useRef<HTMLElement>(null);
   const positionedVersion = useRef<number | undefined>(undefined);
@@ -54,7 +57,13 @@ export function ConversationTranscript({
       container.scrollTop = container.scrollHeight;
       positionedRequest.current = acceptedRequestId;
     }
-  }, [version, turns, history.loadingOlder, acceptedRequestId]);
+  }, [
+    version,
+    turns,
+    history.loadingOlder,
+    acceptedRequestId,
+    provisional?.text,
+  ]);
 
   function rememberReadingPosition() {
     const container = scroll.current;
@@ -180,6 +189,13 @@ export function ConversationTranscript({
                 turn={turn}
                 onRefresh={() => void head.refetch()}
                 refreshing={head.isFetching}
+                provisional={
+                  provisional &&
+                  provisional.historyVersion === version &&
+                  provisional.turnId === turn.id
+                    ? provisional
+                    : null
+                }
               />
             ))}
           </>
