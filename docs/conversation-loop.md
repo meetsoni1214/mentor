@@ -35,7 +35,53 @@ This replay recovers delivery and never creates a fresh attempt for a failed run
 Unsent drafts are not durable and are cleared on reload, logout/session change,
 or observation of a new history version. Accepted messages remain in PostgreSQL.
 
-## Start the review here
+## Current browser reading order
+
+The submission readability checkpoint is tasks 3.3b–3.3e. Start in
+`apps/web/src/features/conversation/`:
+
+1. `conversation-workspace.tsx` composes history, submission, and presentation.
+2. `state/submission-state.ts` defines valid delivery states, named transitions,
+   failure categories, and typed notices. Unresolved states own their original
+   `SubmitInput`; accepted work and the next draft have independent lifetimes.
+3. `state/conversation-submission.ts` coordinates the POST, committed publication,
+   confirmation timer, history reads, reader cancellation, and subscriptions.
+   It caches the state projection for React's external-store subscription.
+4. `state/use-conversation-submission.ts` connects that coordinator to React and
+   the query adapter. `state/conversation-polling.ts` decides when recovery polls.
+5. `state/conversation-queries.ts` owns saved cache updates;
+   `state/conversation-scope.ts` and auth's `session-scope.ts` reject obsolete work.
+6. `api/conversation-stream-api.ts` validates event order and identities;
+   `api/conversation-stream-reader.ts` handles SSE framing, byte timeout, and bounds.
+7. `ui/conversation-composer.tsx` consumes the unchanged snapshot;
+   `ui/conversation-transcript.tsx` displays saved turns and ephemeral response text.
+
+For a concrete trace, send “Explain database locks” with request ID `R1` and
+history version `0`. Sending captures the exact text/version/key in its delivery
+state. An `accepted` event publishes the committed running snapshot, ends the
+15-second confirmation wait, and clears that submitted draft. The owner can now
+type “Show an example” while deltas build a separate temporary answer.
+
+If the reader disconnects, `loseStream` discards only the temporary answer and
+keeps “Show an example”. The coordinator reads history; a running saved attempt
+without a live stream uses two-second foreground polling. When history returns
+the completed answer, it replaces the partial response and clears the stream-loss
+notice. There is still one POST for `R1`; recovery reads never start another run.
+The next draft survives throughout. A saved terminal outcome also aborts an
+obsolete reader, and late callbacks cannot restore its text.
+
+If acceptance itself was lost, the delivery state instead keeps the original
+`R1` input locked. Only the owner's Check or resend action may POST again, after
+reading current history, with that identical key/text/version. A failed check
+sends nothing. Session loss clears private state; a new history version discards
+pre-clear input and never replays it into the replacement history.
+
+See the [transition/test map and current verification](conversation-ui-plan.md#submission-readability-checkpoint-tasks-33b33e).
+The dated checkpoints below describe evidence from earlier slices. Retry and
+Clear history controls, integrated authentication/database/proxy acceptance, and
+public-web investigation remain later work.
+
+## Backend reading order
 
 Read these files in order:
 

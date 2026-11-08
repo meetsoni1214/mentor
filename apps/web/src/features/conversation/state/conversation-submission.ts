@@ -1,19 +1,12 @@
-import { ObsoleteSessionError } from '../../auth/session-scope';
-import { RequestError } from '../../../lib/api-request';
 import type {
   ConversationHistory,
   SubmitInput,
   TurnResult,
 } from '../api/conversation-contracts';
-import { ConversationApiError } from '../api/conversation-errors';
-import { ObsoleteHistoryError } from './conversation-scope';
-import type {
-  ConversationStreamProgress,
-  ProvisionalResponse,
-} from '../api/conversation-stream-contracts';
+import type { ConversationStreamProgress } from '../api/conversation-stream-contracts';
+import * as state from './submission-state';
 
-const stoppedStreamMessage =
-  'The live response stopped. Checking the saved response…';
+export type { SubmissionSnapshot } from './submission-state';
 
 interface SubmissionPort {
   assertCurrent(version?: number): void;
@@ -26,29 +19,16 @@ interface SubmissionPort {
   refresh(): Promise<ConversationHistory>;
 }
 
-export interface SubmissionSnapshot {
-  draft: string;
-  phase: 'editing' | 'sending' | 'uncertain' | 'checking' | 'stale';
-  error: string;
-  historyVersion: number | undefined;
-  lastAcceptedRequestId: string | null;
-  stream: ProvisionalResponse | null;
-}
+type DeliveryMode = 'initial-send' | 'explicit-resend';
 
-// Owns the draft, delivery identity, and temporary stream text. Saved history stays in Query.
+// Coordinates effects. Draft/delivery transitions live in submission-state;
+// committed history stays in Query and PostgreSQL.
 export class ConversationSubmission {
-  private snapshot: SubmissionSnapshot = {
-    draft: '',
-    phase: 'editing',
-    error: '',
-    historyVersion: undefined,
-    lastAcceptedRequestId: null,
-    stream: null,
-  };
-  private pending: SubmitInput | null = null;
-  private operation = 0;
+  private state = state.initialState();
+  private snapshot = state.projectSnapshot(this.state);
+  private deliveryGeneration = 0;
   private stopConfirmation: (() => void) | undefined;
-  private delivery: AbortController | undefined;
+  private deliveryController: AbortController | undefined;
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -62,29 +42,27 @@ export class ConversationSubmission {
     return () => this.listeners.delete(listener);
   };
 
-  private update(patch: Partial<SubmissionSnapshot>) {
-    this.snapshot = { ...this.snapshot, ...patch };
+  private transition(next: state.SubmissionState) {
+    if (next === this.state) return;
+    this.state = next;
+    this.snapshot = state.projectSnapshot(next);
     for (const listener of this.listeners) listener();
   }
 
-  reset = () => {
+  private invalidateDelivery() {
     this.stopConfirmation?.();
-    this.delivery?.abort();
-    this.delivery = undefined;
-    this.operation += 1;
-    this.pending = null;
-    this.update({
-      draft: '',
-      phase: 'editing',
-      error: '',
-      lastAcceptedRequestId: null,
-      stream: null,
-    });
+    this.deliveryController?.abort();
+    this.deliveryController = undefined;
+    this.deliveryGeneration += 1;
+  }
+
+  reset = () => {
+    this.invalidateDelivery();
+    this.transition(state.initialState(this.state.historyVersion));
   };
 
   edit = (draft: string) => {
-    if (this.snapshot.phase !== 'editing') return;
-    this.update({ draft, error: '' });
+    this.transition(state.editDraft(this.state, draft));
   };
 
   observe = (history: ConversationHistory) => {
@@ -93,251 +71,136 @@ export class ConversationSubmission {
     } catch {
       return;
     }
-    const previous = this.snapshot.historyVersion;
-    if (previous !== undefined && previous !== history.historyVersion) {
-      // Never turn pre-clear text into a fresh submission in the new history.
-      this.reset();
-      this.update({
-        historyVersion: history.historyVersion,
-        error: 'History changed. Your previous draft was cleared.',
-      });
-    } else if (previous === undefined) {
-      this.update({ historyVersion: history.historyVersion });
-    }
-    const input = this.pending;
-    const accepted =
-      input && history.turns.find((turn) => turn.requestId === input.requestId);
-    if (accepted && accepted.text === input.text)
-      this.accept(input.requestId, true);
-    const stream = this.snapshot.stream;
-    const settled = history.turns.some(
-      (turn) =>
-        turn.requestId === this.snapshot.lastAcceptedRequestId &&
-        turn.attempts.length > 0 &&
-        turn.attempts.every((attempt) => attempt.state !== 'running'),
-    );
-    if (settled && this.snapshot.error === stoppedStreamMessage)
-      this.update({ error: '' });
-    if (
-      settled ||
-      (stream &&
-        history.turns.some((turn) =>
-          turn.attempts.some(
-            (attempt) =>
-              attempt.id === stream.attemptId && attempt.state !== 'running',
-          ),
-        ))
-    ) {
-      this.update({ stream: null });
-      this.delivery?.abort();
-    }
+    const observed = state.observeHistory(this.state, history);
+    if (observed.historyChanged) this.invalidateDelivery();
+    if (observed.accepted) this.stopConfirmation?.();
+    this.transition(observed.state);
+    if (observed.settled) this.deliveryController?.abort();
   };
 
-  private accept(requestId: string, preserveDelivery = false) {
-    this.stopConfirmation?.();
-    if (!preserveDelivery) this.operation += 1;
-    this.pending = null;
-    this.update({
-      draft: '',
-      phase: 'editing',
-      error: '',
-      lastAcceptedRequestId: requestId,
-    });
-  }
-
-  private current(operation: number) {
-    if (this.operation !== operation) return false;
+  private current(generation: number) {
+    if (this.deliveryGeneration !== generation) return false;
     try {
-      this.port.assertCurrent(this.snapshot.historyVersion);
+      this.port.assertCurrent(this.state.historyVersion);
       return true;
     } catch (cause) {
-      if (cause instanceof ObsoleteSessionError) {
+      const failure = state.classifyFailure(cause);
+      if (failure.kind === 'session-lost') this.reset();
+      else if (failure.kind === 'history-changed') {
         this.reset();
-      } else if (cause instanceof ObsoleteHistoryError) {
-        this.reset();
-        this.update({
-          phase: 'stale',
-          error: 'History changed. Refresh before writing another message.',
-        });
-      } else {
-        throw cause;
-      }
+        this.transition(state.invalidateHistory(this.state));
+      } else throw cause;
       return false;
     }
   }
 
   send = async (maxMessageBytes: number) => {
-    const { draft, phase, historyVersion } = this.snapshot;
-    if (
-      phase !== 'editing' ||
-      historyVersion === undefined ||
-      this.snapshot.stream
-    )
+    const { draft, delivery, historyVersion, stream } = this.state;
+    if (delivery.phase !== 'editing' || historyVersion === undefined || stream)
       return;
-    if (!draft.trim()) {
-      this.update({ error: 'Write a message first.' });
+    const notice = state.validateDraft(draft, maxMessageBytes);
+    if (notice) {
+      this.transition(state.reportNotice(this.state, notice));
       return;
     }
-    if (new TextEncoder().encode(draft).length > maxMessageBytes) {
-      this.update({
-        error: `Your message exceeds the ${maxMessageBytes.toLocaleString()} byte limit. Shorten it and try again.`,
-      });
-      return;
-    }
-    this.pending = { text: draft, historyVersion, requestId: this.requestId() };
-    await this.deliver(false);
+    const input = { text: draft, historyVersion, requestId: this.requestId() };
+    await this.deliver(input, 'initial-send');
   };
 
-  private async deliver(replay: boolean) {
-    const input = this.pending;
-    if (!input) return;
-    const operation = ++this.operation;
+  private async deliver(input: Readonly<SubmitInput>, mode: DeliveryMode) {
+    const generation = ++this.deliveryGeneration;
     const controller = new AbortController();
-    this.delivery?.abort();
-    this.delivery = controller;
+    this.deliveryController?.abort();
+    this.deliveryController = controller;
     let observedProgress = false;
     const onProgress = (event: ConversationStreamProgress) => {
-      if (!this.current(operation) || controller.signal.aborted) return;
+      if (!this.current(generation) || controller.signal.aborted) return;
       observedProgress = true;
       if (event.type === 'accepted') {
         this.port.publish?.(event);
-        if (this.pending?.requestId === input.requestId)
-          this.accept(input.requestId, true);
-        this.update({
-          stream:
-            !event.replayed && event.attempt.state === 'running'
-              ? {
-                  historyVersion: event.historyVersion,
-                  turnId: event.turn.id,
-                  attemptId: event.attempt.id,
-                  text: '',
-                }
-              : null,
-        });
+        if (state.unresolvedInput(this.state)?.requestId === input.requestId)
+          this.stopConfirmation?.();
+        this.transition(state.receiveAcceptance(this.state, event));
       } else {
-        const stream = this.snapshot.stream;
+        const stream = this.state.stream;
         if (!stream || stream.attemptId !== event.attemptId) return;
-        // Bound temporary display memory only. The backend still completes and
-        // persists the full answer; a detached reader falls back to history.
+        // Bound temporary display memory; backend execution/persistence continues.
         if (stream.text.length + event.delta.length > 256 * 1024) {
           controller.abort();
           throw new Error('Provisional display limit reached.');
         }
-        this.update({ stream: { ...stream, text: stream.text + event.delta } });
+        this.transition(state.appendText(this.state, event.delta));
       }
     };
-    this.update({ phase: 'sending', error: '' });
+    this.transition(state.beginDelivery(this.state, input));
     try {
       const result = await this.waitForResult(
         input,
         onProgress,
         controller.signal,
       );
-      if (!this.current(operation)) return;
+      if (!this.current(generation)) return;
       this.port.assertCurrent(result.historyVersion);
       this.port.publish?.(result);
-      this.update({ stream: null });
-      if (this.pending?.requestId === input.requestId)
-        this.accept(input.requestId);
-      // A foreground POST may finish before the next poll. Read canonical history.
-      try {
-        const history = await this.port.refresh();
-        this.observe(history);
-      } catch (cause) {
-        if (
-          cause instanceof ObsoleteSessionError ||
-          (cause instanceof RequestError && cause.status === 401)
-        ) {
-          this.reset();
-          return;
-        }
-        if (
-          this.snapshot.lastAcceptedRequestId === input.requestId &&
-          this.snapshot.phase === 'editing'
-        ) {
-          this.update({
-            error:
-              'Message accepted. Refresh the conversation to see its response.',
-          });
-        }
+      this.transition(state.finishResponse(this.state));
+      if (state.unresolvedInput(this.state)?.requestId === input.requestId) {
+        this.stopConfirmation?.();
+        this.deliveryGeneration += 1;
+        this.transition(state.confirmAcceptance(this.state, input.requestId));
       }
-    } catch (cause) {
-      if (this.operation !== operation) return;
+      // A final POST snapshot may precede the next poll. Read canonical history.
+      const history = await this.refreshHistory();
       if (
-        cause instanceof ObsoleteSessionError ||
-        (cause instanceof RequestError && cause.status === 401)
-      ) {
+        !history &&
+        this.state.lastAcceptedRequestId === input.requestId &&
+        this.state.delivery.phase === 'editing'
+      )
+        this.transition(
+          state.reportNotice(this.state, { code: 'accepted-refresh-failed' }),
+        );
+    } catch (cause) {
+      if (this.deliveryGeneration !== generation) return;
+      const failure = state.classifyFailure(cause);
+      if (failure.kind === 'session-lost') {
         this.reset();
         return;
       }
-      if (
-        !this.pending &&
-        this.snapshot.lastAcceptedRequestId === input.requestId &&
-        !(cause instanceof ObsoleteHistoryError) &&
-        !(
-          cause instanceof ConversationApiError &&
-          cause.code === 'STALE_HISTORY'
-        )
-      ) {
-        this.update({ stream: null });
-        // History may have settled the run and deliberately detached this reader.
-        if (observedProgress && !controller.signal.aborted)
-          this.update({
-            error: stoppedStreamMessage,
-          });
+      if (failure.kind === 'history-changed') {
+        this.transition(state.invalidateHistory(this.state));
+        await this.refreshHistory();
+        return;
+      }
+      const accepted =
+        !state.unresolvedInput(this.state) &&
+        this.state.lastAcceptedRequestId === input.requestId;
+      if (accepted) {
+        // Saved history may have deliberately detached this reader already.
+        const notice =
+          observedProgress && !controller.signal.aborted ? 'stream-lost' : null;
+        this.transition(state.loseStream(this.state, notice));
         await this.refreshHistory();
         return;
       }
       if (
-        cause instanceof ObsoleteHistoryError ||
-        (cause instanceof ConversationApiError &&
-          cause.code === 'STALE_HISTORY')
+        failure.kind === 'rejected' &&
+        (failure.reason === 'IDEMPOTENCY_CONFLICT' || mode === 'initial-send')
       ) {
-        this.update({ stream: null });
-        this.pending = null;
-        this.update({
-          draft: '',
-          phase: 'stale',
-          error: 'History changed. Refresh before writing another message.',
-        });
-        await this.refreshHistory();
+        this.transition(state.rejectDelivery(this.state, failure.reason));
+        if (failure.reason === 'BUSY') await this.refreshHistory();
         return;
       }
-      const rejected =
-        cause instanceof ConversationApiError &&
-        [
-          'BUSY',
-          'EXECUTION_UNAVAILABLE',
-          'INVALID_INPUT',
-          'IDEMPOTENCY_CONFLICT',
-        ].includes(cause.code);
-      if (
-        (cause instanceof ConversationApiError &&
-          cause.code === 'IDEMPOTENCY_CONFLICT') ||
-        (!replay &&
-          (rejected || (cause instanceof RequestError && cause.status === 403)))
-      ) {
-        this.pending = null;
-        this.update({ phase: 'editing', error: cause.message });
-        if (cause instanceof ConversationApiError && cause.code === 'BUSY')
-          await this.refreshHistory();
-        return;
-      }
-      // A failed transport/response does not prove that admission failed.
-      this.update({
-        phase: 'uncertain',
-        error:
-          'Delivery is uncertain. Your message is kept below. Check or resend to continue.',
-      });
+      // A later rejected resend cannot prove the original admission failed.
+      this.transition(state.markUncertain(this.state));
       await this.refreshHistory();
     } finally {
-      if (this.delivery === controller) this.delivery = undefined;
+      if (this.deliveryController === controller)
+        this.deliveryController = undefined;
       controller.abort();
     }
   }
 
   private async waitForResult(
-    input: SubmitInput,
+    input: Readonly<SubmitInput>,
     onProgress: (event: ConversationStreamProgress) => void,
     signal: AbortSignal,
   ) {
@@ -350,7 +213,7 @@ export class ConversationSubmission {
     });
     const stop = () => clearTimeout(timer);
     this.stopConfirmation = stop;
-    // Stop waiting for confirmation without claiming to cancel backend work.
+    // Acceptance stops this wait without cancelling admitted backend work.
     try {
       return await Promise.race([
         this.port.submit(input, onProgress, signal),
@@ -368,41 +231,25 @@ export class ConversationSubmission {
       this.observe(history);
       return history;
     } catch (cause) {
-      if (
-        cause instanceof ObsoleteSessionError ||
-        (cause instanceof RequestError && cause.status === 401)
-      )
-        this.reset();
+      if (state.classifyFailure(cause).kind === 'session-lost') this.reset();
       return undefined;
     }
   }
 
   reconcile = async () => {
-    if (this.snapshot.phase !== 'uncertain' && this.snapshot.phase !== 'stale')
-      return;
-    const wasStale = this.snapshot.phase === 'stale';
-    const operation = ++this.operation;
-    this.update({ phase: 'checking', error: '' });
+    const phase = this.state.delivery.phase;
+    if (phase !== 'uncertain' && phase !== 'stale') return;
+    const generation = ++this.deliveryGeneration;
+    this.transition(state.beginCheck(this.state));
     const history = await this.refreshHistory();
-    if (this.operation !== operation) return;
-    if (wasStale) {
-      this.update({
-        phase: 'stale',
-        error:
-          'History could not be refreshed. Try again before writing another message.',
-      });
+    if (this.deliveryGeneration !== generation) return;
+    if (this.state.delivery.phase === 'refreshing-history' || !history) {
+      this.transition(state.failHistoryCheck(this.state));
       return;
     }
-    if (!history) {
-      this.update({
-        phase: 'uncertain',
-        error:
-          'Delivery could not be checked. Check your connection and try again.',
-      });
-      return;
-    }
-    if (!this.current(operation)) return;
-    // Only this explicit action may replay a write, using the original payload/key.
-    await this.deliver(true);
+    if (!this.current(generation)) return;
+    const input = state.unresolvedInput(this.state);
+    // Only this explicit action may replay a write, with its original payload/key.
+    if (input) await this.deliver(input, 'explicit-resend');
   };
 }

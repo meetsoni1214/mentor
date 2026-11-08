@@ -85,6 +85,64 @@ function setup() {
 }
 
 describe('conversation delivery and draft recovery', () => {
+  it('keeps the external-store snapshot stable between actual changes', () => {
+    const { submission } = setup();
+    const before = submission.getSnapshot();
+    expect(submission.getSnapshot()).toBe(before);
+    const changed = vi.fn();
+    const unsubscribe = submission.subscribe(changed);
+    submission.edit('Another draft');
+    const after = submission.getSnapshot();
+    expect(after).not.toBe(before);
+    expect(submission.getSnapshot()).toBe(after);
+    expect(changed).toHaveBeenCalledOnce();
+    unsubscribe();
+    submission.edit('One more draft');
+    expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it.each(['BUSY', 'INVALID_INPUT', 'FORBIDDEN'] as const)(
+    'keeps the original identity when a resend gets an inconclusive %s response',
+    async (code) => {
+      const { submission, submit, requestId } = setup();
+      submit.mockRejectedValueOnce(new RequestError(502));
+      await submission.send(8192);
+      submit.mockRejectedValueOnce(
+        code === 'FORBIDDEN'
+          ? new RequestError(403)
+          : new ConversationApiError(409, code),
+      );
+      await submission.reconcile();
+      expect(submission.getSnapshot()).toMatchObject({
+        draft: text,
+        phase: 'uncertain',
+      });
+      submit.mockImplementation(async (input) => result(input));
+      await submission.reconcile();
+      expect(submit.mock.calls.map(([input]) => input)).toEqual(
+        Array(3).fill(submit.mock.calls[0]![0]),
+      );
+      expect(requestId).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('ends unresolved delivery after a definitive resend conflict and preserves editable text', async () => {
+    const { submission, submit } = setup();
+    submit.mockRejectedValueOnce(new RequestError(502));
+    await submission.send(8192);
+    submit.mockRejectedValueOnce(
+      new ConversationApiError(409, 'IDEMPOTENCY_CONFLICT'),
+    );
+    await submission.reconcile();
+    expect(submission.getSnapshot()).toMatchObject({
+      draft: text,
+      phase: 'editing',
+      error: 'This request key already belongs to different input.',
+    });
+    await submission.reconcile();
+    expect(submit).toHaveBeenCalledTimes(2);
+  });
+
   it('discards the draft if history becomes obsolete immediately before publishing a POST result', async () => {
     const { submission, submit, assertCurrent } = setup();
     const pending = deferred<TurnResult>();
@@ -187,6 +245,18 @@ describe('conversation delivery and draft recovery', () => {
     expect(submission.getSnapshot().error).toBe('Write a message first.');
     expect(submit).not.toHaveBeenCalled();
     expect(requestId).not.toHaveBeenCalled();
+  });
+
+  it('shows browser-owned rejection text even if a caught error contains private details', async () => {
+    const { submission, submit } = setup();
+    const failure = new ConversationApiError(409, 'BUSY');
+    failure.message = 'Synthetic private provider details';
+    submit.mockRejectedValue(failure);
+    await submission.send(8192);
+    expect(submission.getSnapshot().error).toBe(
+      'The assistant is already working. Wait for it to finish.',
+    );
+    expect(submission.getSnapshot().draft).toBe(text);
   });
 
   it('reconciles a dropped response through history without replaying a write', async () => {

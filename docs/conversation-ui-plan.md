@@ -461,3 +461,78 @@ tests, and the production build pass. Comparing the moved modules, workspace, an
 existing tests against the Markdown checkpoint confirms that all non-import
 source content is unchanged. Database integration and browser acceptance were not
 repeated for these file moves.
+
+## Submission readability checkpoint (tasks 3.3b–3.3e)
+
+The refactor keeps the existing browser contract and recovery policy. Read state
+and transitions in `state/submission-state.ts`, then effects in
+`state/conversation-submission.ts`. The hook and composer continue to consume
+`SubmissionSnapshot`. Saved turns belong to Query/PostgreSQL; this state owns
+only the draft, unresolved input, notices, and provisional text.
+
+The coordinator holds one immutable state value and a cached UI projection.
+`deliveryGeneration` gates obsolete callbacks; it is separate from auth session
+generation, server history version, and idempotency request ID. Cancellation and
+the confirmation timer remain coordinator resources. `observeHistory` returns
+acceptance, terminal-state, and history-replacement facts so the coordinator can
+stop confirmation without stopping a healthy reader, or detach it when saved
+history settles. Failure classification discards caught message text; policy
+distinguishes confirmed acceptance, initial send, and explicit resend. The hook,
+composer, query contracts, stream limits, and backend execution remain unchanged.
+
+| Event                                          | State transition                                                        | Coordinator effects                                                             | Behavior tests in `apps/web/tests/`                                                                   |
+| ---------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Edit or invalid Send                           | Editable draft; invalid input has no request ID                         | Validate blank/UTF-8 length before allocating an ID                             | `conversation-submission.test.ts`: byte validation, exact draft, double Send                          |
+| Initial Send                                   | Sending owns the original ID, version, and exact text                   | One POST, confirmation timer, scoped reader                                     | Same file: exact draft, hung POST                                                                     |
+| Acceptance by event or matching history        | Return to editing; clear submitted draft once                           | Stop confirmation timer; preserve healthy delivery; publish committed events    | `conversation-stream-submission.test.ts`: next draft, history-confirmed acceptance                    |
+| No confirmation or inconclusive resend failure | Uncertain retains original input; editing locked                        | Read head; no automatic POST                                                    | `conversation-submission.test.ts`: lost response, unavailable/BUSY/invalid/403 resend, missing page   |
+| Explicit Check or resend                       | Check with original input, then resend only if still unresolved         | Fresh history first; failed check sends nothing; same-key replay                | Same file: failed check, exact payload/count, definitive conflict                                     |
+| Known initial rejection or definitive conflict | Editing retains text, drops unresolved identity                         | Refresh head for BUSY                                                           | Same file: rejected draft, resend conflict                                                            |
+| Disconnect after acceptance                    | Editing preserves next draft, removes partial text, typed stream notice | Detach reader; read saved state; foreground polling                             | `conversation-stream-submission.test.ts`: broken stream, no automatic resend                          |
+| Final result or saved terminal history         | Remove partial text; preserve next draft; clear stream-loss notice      | Publish saved result; terminal history detaches reader                          | Stream submission tests and `conversation-stream.test.ts`: failure/final precedence                   |
+| Session/history replacement                    | Drop private draft/input/stream; stale refresh carries no input         | Invalidate delivery generation, stop timer, abort reader; never replay old text | Both submission files and `conversation-scope.test.ts`: late events, obsolete delivery, stale history |
+| React reads current state                      | Cached snapshot reference until a state change                          | Notify subscribers on transition                                                | `conversation-submission.test.ts`: external-store snapshot stability                                  |
+
+Before production changes on 2026-11-08, the existing browser suite passed all
+108 tests. Added behavior coverage exercises snapshot identity, inconclusive
+resend rejection versus definitive conflict, and callbacks from a detached reader
+after another send. Existing behavior assertions remain in place. Full project
+checks and synthetic browser acceptance will be recorded below after the refactor;
+neither database integration nor live-provider verification is part of this
+browser-only baseline.
+
+Verification after implementation on 2026-11-08:
+
+- `pnpm check` passes formatting, architecture lint, strict types, all 329
+  unit/contract tests, API generation, and the production build. The browser
+  portion now has 115 tests, including seven added behaviors/races. The first
+  full run hit sandbox `listen EPERM` in the existing SDK localhost-stub suite;
+  rerunning with localhost access passed. Generated OpenAPI/client output has
+  no drift. Strict OpenSpec validation and diff whitespace checks pass.
+- Fourteen synthetic scenarios pass at 1365x900 and 390x844: acceptance/next
+  draft, disconnect/saved completion, lost confirmation with same-key resend,
+  history-confirmed acceptance without resend, history replacement, logout,
+  and expired-session cleanup. Healthy streams do not poll; disconnected ones
+  poll and replace partial text with saved output. Recovery preserves the next
+  draft. Disconnect uses one POST/one synthetic run; explicit resend uses two
+  identical payloads/one synthetic run. Session/history replacement neither
+  replays nor restores old content. Browser local/session storage stays empty.
+- The browser runs the actual production frontend on port 3247 through its
+  Next.js rewrite to a synthetic localhost API/SSE fixture on port 4347. For lost
+  confirmation, the fixture commits a synthetic running turn, sends a heartbeat
+  but no acceptance, and temporarily omits it from history. This exercises both
+  explicit replay and later confirmation by a head read. The initial fixture
+  closed before any bytes and triggered transport retry; the completed checks
+  use the heartbeat to establish delivery before simulated loss.
+- Desktop/phone screenshots were inspected; no page overflow was found.
+  Fixture, CLI script/results, scenario counts, and screenshots are under ignored
+  `output/playwright/submission-refactor/`. This is frontend/rewrite evidence
+  with synthetic authentication, storage, and execution. It does not complete
+  real-cookie/NestJS/PostgreSQL/deployed-proxy acceptance. Database integration
+  was not rerun because no backend/database behavior changed. No live model
+  calls, development-data changes, or `.env` edits were made.
+
+Tasks 3.3b–3.3e finish this review checkpoint. Task 3.3 remains open for explicit
+model-attempt retry, Clear history, and full acceptance. Backend refactoring,
+reserved tool configuration, query-adapter contract removal, and search remain
+separate follow-ups. No commit is created until requested.

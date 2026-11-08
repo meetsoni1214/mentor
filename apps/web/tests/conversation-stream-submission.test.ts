@@ -117,13 +117,39 @@ describe('streaming acceptance, provisional display and delivery recovery', () =
     s.submission.observe(historyOf(running));
     s.submission.edit('Next draft');
     s.emit(accepted);
+    s.submission.observe(historyOf(running));
     s.emit(delta);
     expect(s.submission.getSnapshot()).toMatchObject({
       draft: 'Next draft',
       stream: { text: delta.delta },
     });
+    expect(s.signal().aborted).toBe(false);
     s.resolve(completed);
     await s.work;
+  });
+
+  it('ignores an old reader even if cancellation is ignored after a new draft is sent', async () => {
+    const s = setup();
+    s.emit(accepted);
+    s.submission.observe(historyOf(completed));
+    s.submission.edit('Next draft');
+    // Capture the first transport callbacks before the test port is reused.
+    const oldProgress = s.submit.mock.calls[0]![1];
+    s.reject(new Error('Detached reader'));
+    await s.work;
+    const nextWork = s.submission.send(8192);
+    oldProgress(accepted);
+    oldProgress(delta);
+    expect(s.submission.getSnapshot()).toMatchObject({
+      draft: 'Next draft',
+      phase: 'sending',
+      stream: null,
+    });
+    expect(s.submit).toHaveBeenCalledTimes(2);
+    s.submission.reset();
+    oldProgress(delta);
+    s.reject(new Error('Test cleanup'));
+    await nextWork;
   });
 
   it('discards provisional text on a broken stream, retains the next draft, and never automatically resends', async () => {
