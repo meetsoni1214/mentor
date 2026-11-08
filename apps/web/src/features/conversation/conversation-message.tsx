@@ -3,6 +3,7 @@ import type { ConversationHistory } from './conversation-contracts';
 import { MessageTime, RunDetails } from './run-details';
 import { brand } from '../../brand/brand';
 import type { ProvisionalResponse } from './conversation-stream-contracts';
+import { AssistantContent } from './assistant-content';
 
 type Turn = ConversationHistory['turns'][number];
 type Attempt = Turn['attempts'][number];
@@ -61,11 +62,13 @@ export function ConversationMessage({
           className={`message-bubble${latest?.state === 'completed' ? '' : ' message-outcome'}`}
         >
           {latest?.state === 'completed' ? (
-            latest.answer
+            <AssistantContent text={latest.answer ?? ''} />
           ) : latest?.state === 'running' ? (
             <>
               {provisional?.attemptId === latest.id && provisional.text ? (
-                <div className="provisional-answer">{provisional.text}</div>
+                <div className="provisional-answer">
+                  <AssistantContent text={provisional.text} />
+                </div>
               ) : null}
               <p role="status">
                 <span className="working-dot" aria-hidden="true" />

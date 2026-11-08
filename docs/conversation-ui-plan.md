@@ -407,3 +407,34 @@ Verification on 2026-11-07:
 
 Stop here for review. Task 3.3 remains open for retry, Clear history, and full
 acceptance; task 3.4 and full recovery/proxy acceptance remain open as well.
+
+## Markdown response rendering
+
+Assistant responses now pass through `AssistantContent`, which separates message
+layout and attempt state from content rendering. Its `MarkdownContent` renderer
+uses react-markdown and remark-gfm for paragraphs, emphasis, headings, lists,
+quotes, code, tables, strikethrough, and disabled task checkboxes. Both provisional
+streaming text and saved final answers use this renderer; the owner’s input stays
+literal text. This supersedes the escaped-text presentation at checkpoint 2.
+
+Typography, spacing, borders, and surfaces use existing brand tokens. Tables and
+code blocks scroll independently and accept keyboard focus. Raw HTML is escaped,
+generated links render as text, and image syntax renders an alt-text placeholder
+without fetching assets. Recorded sources retain their separate validated links.
+The renderer accepts incomplete Markdown during streaming; final saved state still
+supersedes provisional text through the existing lifecycle.
+
+Future image or interactive responses can be composed at `AssistantContent` after
+introducing a validated content-block contract and backend asset/persistence
+support. This slice keeps the existing answer-string API and storage unchanged;
+it does not implement those future response types or execute generated UI code.
+
+Verification: `pnpm check` passes formatting, lint, strict types, 322 unit/contract
+tests (including five new renderer tests), generated-contract checks, and the
+production build. Synthetic browser checks at 1365px, 390px, and 320px verify
+partial/final formatting, preserved next drafts, literal owner text, inert HTML,
+no remote image/link requests, and no page overflow. Wide tables and code blocks
+scroll using the keyboard. Desktop and phone screenshots were inspected; ignored
+artifacts are under `output/playwright/markdown/`. Database integration was not
+rerun for this frontend-only slice. No live model calls or API/storage contract
+changes were made.

@@ -1,6 +1,8 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    "jsx": "react-jsx",
+    "paths": { "@/*": ["./apps/web/src/*"] },
     "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
