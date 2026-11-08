@@ -136,6 +136,31 @@ function submission(overrides = {}) {
   };
 }
 
+async function streamingTarget(operation: 'submit' | 'retry') {
+  if (operation === 'submit')
+    return { path: '/conversation/turns/stream', input: submission() };
+  const { first, path, input } = await retryTarget();
+  expect(first.attempt.state).toBe('failed');
+  // Counts below concern only retry execution, not the seeded failed attempt.
+  complete.mockClear();
+  return { path, input };
+}
+
+async function retryTarget() {
+  complete.mockResolvedValueOnce({
+    state: 'failed',
+    errorCode: 'PROVIDER_ERROR',
+  });
+  const first = await json<TurnResultDto>(
+    await request('/conversation/turns', 'POST', submission()),
+  );
+  return {
+    first,
+    path: `/conversation/turns/${first.turn.id}/retry/stream`,
+    input: { historyVersion: 0, requestId: randomUUID() },
+  };
+}
+
 describe('actual conversation HTTP boundary', () => {
   beforeAll(async () => {
     vi.stubEnv('DATABASE_URL', databaseUrl);
@@ -202,6 +227,11 @@ describe('actual conversation HTTP boundary', () => {
       ['/conversation/turns', 'POST', submission()],
       ['/conversation/turns/stream', 'POST', submission()],
       [
+        `/conversation/turns/${randomUUID()}/retry/stream`,
+        'POST',
+        { historyVersion: 0, requestId: randomUUID() },
+      ],
+      [
         `/conversation/turns/${randomUUID()}/retry`,
         'POST',
         { historyVersion: 0, requestId: randomUUID() },
@@ -230,6 +260,11 @@ describe('actual conversation HTTP boundary', () => {
     for (const [path, method, body] of [
       ['/conversation/turns', 'POST', submission()],
       ['/conversation/turns/stream', 'POST', submission()],
+      [
+        `/conversation/turns/${randomUUID()}/retry/stream`,
+        'POST',
+        { historyVersion: 0, requestId: randomUUID() },
+      ],
       [
         `/conversation/turns/${randomUUID()}/retry`,
         'POST',
@@ -505,118 +540,287 @@ describe('actual conversation HTTP boundary', () => {
     expect(complete).toHaveBeenCalledTimes(1);
   });
 
-  it('persists a failure after provisional text without saving the partial answer or exposing diagnostics', async () => {
-    complete.mockImplementationOnce(async ({ onTextDelta }) => {
-      onTextDelta?.('Provisional answer');
-      throw new Error(`PRIVATE ${privateKey}`);
-    });
-    const events = await collectEvents(
-      conversationEvents(
-        await request('/conversation/turns/stream', 'POST', submission()),
-      ),
-    );
-    expect(events.map((event) => event.type)).toEqual([
-      'accepted',
-      'text_delta',
-      'result',
-    ]);
-    expect(events[2]).toMatchObject({
-      attempt: { state: 'failed', errorCode: 'PROVIDER_ERROR', answer: null },
-    });
-    expect(JSON.stringify(events)).not.toContain('PRIVATE');
-    expect(JSON.stringify(events)).not.toContain(privateKey);
-    const history = await json<ConversationHistoryDto>(
-      await request('/conversation'),
-    );
-    expect(history.turns[0]?.attempts[0]).toMatchObject({
-      state: 'failed',
-      answer: null,
-    });
-  });
-
-  it('continues execution and persistence after the stream reader disconnects', async () => {
-    let finish!: (outcome: RunOutcome) => void;
-    let signal!: AbortSignal;
-    complete.mockImplementationOnce((input) => {
-      signal = input.signal;
-      input.onTextDelta?.('First');
-      return new Promise<RunOutcome>((resolve) => {
-        finish = resolve;
+  it.each(['submit', 'retry'] as const)(
+    '%s: persists a failure after provisional text without saving the partial answer or exposing diagnostics',
+    async (operation) => {
+      const { path, input } = await streamingTarget(operation);
+      complete.mockImplementationOnce(async ({ onTextDelta }) => {
+        onTextDelta?.('Provisional answer');
+        throw new Error(`PRIVATE ${privateKey}`);
       });
-    });
-    const events = conversationEvents(
-      await request('/conversation/turns/stream', 'POST', submission()),
-    );
-    try {
-      expect((await events.next()).value).toMatchObject({ type: 'accepted' });
-      expect((await events.next()).value).toMatchObject({ type: 'text_delta' });
-      await events.return();
-      expect(signal.aborted).toBe(false);
-    } finally {
-      finish(completed);
-    }
-    await vi.waitFor(async () => {
+      const events = await collectEvents(
+        conversationEvents(await request(path, 'POST', input)),
+      );
+      expect(events.map((event) => event.type)).toEqual([
+        'accepted',
+        'text_delta',
+        'result',
+      ]);
+      expect(events[2]).toMatchObject({
+        attempt: { state: 'failed', errorCode: 'PROVIDER_ERROR', answer: null },
+      });
+      expect(JSON.stringify(events)).not.toContain('PRIVATE');
+      expect(JSON.stringify(events)).not.toContain(privateKey);
       const history = await json<ConversationHistoryDto>(
         await request('/conversation'),
       );
-      expect(history.turns[0]?.attempts[0]?.state).toBe('completed');
-    });
-    expect(complete).toHaveBeenCalledTimes(1);
-  });
+      expect(history.turns[0]?.attempts.at(-1)).toMatchObject({
+        state: 'failed',
+        answer: null,
+      });
+    },
+  );
 
-  it('reports clearing as a redacted stream error and prevents late text/result publication', async () => {
+  it.each(['submit', 'retry'] as const)(
+    '%s: continues execution and persistence after the stream reader disconnects',
+    async (operation) => {
+      const { path, input } = await streamingTarget(operation);
+      let finish!: (outcome: RunOutcome) => void;
+      let signal!: AbortSignal;
+      complete.mockImplementationOnce((input) => {
+        signal = input.signal;
+        input.onTextDelta?.('First');
+        return new Promise<RunOutcome>((resolve) => {
+          finish = resolve;
+        });
+      });
+      const events = conversationEvents(await request(path, 'POST', input));
+      try {
+        expect((await events.next()).value).toMatchObject({ type: 'accepted' });
+        expect((await events.next()).value).toMatchObject({
+          type: 'text_delta',
+        });
+        await events.return();
+        expect(signal.aborted).toBe(false);
+      } finally {
+        finish(completed);
+      }
+      await vi.waitFor(async () => {
+        const history = await json<ConversationHistoryDto>(
+          await request('/conversation'),
+        );
+        expect(history.turns[0]?.attempts.at(-1)?.state).toBe('completed');
+      });
+      expect(complete).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['submit', 'retry'] as const)(
+    '%s: reports clearing as a redacted stream error and prevents late text/result publication',
+    async (operation) => {
+      const { path, input } = await streamingTarget(operation);
+      let finish!: (outcome: RunOutcome) => void;
+      let emit!: (delta: string) => void;
+      complete.mockImplementationOnce(({ onTextDelta }) => {
+        emit = onTextDelta!;
+        emit('Before clear');
+        return new Promise<RunOutcome>((resolve) => {
+          finish = resolve;
+        });
+      });
+      const events = conversationEvents(await request(path, 'POST', input));
+      try {
+        await events.next();
+        await events.next();
+        await json(
+          await request('/conversation/history', 'DELETE', {
+            historyVersion: 0,
+          }),
+        );
+        emit('After clear');
+        expect((await events.next()).value).toMatchObject({
+          type: 'error',
+          code: 'STALE_HISTORY',
+          historyVersion: 0,
+        });
+        expect((await events.next()).done).toBe(true);
+      } finally {
+        finish(completed);
+      }
+      expect(await json(await request('/conversation'))).toEqual({
+        historyVersion: 1,
+        turns: [],
+        nextCursor: null,
+      });
+    },
+  );
+
+  it.each(['submit', 'retry'] as const)(
+    '%s: returns a redacted stream error rather than a result when persistence fails after headers',
+    async (operation) => {
+      const { path, input } = await streamingTarget(operation);
+      const finish = vi
+        .spyOn(DrizzleConversationRepository.prototype, 'finish')
+        .mockRejectedValueOnce(new Error(`PRIVATE ${privateKey}`));
+      try {
+        const events = await collectEvents(
+          conversationEvents(await request(path, 'POST', input)),
+        );
+        expect(events.map((event) => event.type)).toEqual([
+          'accepted',
+          'error',
+        ]);
+        expect(events[1]).toMatchObject({ code: 'INTERNAL_ERROR' });
+        expect(JSON.stringify(events)).not.toContain('PRIVATE');
+        expect(JSON.stringify(events)).not.toContain(privateKey);
+      } finally {
+        finish.mockRestore();
+      }
+    },
+  );
+
+  it('streams a fresh retry on the original message and replays running/completed attempts without another run', async () => {
+    const { first, path, input } = await retryTarget();
     let finish!: (outcome: RunOutcome) => void;
-    let emit!: (delta: string) => void;
     complete.mockImplementationOnce(({ onTextDelta }) => {
-      emit = onTextDelta!;
-      emit('Before clear');
+      onTextDelta?.('Retry 🌱');
       return new Promise<RunOutcome>((resolve) => {
         finish = resolve;
       });
     });
-    const events = conversationEvents(
-      await request('/conversation/turns/stream', 'POST', submission()),
-    );
+    const response = await request(path, 'POST', input);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+    const events = conversationEvents(response);
     try {
-      await events.next();
-      await events.next();
-      await json(
-        await request('/conversation/history', 'DELETE', { historyVersion: 0 }),
-      );
-      emit('After clear');
-      expect((await events.next()).value).toMatchObject({
-        type: 'error',
-        code: 'STALE_HISTORY',
-        historyVersion: 0,
+      const accepted = (await events.next()).value;
+      expect(accepted).toMatchObject({
+        type: 'accepted',
+        replayed: false,
+        turn: first.turn,
+        attempt: {
+          state: 'running',
+          requestId: input.requestId,
+          attemptNumber: 2,
+        },
       });
-      expect((await events.next()).done).toBe(true);
+      expect((await events.next()).value).toMatchObject({
+        type: 'text_delta',
+        turnId: first.turn.id,
+        delta: 'Retry 🌱',
+      });
+      const history = await json<ConversationHistoryDto>(
+        await request('/conversation'),
+      );
+      expect(history.turns).toHaveLength(1);
+      expect(
+        history.turns[0]?.attempts.map((attempt) => attempt.state),
+      ).toEqual(['failed', 'running']);
+      const replay = await collectEvents(
+        conversationEvents(await request(path, 'POST', input)),
+      );
+      expect(replay.map((event) => event.type)).toEqual(['accepted', 'result']);
+      expect(replay[0]).toEqual({ ...accepted, replayed: true });
+      expect(replay[1]).toMatchObject({
+        attempt: { requestId: input.requestId, state: 'running' },
+      });
+      expect(
+        await json(
+          await request(path, 'POST', { ...input, requestId: randomUUID() }),
+          409,
+        ),
+      ).toMatchObject({ code: 'NOT_RETRYABLE' });
+      expect(
+        await json(
+          await request('/conversation/turns/stream', 'POST', submission()),
+          409,
+        ),
+      ).toMatchObject({ code: 'BUSY' });
+      expect(complete).toHaveBeenCalledTimes(2);
     } finally {
       finish(completed);
     }
-    expect(await json(await request('/conversation'))).toEqual({
-      historyVersion: 1,
-      turns: [],
-      nextCursor: null,
+    const result = (await events.next()).value;
+    expect(result).toMatchObject({
+      type: 'result',
+      turn: first.turn,
+      attempt: {
+        state: 'completed',
+        requestId: input.requestId,
+        inputTokens: 12,
+        outputTokens: 3,
+      },
     });
+    expect((await events.next()).done).toBe(true);
+    const saved = await json<TurnResultDto>(
+      await request(
+        `/conversation/turns/${first.turn.id}/retry`,
+        'POST',
+        input,
+      ),
+    );
+    expect(result).toEqual({ type: 'result', ...saved });
+    await json(
+      await request(
+        '/conversation/turns',
+        'POST',
+        submission({ text: 'A newer message' }),
+      ),
+    );
+    const replay = await collectEvents(
+      conversationEvents(await request(path, 'POST', input)),
+    );
+    expect(replay).toEqual([
+      { type: 'accepted', replayed: true, ...saved },
+      { type: 'result', ...saved },
+    ]);
+    expect(complete).toHaveBeenCalledTimes(3);
   });
 
-  it('returns a redacted stream error rather than a result when persistence fails after headers', async () => {
-    const finish = vi
-      .spyOn(DrizzleConversationRepository.prototype, 'finish')
-      .mockRejectedValueOnce(new Error(`PRIVATE ${privateKey}`));
-    try {
-      const events = await collectEvents(
-        conversationEvents(
-          await request('/conversation/turns/stream', 'POST', submission()),
-        ),
+  it('rejects invalid, conflicting, stale, missing, older, and completed retry admissions as JSON', async () => {
+    const { first, path, input } = await retryTarget();
+    const rejected = async (
+      route: string,
+      body: unknown,
+      status: number,
+      code: string,
+    ) => {
+      const response = await request(route, 'POST', body);
+      expect(response.headers.get('content-type')).toContain(
+        'application/json',
       );
-      expect(events.map((event) => event.type)).toEqual(['accepted', 'error']);
-      expect(events[1]).toMatchObject({ code: 'INTERNAL_ERROR' });
-      expect(JSON.stringify(events)).not.toContain('PRIVATE');
-      expect(JSON.stringify(events)).not.toContain(privateKey);
-    } finally {
-      finish.mockRestore();
-    }
+      expect(await json(response, status)).toMatchObject({ code });
+    };
+    for (const body of [
+      { ...input, requestId: 'invalid' },
+      { ...input, ownerId: randomUUID() },
+      { ...input, text: 'Cannot change the message' },
+    ])
+      await rejected(path, body, 400, 'INVALID_INPUT');
+    await rejected(
+      '/conversation/turns/invalid/retry/stream',
+      input,
+      400,
+      'INVALID_INPUT',
+    );
+    await rejected(
+      `/conversation/turns/${randomUUID()}/retry/stream`,
+      input,
+      404,
+      'NOT_FOUND',
+    );
+    await rejected(path, { ...input, historyVersion: 1 }, 409, 'STALE_HISTORY');
+    await rejected(
+      path,
+      { ...input, requestId: first.turn.requestId },
+      409,
+      'IDEMPOTENCY_CONFLICT',
+    );
+    await json(
+      await request(path, 'POST', input, { 'content-type': 'text/plain' }),
+      415,
+    );
+    const newer = await json<TurnResultDto>(
+      await request('/conversation/turns', 'POST', submission()),
+    );
+    await rejected(path, input, 409, 'NOT_RETRYABLE');
+    await rejected(
+      `/conversation/turns/${newer.turn.id}/retry/stream`,
+      input,
+      409,
+      'NOT_RETRYABLE',
+    );
+    expect(complete).toHaveBeenCalledTimes(2);
   });
 
   it('rejects invalid streaming commands as JSON before any SSE headers or model work', async () => {
@@ -787,6 +991,14 @@ describe('actual conversation HTTP boundary', () => {
           historyVersion: 0,
           requestId: randomUUID(),
         }),
+        503,
+      );
+      await json(
+        await request(
+          `/conversation/turns/${first.turn.id}/retry/stream`,
+          'POST',
+          { historyVersion: 0, requestId: randomUUID() },
+        ),
         503,
       );
       expect(

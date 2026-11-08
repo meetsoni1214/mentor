@@ -4,7 +4,7 @@
 
 See proposal.md for motivation and scope. The repository has Next.js presentation, NestJS API and worker entry points, Drizzle/PostgreSQL, generated OpenAPI types, and owner authentication. Conversation persistence, run lifecycle, AI configuration, SDK/API composition, protected routes, and backend streaming are implemented. The browser workspace implements history pagination, sending, draft preservation, delivery recovery, and streaming through task 3.3a. Assistant Markdown rendering and organization into `api/`, `state/`, and `ui/` are also implemented. Recorded local verification is in docs/conversation-loop.md and docs/conversation-ui-plan.md; ordinary model verification uses injected fakes or the actual SDK against localhost HTTP stubs. The worker exposes health checks only.
 
-The next checkpoint is the behavior-preserving browser submission refactor in tasks 3.3b–3.3e. Explicit model-attempt retry and Clear history controls, full interaction/auth recovery acceptance, public-web investigation, and live-model verification remain pending. Task 3.3 stays open. Existing authentication browser acceptance is documented in docs/sign-in.md.
+The behavior-preserving browser submission refactor in tasks 3.3b–3.3e is implemented. Explicit attempt retry with SSE extends the existing streaming path rather than using JSON plus polling as the normal retry experience. Backend task 2.7 is implemented and verified as a separate review stop at the owner's request; browser/verification tasks 3.3f–3.3g remain the next implementation work. Clear history controls, full interaction/auth recovery acceptance, public-web investigation, and live-model verification remain pending. Task 3.3 stays open. Existing authentication browser acceptance is documented in docs/sign-in.md.
 
 The existing broad change puts library capture/retrieval first and excludes external-service actions. The owner prioritizes an assistant conversation runtime as the foundation for later email monitoring and approved actions, and has selected the Agents SDK from the first model integration. This focused change takes priority for that foundation; its narrower scope does not silently complete the older roadmap's recall, SSE, export, or proactivity tasks. Reconcile overlapping artifacts before archive. Update milestone documentation during implementation to distinguish completed work from each new SDK/API checkpoint.
 
@@ -105,7 +105,9 @@ Add these versioned routes, with generated request/result DTOs and the existing 
 | GET `/api/v1/assistant/status`                   | Enabled state and execution limits; no secrets                                                                                         |
 | GET `/api/v1/conversation`                       | Automatically resolve the owner's single transcript; return history version and cursor-paginated turns, attempt status, activity and sources; absent state is an empty transcript      |
 | POST `/api/v1/conversation/turns`                | Submit text, submission UUID, observed history version; initialize singleton state if needed, execute once or replay existing state                                                    |
+| POST `/api/v1/conversation/turns/stream`         | Stream committed admission, provisional text, and the persisted result for a new message using the existing submission command                                                            |
 | POST `/api/v1/conversation/turns/{turnId}/retry` | Explicit idempotent attempt for the latest retryable turn, checking observed history version                                                                                           |
+| POST `/api/v1/conversation/turns/{turnId}/retry/stream` | Stream an explicit retry using the same retry command and SSE event shapes, retaining the original turn and allocating a fresh attempt key                                            |
 | DELETE `/api/v1/conversation/history`            | Clear all messages and dependent content with expected history version in the JSON body; retain the singleton and increment version; reject stale repeats without deleting newer input |
 
 No model work occurs from GET requests. GET reconciliation can terminalize expired attempts but cannot resume paid work. Mutations require existing Origin/CSRF checks. Missing/non-owned turn IDs return 404. History cursors include the history version; stale cursors return a recoverable conflict rather than mixing pre-clear and post-clear pages. Add conflict/assistant-specific errors to the existing stable envelope; distinguish busy, provider unavailable, refusal, incomplete, invalid response, and interrupted attempts without leaking raw provider errors. Do not reuse the sign-in-specific 429 message for assistant limits.
@@ -232,11 +234,78 @@ into more methods: it makes valid state combinations and transitions inspectable
 Replacing it with a new state-machine framework or a React-effect-driven request
 loop would introduce another lifecycle model and is unnecessary for this slice.
 
+### 7.2. Explicit attempt retry with SSE
+
+Tasks 2.7 and 3.3f–3.3g form the next planned review checkpoint. The owner selected
+SSE for retries so new messages and retried responses both show acceptance and
+incremental text. JSON plus polling is not the primary retry path. Keep the
+existing JSON retry endpoint compatible; no persistence schema change is expected.
+
+Expose POST `/api/v1/conversation/turns/{turnId}/retry/stream` with the existing
+`RetryInput` body (`requestId`, `historyVersion`) and turn ID in the path. Extend
+`ConversationLoop.retry` with the same optional application progress observer as
+`submit`, forwarding it to the existing execution path. Reuse the HTTP adapter's
+SSE framing, event mapping, redacted errors, buffering, and cleanup for both
+operations, with explicit submit/retry entry points. Keep controllers thin and
+avoid duplicating the model execution or transport lifecycle. Do not route retry
+through new-turn submission, attach a replay to an existing runner, or change SDK
+retry, privacy, cancellation, or limit policies.
+
+Use the existing `accepted`, `text_delta`, `result`, and `error` shapes. A retry's
+accepted event follows committed admission of its new attempt. Reposting the
+same retry key returns that attempt's persisted snapshot and closes without new
+execution or live attachment, including when it is already completed or newer
+turns exist, subject to existing history-version and execution-availability checks.
+Admission failures stay JSON before SSE starts. Disconnect detaches delivery;
+deadline, completion, and history-version checks still govern persistence.
+
+The browser calls the generated streaming retry endpoint with fresh CSRF and
+validates history version, requested turn ID, and `attempt.requestId` against
+the retry command. The original `turn.requestId` continues to identify the first
+message submission and must not be compared to the new retry key. Subsequent
+events must keep the accepted turn/attempt identity. Reuse the bounded reader and
+event validation, keeping operation-specific identity checks explicit.
+
+Extend the existing pure state/coordinator split with a typed send-or-retry
+operation. An unresolved send owns its original `SubmitInput`; an unresolved
+retry owns the target turn ID and original `RetryInput`. Do not manufacture a
+submission payload for retry or add another independent coordinator. Keep
+initial delivery versus explicit replay separate from the operation kind.
+Only accepting a new-message submission clears its submitted draft. Retry
+acceptance, rejection, completion, replay, and duplicate confirmations preserve
+the current composer draft. Existing session/history replacement still clears
+private state. Saved history confirms a retry by its attempt request ID on the
+target turn; an older failed attempt on the same turn cannot settle the retry.
+
+Show `Retry response` only for the newest turn whose latest attempt is failed or
+interrupted, matching the backend rule without a new error-code eligibility policy.
+Disable the action while signing out, status/history is unavailable, execution is
+disabled, a mutation is unresolved, or an attempt is running. Prevent duplicate
+clicks before awaiting network work. The backend remains authoritative for races
+with another tab. Preserve earlier attempts in run details; show progress and
+provisional output on the same message. Sending stays blocked during unresolved
+retry or active execution; after acceptance the next draft remains editable.
+Surface missing/non-retryable turns safely, refresh history, and invite a new
+message without automatically copying or submitting the old text.
+
+Preserve the 15-second confirmation wait, 30-second idle timeout, stream bounds,
+and two-second foreground recovery polling. A matching healthy live retry stream
+pauses polling; unconfirmed delivery or a running attempt without a live reader
+uses history recovery. An accepted running replay has no live attachment and
+therefore still polls. A saved terminal retry result supersedes partial text.
+Unknown delivery retains the exact retry command; only an explicit recovery
+action may replay it after a successful fresh history check, using the same key.
+A failed check sends nothing. Inconclusive replay rejection does not prove the
+original attempt was never admitted; keep definitive conflict, stale-history,
+and session-loss handling distinct. Neither connection loss nor reload starts a
+fresh attempt automatically. Reload restores persisted history, not an unsent
+draft or a durable live-stream subscription.
+
 ### 8. Verification and learning checkpoints
 
 Use injected provider fakes for normal application tests and the actual Agents SDK/Responses provider against a local HTTP stub for adapter contract tests. Intercept or deny all non-stub outbound traffic, including trace export, so tests never use real credentials or paid requests. Verify serialized `store: false`, no provider-managed conversation state, retry request counts, redaction, cancellation before/between requests, and aggregation of usage. Use synthetic test-only tools to exercise SDK iterations, default iteration-limit errors, and cancellation; never register them in production or treat their output as real investigation. Extend the existing disposable PostgreSQL integration suite; update its fixed expected migration count only if an additional migration is needed. Cover real HTTP authorization and CSRF, concurrent/idempotent admission, deadline races, history-clear races, stale-tab replays, singleton first-use concurrency, retry ordering, and limit persistence across API restart.
 
-The next review checkpoint is the browser submission refactor, tasks 3.3b–3.3e.
+The completed browser submission refactor checkpoint used tasks 3.3b–3.3e.
 First record the transition/behavior map and run the existing browser test baseline.
 Keep assertions about visible outcomes, request counts/identity, draft lifetimes,
 polling, and stale-event suppression; add tests only for meaningful missing cases.
@@ -255,8 +324,33 @@ checkpoint evidence separate from the current entry point. Synthetic browser
 verification does not complete the broader real-auth/API/database/proxy acceptance
 in tasks 3.3–3.5. Database integration is not required for this browser-only
 checkpoint unless implementation crosses that boundary; report what was not rerun.
-No live model calls are part of this refactor. Stop for review before adding retry,
-Clear history, or search; commit only when requested.
+No live model calls were part of that refactor. Its review boundary preceded retry,
+Clear history, and search; commit only when requested.
+
+For the next SSE retry checkpoint, verify real SDK streaming through local HTTP
+stubs and actual HTTP routes with injected execution and disposable PostgreSQL.
+Assert one original message, a fresh retry attempt, early text, final persistence
+and available usage, same-key replay without another runner, JSON admission
+errors, redacted post-header errors, disconnect isolation, and late-output
+suppression after deadline or history clearing. Retain compatible JSON behavior.
+Regenerate contracts with `pnpm build:services && pnpm api:generate` and inspect
+the generated diff. Run `pnpm check`, `pnpm test:integration`, strict OpenSpec
+validation, and `git diff --check` before marking the checkpoint verified.
+
+Browser behavior tests and synthetic phone/desktop checks cover retry eligibility,
+double clicks, healthy SSE without polling, early/final/failed text, preserved
+composer drafts, attempt-key validation, acceptance through history without
+detaching a healthy stream, lost confirmation with exact-key recovery, failed
+checks without POST replay, disconnect and saved completion, reload, another-tab
+admission races, and session/history replacement. Verify that an older terminal
+attempt cannot settle the retry and late callbacks cannot regress saved results.
+Record fixture versus real HTTP/database evidence and unavailable checks in
+docs/conversation-ui-plan.md and docs/conversation-loop.md, with a concrete
+retry/disconnect/recovery reading trace. Update AGENTS.md during implementation
+to identify this checkpoint. Do not claim synthetic authentication proves full
+task-3.4 acceptance. No live model calls, development-data changes, or `.env`
+edits are required. Stop after the complete retry slice for review before Clear
+history, broader acceptance, or investigation; commit only when requested.
 
 Browser acceptance uses synthetic content on phone/desktop: sign in, send a message, continue with a context-dependent follow-up, refresh during work, recover a failed attempt, inspect activity/sources, clear history while work is running, verify old tabs cannot replay cleared input, and expire/logout during a request. Also return on a later date/change topic without creating or selecting a thread; overflow model context while retaining older browsable history. Include adversarial fixtures for invented action claims, unsafe links, prompt injection, refusal, incomplete responses, and unknown output shapes. Deterministic checks verify enforcement and output handling; they do not prove all generated claims are true.
 
@@ -275,7 +369,7 @@ A separately enabled, bounded live smoke check requires existing server credenti
 
 ## Migration Plan
 
-1. Implement tasks 3.3b–3.3e as one browser submission refactor checkpoint, then stop for review before the remaining interaction and investigation work. Earlier SDK/API and browser streaming checkpoints are implemented. Preserve completed work and unrelated local modifications; the refactor changes neither API/storage contracts nor backend execution and requires no migration.
+1. Implement task 2.7 and tasks 3.3f–3.3g as one SSE attempt-retry checkpoint, then stop for review before Clear history, broader acceptance, or investigation. Earlier SDK/API, browser streaming, and browser submission refactor checkpoints are implemented. Preserve completed work and unrelated local modifications. This slice adds a streaming retry API contract and browser controls, reuses existing execution/persistence rules, and is expected to require no migration.
 2. Apply new migrations only to the disposable integration database during verification. Existing development data is migrated through the normal documented command, without schema push or volume deletion.
 3. Earlier checkpoints removed the stricter budget policy and its model-call setting; obsolete extra environment keys are ignored. Preserve the standard SDK configuration, explicit tracing/storage/retry policies, and existing `.env`. AI execution becomes ready automatically with valid server model/key/finite-limit configuration; missing or invalid settings preserve read-only history. Cloud-processing documentation stays in place without a composer disclosure footer, following the owner's revised UI decision.
 4. Roll back to the prior application version with AI disabled; keep additive tables for a forward fix rather than destructively rolling back private history.

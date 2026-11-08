@@ -96,6 +96,7 @@ export class ConversationLoop {
     ownerId: string,
     turnId: string,
     command: unknown,
+    onProgress?: ConversationProgressObserver,
   ): Promise<Admission> {
     const input = {
       ...parseConversationInput(retryTurnSchema, command),
@@ -104,7 +105,7 @@ export class ConversationLoop {
     };
     const execution = this.requireExecution();
     const admission = await this.repository.retry(input, execution.limits);
-    return this.execute(input.ownerId, admission, execution);
+    return this.execute(input.ownerId, admission, execution, onProgress);
   }
 
   history(ownerId: string, options: unknown = {}) {

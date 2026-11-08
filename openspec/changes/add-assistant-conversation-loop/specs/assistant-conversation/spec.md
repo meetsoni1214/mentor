@@ -60,7 +60,7 @@ The system SHALL distinguish running, completed, failed, and interrupted attempt
 
 ### Requirement: Explicit retry
 
-The owner SHALL be able to retry the latest failed or interrupted turn using a new attempt identifier without duplicating the original message. Retry SHALL require fresh admission checks and start a fresh bounded SDK run from application-owned context; it SHALL not automatically resume uncertain intermediate SDK state. Retry SHALL never happen automatically after an uncertain provider outcome. Completed turns and turns preceding newer messages SHALL not be retried through this operation.
+The owner SHALL be able to retry only the latest failed or interrupted turn with a fresh attempt key, preserving the original message and earlier attempts. Retry SHALL use fresh admission checks and application-owned context for a new bounded SDK run. Completed or older turns SHALL NOT be retried. Uncertain provider outcomes SHALL NOT trigger automatic retries or intermediate-state resumption.
 
 #### Scenario: Provider times out
 
@@ -71,6 +71,45 @@ The owner SHALL be able to retry the latest failed or interrupted turn using a n
 
 - **WHEN** the owner attempts to retry a failed turn after a newer turn exists
 - **THEN** retry is rejected and the app offers to start a new message instead
+
+### Requirement: Recoverable streamed retry
+
+The browser SHALL offer `Retry response` on an eligible turn and consume authenticated SSE for acceptance, provisional text, and the persisted outcome. All retry delivery outcomes SHALL preserve the composer draft. Uncertain delivery SHALL retain the original retry command for explicit reconciliation, with session/history replacement clearing private state as usual.
+
+#### Scenario: Retry action is unavailable
+
+- **WHEN** execution is unavailable, history/status is not ready, sign-out is in progress, a mutation is unresolved, or an attempt is running
+- **THEN** the retry action is disabled and cannot start another attempt
+
+#### Scenario: Retry streams on the original message
+
+- **WHEN** the owner retries the latest failed or interrupted turn while a different draft is in the composer
+- **THEN** one fresh attempt is recorded on the original turn, earlier attempts remain inspectable, provisional text appears on that turn, and retry acceptance and completion preserve the draft
+
+#### Scenario: Duplicate retry clicks and request replay
+
+- **WHEN** the owner clicks retry repeatedly or explicitly replays an unresolved retry command
+- **THEN** duplicate in-flight actions do not allocate another retry key, and replay with the same turn ID, request ID, and history version returns the saved attempt without duplicating the message or starting another runner
+
+#### Scenario: Retry delivery is uncertain
+
+- **WHEN** the retry's acceptance is not received
+- **THEN** the browser retains the original retry command and checks the target turn's attempt request IDs in saved history; the original message request ID or an older failed attempt cannot confirm or settle the retry, and only explicit recovery after a successful fresh history check may replay the same command
+
+#### Scenario: Retry history check fails
+
+- **WHEN** the owner requests recovery but saved history cannot be read
+- **THEN** the retry command remains unresolved, the composer draft is preserved, and no POST is sent
+
+#### Scenario: Another tab changes retry eligibility
+
+- **WHEN** a newer turn or running attempt makes a displayed retry action stale before admission
+- **THEN** server admission rejects the retry without starting another run, the browser refreshes saved history and explains the outcome, and the composer draft is preserved
+
+#### Scenario: Retry loses its stream or reloads
+
+- **WHEN** an accepted retry disconnects, produces invalid events, becomes idle, or the page reloads
+- **THEN** saved history and foreground polling recover the attempt's outcome without automatic POST replay, and no replacement model attempt starts merely because live delivery ended
 
 ### Requirement: Bounded conversation context
 
@@ -120,12 +159,22 @@ The owner SHALL be able to clear all messages, attempts, and source/activity rec
 
 ### Requirement: Provisional browser response display
 
-The browser SHALL consume authenticated SSE submission using the existing session and mutation protections. It SHALL validate event identities and display provisional answer text separately from saved history. Committed admission SHALL clear only the submitted draft and end delivery confirmation waiting; final output SHALL NOT clear the next draft. Saved terminal results SHALL supersede provisional text.
+The browser SHALL consume authenticated SSE for submission and retry with session and mutation protections. It SHALL validate event identities and keep provisional text outside saved history. Admission SHALL end confirmation waiting, clearing only a new message's submitted draft and preserving the draft for retry. Final output SHALL NOT clear the next draft. Saved terminal results SHALL supersede provisional text.
 
 #### Scenario: Healthy live response
 
 - **WHEN** admission and text events arrive for the current session, history version, turn, and attempt
 - **THEN** the submitted draft clears on acceptance, provisional text appears before completion, the next draft remains editable, and periodic history polling pauses for that live attempt
+
+#### Scenario: Healthy live retry
+
+- **WHEN** accepted retry events match the requested history version, turn ID, and new attempt request ID
+- **THEN** the current draft is preserved, provisional text appears before completion, and periodic history polling pauses while the matching live retry stream is healthy
+
+#### Scenario: Retry stream identity mismatch
+
+- **WHEN** a retry stream reports a different turn or attempt request ID, even if it matches the original message submission key
+- **THEN** the browser rejects the events and recovers through saved history without publishing mismatched content or automatically replaying the retry
 
 #### Scenario: Lost or invalid stream
 

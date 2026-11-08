@@ -143,6 +143,93 @@ afterAll(async () => {
 });
 
 describe('composed conversation use case, real SDK, and PostgreSQL', () => {
+  it.each(['completed', 'incomplete'] as const)(
+    'streams a real SDK retry through %s and replays its persisted attempt without another request',
+    async (status) => {
+      const loop = compose();
+      const input = submission();
+      stub.enqueue(
+        { error: { message: 'Synthetic failure', type: 'api_error' } },
+        503,
+      );
+      const first = await submitTurn(loop, input);
+      expect(first.attempt.state).toBe('failed');
+      const command = { historyVersion: 0, requestId: randomUUID() };
+      let stream: ReturnType<typeof startResponseStream> | undefined;
+      stub.replies.push((res) => {
+        stream = startResponseStream(res);
+        stream.delta('Retried 🌱');
+      });
+      const progress: ConversationProgress[] = [];
+      const running = loop.retry(ownerId, first.turn.id, command, (event) =>
+        progress.push(event),
+      );
+      try {
+        await vi.waitFor(() =>
+          expect(progress.some((event) => event.type === 'text_delta')).toBe(
+            true,
+          ),
+        );
+        expect(progress[0]).toMatchObject({
+          type: 'accepted',
+          admission: {
+            execute: true,
+            turn: first.turn,
+            attempt: { requestId: command.requestId, attemptNumber: 2 },
+          },
+        });
+        const history = await compose().history(ownerId);
+        expect(history.turns).toHaveLength(1);
+        expect(history.turns[0]?.attempts.at(-1)).toMatchObject({
+          state: 'running',
+          answer: null,
+          requestId: command.requestId,
+        });
+        const replayProgress: ConversationProgress[] = [];
+        expect(
+          (
+            await compose().retry(ownerId, first.turn.id, command, (event) =>
+              replayProgress.push(event),
+            )
+          ).execute,
+        ).toBe(false);
+        expect(replayProgress).toHaveLength(1);
+        expect(replayProgress[0]?.type).toBe('accepted');
+        expect(stub.requests).toHaveLength(2);
+        expect(stub.requests[1]?.body).toMatchObject({
+          stream: true,
+          store: false,
+        });
+      } finally {
+        stream?.finish(status);
+      }
+      const saved = await running;
+      expect(saved.turn).toEqual(first.turn);
+      expect(saved.attempt).toMatchObject({
+        state: status === 'completed' ? 'completed' : 'failed',
+        answer: status === 'completed' ? 'Retried 🌱' : null,
+        errorCode: status === 'completed' ? null : 'INCOMPLETE',
+        requestId: command.requestId,
+        inputTokens: 11,
+        outputTokens: 7,
+      });
+      expect(
+        (await compose().retry(ownerId, first.turn.id, command, () => {}))
+          .attempt,
+      ).toEqual(saved.attempt);
+      expect(stub.requests).toHaveLength(2);
+      expect((await compose().history(ownerId)).turns[0]?.attempts).toEqual([
+        first.attempt,
+        saved.attempt,
+      ]);
+      stub.enqueue(response('Follow-up'));
+      await submitTurn(compose(), submission({ text: 'Continue' }));
+      const nextContext = JSON.stringify(stub.requests[2]?.body.input);
+      if (status === 'completed') expect(nextContext).toContain('Retried 🌱');
+      else expect(nextContext).not.toContain('Retried');
+    },
+  );
+
   it('streams real SDK text before completion, saves usage, and rebuilds follow-up context from the final answer', async () => {
     const loop = compose();
     const { ownerId: owner, ...command } = submission();
@@ -383,34 +470,53 @@ describe('composed conversation use case, real SDK, and PostgreSQL', () => {
     expect(stub.requests[0]!.body.input).toHaveLength(1);
   });
 
-  it('cancels an actual pending SDK request at the application deadline without retrying', async () => {
-    const short = readAIEnvironment({
-      OPENAI_API_KEY: 'synthetic-test-key',
-      OPENAI_CHAT_MODEL: 'test-model',
-      AI_DEADLINE_MS: '200',
-    });
-    const loop = compose(short);
-    let closed!: () => void;
-    const cancelled = new Promise<void>((resolve) => {
-      closed = resolve;
-    });
-    stub.replies.push((res) => {
-      res.once('close', closed);
-    });
-    const result = await submitTurn(loop, submission());
-    expect(result.attempt).toMatchObject({
-      state: 'interrupted',
-      errorCode: 'INTERRUPTED',
-      answer: null,
-      inputTokens: null,
-      outputTokens: null,
-    });
-    await cancelled;
-    expect(stub.requests).toHaveLength(1);
-    expect((await loop.history(ownerId)).turns[0]?.attempts[0]).toEqual(
-      result.attempt,
-    );
-  });
+  it.each(['submit', 'retry'] as const)(
+    '%s cancels an actual pending SDK request at the application deadline without another run',
+    async (operation) => {
+      let first;
+      if (operation === 'retry') {
+        stub.enqueue(
+          { error: { message: 'Synthetic failure', type: 'api_error' } },
+          503,
+        );
+        first = await submitTurn(compose(), submission());
+      }
+      const short = readAIEnvironment({
+        OPENAI_API_KEY: 'synthetic-test-key',
+        OPENAI_CHAT_MODEL: 'test-model',
+        AI_DEADLINE_MS: '200',
+      });
+      const loop = compose(short);
+      let closed!: () => void;
+      const cancelled = new Promise<void>((resolve) => {
+        closed = resolve;
+      });
+      stub.replies.push((res) => {
+        res.once('close', closed);
+        if (operation === 'retry') startResponseStream(res);
+      });
+      const result = first
+        ? await loop.retry(
+            ownerId,
+            first.turn.id,
+            { historyVersion: 0, requestId: randomUUID() },
+            () => {},
+          )
+        : await submitTurn(loop, submission());
+      expect(result.attempt).toMatchObject({
+        state: 'interrupted',
+        errorCode: 'INTERRUPTED',
+        answer: null,
+        inputTokens: null,
+        outputTokens: null,
+      });
+      await cancelled;
+      expect(stub.requests).toHaveLength(operation === 'retry' ? 2 : 1);
+      expect((await loop.history(ownerId)).turns[0]?.attempts.at(-1)).toEqual(
+        result.attempt,
+      );
+    },
+  );
 
   it('rejects invalid, unknown-owner, and non-retryable work before another SDK call', async () => {
     const loop = compose();

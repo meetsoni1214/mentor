@@ -54,6 +54,32 @@ function ownerId(request: AuthenticatedRequest): string {
   return request.authSession.owner.id;
 }
 
+function ApiConversationStreamResponse() {
+  return ApiOkResponse({
+    description:
+      'SSE events with JSON data: accepted, text_delta, result, or error. ' +
+      'Result is saved state (possibly running on replay); EOF is not success. ' +
+      'Replays never attach to or restart model work. Recover through history reads.',
+    content: {
+      'text/event-stream': {
+        schema: {
+          type: 'string',
+          ...{
+            'x-event-schemas': {
+              accepted: { $ref: getSchemaPath(ConversationAcceptedEventDto) },
+              text_delta: {
+                $ref: getSchemaPath(ConversationTextDeltaEventDto),
+              },
+              result: { $ref: getSchemaPath(ConversationResultEventDto) },
+              error: { $ref: getSchemaPath(ConversationStreamErrorEventDto) },
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
 @ApiTags('assistant')
 @ApiCookieAuth()
 @ApiResponse({ status: 401, type: ApiErrorDto })
@@ -177,29 +203,7 @@ export class ConversationController {
   @ApiBody({ type: SubmitTurnDto })
   @ApiHeader({ name: 'Origin', required: true })
   @ApiHeader({ name: 'X-CSRF-Token', required: true })
-  @ApiOkResponse({
-    description:
-      'SSE events with JSON data: accepted, text_delta, result, or error. ' +
-      'Result is saved state (possibly running on replay); EOF is not success. ' +
-      'Replays never attach to or restart model work. Recover through history reads.',
-    content: {
-      'text/event-stream': {
-        schema: {
-          type: 'string',
-          ...{
-            'x-event-schemas': {
-              accepted: { $ref: getSchemaPath(ConversationAcceptedEventDto) },
-              text_delta: {
-                $ref: getSchemaPath(ConversationTextDeltaEventDto),
-              },
-              result: { $ref: getSchemaPath(ConversationResultEventDto) },
-              error: { $ref: getSchemaPath(ConversationStreamErrorEventDto) },
-            },
-          },
-        },
-      },
-    },
-  })
+  @ApiConversationStreamResponse()
   async submitStream(
     @Req() request: AuthenticatedRequest,
     @Body() body: unknown,
@@ -226,6 +230,23 @@ export class ConversationController {
     return describeResult(
       await this.conversation.retry(ownerId(request), turnId, body),
     );
+  }
+
+  @Post('turns/:turnId/retry/stream')
+  @HttpCode(200)
+  @ApiParam({ name: 'turnId', format: 'uuid' })
+  @ApiBody({ type: RetryTurnDto })
+  @ApiHeader({ name: 'Origin', required: true })
+  @ApiHeader({ name: 'X-CSRF-Token', required: true })
+  @ApiConversationStreamResponse()
+  async retryStream(
+    @Req() request: AuthenticatedRequest,
+    @Param('turnId') turnId: string,
+    @Body() body: unknown,
+    @Res() response: ServerResponse,
+  ): Promise<void> {
+    requireJson(request);
+    return this.streaming.retry(ownerId(request), turnId, body, response);
   }
 
   @Delete('history')

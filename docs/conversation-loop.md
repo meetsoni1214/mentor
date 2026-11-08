@@ -8,7 +8,8 @@ adapter in the API's ConversationModule. Tasks 2.4–2.5 expose and document pro
 status and singleton conversation routes with generated OpenAPI/client types.
 Application-owned Zod schemas validate commands; shared HTTP presenters map
 responses and a dedicated streaming HTTP service owns SSE delivery.
-The backend also exposes opt-in [SSE submission](#backend-streaming-slice-1).
+The backend also exposes opt-in [SSE submission](#backend-streaming-slice-1)
+and [SSE attempt retry](#backend-streaming-attempt-retry-task-27).
 The current web screen consumes SSE submission and uses history polling for
 recovery when no matching live stream exists. Verification uses
 synthetic credentials and responses; no paid calls, email connection, or
@@ -21,8 +22,8 @@ Task 3.2 renders the continuous transcript, pagination, and run details in a
 monochrome workspace. Owner messages align right and Mentor replies
 align left. The approved sending portion of task 3.3 now enables the composer,
 retains rejected drafts, reconciles uncertain delivery, and polls persisted work.
-Explicit attempt retry, Clear history, and full interaction/auth acceptance remain
-later slices; task 3.3 is still open.
+Browser controls for explicit attempt retry, Clear history, and full
+interaction/auth acceptance remain later slices; task 3.3 is still open.
 
 See [the sending checkpoint](conversation-ui-plan.md#checkpoint-3a-sending-and-delivery-recovery)
 for the UI state transitions, module responsibilities, and verification limits.
@@ -305,13 +306,15 @@ cookie. The signature is session- and process-bound; fetch a fresh one after log
 or API restart. Browser requests use the existing same-origin Next.js `/api/*`
 proxy; the frontend never needs the provider key or a backend-package import.
 
-| Method/path                               | Input                                                                                             | Successful response                                              |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| GET `/assistant/status`                   | None                                                                                              | `enabled` and safe `limits`, or null limits when disabled        |
-| GET `/conversation`                       | Optional `limit` (default 20, range 1–100); optional paired `historyVersion` and `beforeSequence` | Version, chronological turns with all attempts, and `nextCursor` |
-| POST `/conversation/turns`                | `text`, `requestId` UUID, `historyVersion`                                                        | Version, one turn, and the request's attempt                     |
-| POST `/conversation/turns/{turnId}/retry` | `requestId` UUID and `historyVersion`; turn UUID in path                                          | Same result shape, with a fresh attempt or the replayed retry    |
-| DELETE `/conversation/history`            | `historyVersion` in JSON body                                                                     | Incremented `historyVersion`                                     |
+| Method/path                                      | Input                                                                                             | Successful response                                              |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| GET `/assistant/status`                          | None                                                                                              | `enabled` and safe `limits`, or null limits when disabled        |
+| GET `/conversation`                              | Optional `limit` (default 20, range 1–100); optional paired `historyVersion` and `beforeSequence` | Version, chronological turns with all attempts, and `nextCursor` |
+| POST `/conversation/turns`                       | `text`, `requestId` UUID, `historyVersion`                                                        | Version, one turn, and the request's attempt                     |
+| POST `/conversation/turns/stream`                | Same body as JSON submission                                                                      | SSE admission, provisional text, and saved result                |
+| POST `/conversation/turns/{turnId}/retry`        | `requestId` UUID and `historyVersion`; turn UUID in path                                          | Same result shape, with a fresh attempt or the replayed retry    |
+| POST `/conversation/turns/{turnId}/retry/stream` | Same body and path parameter as JSON retry                                                        | SSE admission, provisional text, and saved retry result          |
+| DELETE `/conversation/history`                   | `historyVersion` in JSON body                                                                     | Incremented `historyVersion`                                     |
 
 No conversation ID or owner ID is accepted from the browser. There are no create,
 list, rename, or select-conversation routes. GET never starts or resumes model work;
@@ -332,7 +335,7 @@ For example, this submission body contains only application command fields:
 Use the version actually read from history, not a hardcoded zero. Matching replay
 uses the same key, text, and version. It returns existing state without another
 runner. An explicit retry after failure uses a fresh key; reconciling that retry
-reuses its key. Both POST operations normally wait for completion, but a replay
+reuses its key. Both JSON POST operations normally wait for completion, but a replay
 can return a still-running attempt. Responses omit internal execution flags, raw
 SDK state, hidden reasoning, and provider exception text. Dates are ISO strings;
 available SDK usage is retained, including unsuccessful attempts.
@@ -889,6 +892,68 @@ passes. No live OpenAI call, existing `.env` edit, database migration, or
 development-data operation occurred. Task 2.6 is complete; browser streaming and
 end-to-end recovery/proxy acceptance remain open. Stop here for review; commit
 when requested.
+
+## Backend streaming attempt retry (task 2.7)
+
+`POST /api/v1/conversation/turns/{turnId}/retry/stream` accepts the existing
+retry JSON body `{ requestId, historyVersion }`, with the same session, Origin,
+and CSRF protections. It streams `accepted`, `text_delta`, `result`, and `error`
+using the existing event shapes, headers, heartbeats, and buffering limits.
+The compatible JSON retry route remains available. This backend checkpoint
+does not add a browser retry control; that is task 3.3f.
+
+Follow the request through these files:
+
+1. `apps/api/src/conversation/adapters/driving/http/conversation.controller.ts`:
+   `retryStream` checks the media type, takes ownership from the session, and
+   delegates to the stream service. Both streaming routes share response metadata.
+2. `conversation-stream.service.ts` in the same directory: explicit `submit` and
+   `retry` entry points use one delivery lifecycle for progress mapping, redacted
+   errors after SSE starts, and cleanup.
+3. `packages/backend/src/conversation/application/conversation-loop.ts`:
+   `retry` validates the existing command, admits through the unchanged repository
+   rules, and forwards the optional observer to the shared execution path. The
+   model adapter enables SDK streaming when text progress is requested.
+
+For example, a failed turn keeps its original message and submission request ID.
+An intentional retry supplies a fresh request ID and creates attempt 2. The
+accepted event carries that new ID in `attempt.requestId`; `turn.requestId` still
+identifies the original message. Text events identify the accepted turn/attempt,
+and the result is sent only after conditional persistence. Prior attempts remain
+inspectable, and failed partial text never becomes durable answer context.
+
+If the reader disconnects, delivery detaches while bounded execution and
+persistence continue. History can reveal attempt 2's saved outcome. Reposting
+the same retry key returns accepted/result snapshots with `replayed: true`, even
+for a running attempt, without starting another runner or attaching to its live
+text. Matching completed retry keys remain replayable after newer messages.
+Fresh retries still require the newest failed/interrupted turn. History-version
+and execution-availability checks continue to apply to replay.
+
+Admission failures remain JSON before SSE headers. Deadline and history clearing
+suppress late text/publication; failures after headers use a redacted error event
+or a saved unsuccessful result. No schema migration or SDK policy change is needed.
+
+Verification on 2026-11-08:
+
+- `pnpm check` passes formatting, lint, strict types, all 335 unit/contract tests,
+  API generation, and the production build. The initial sandbox run could not
+  bind localhost for the SDK stub; rerunning with localhost access passed.
+- `pnpm test:integration` passes all 104 checks using disposable PostgreSQL,
+  production HTTP routes/guards with injected execution, and the actual SDK
+  against localhost stubs. Docker access required execution outside the sandbox;
+  the test runner removed its own container/network/volume after verification.
+- Added retry coverage checks early text, successful/failed SDK usage, JSON
+  compatibility, running/completed replay including after newer turns, admission
+  rejection, redaction, reader/observer isolation, and deadline/clear suppression.
+  Existing submit streaming cases also remain verified.
+- Strict OpenSpec validation and `git diff --check` pass. Comparing generated
+  OpenAPI against the preceding contract shows only the added retry streaming
+  route; existing paths and schemas are unchanged. No migration was added.
+
+No browser acceptance, live model calls, development-data operations, or `.env`
+changes occurred. Task 2.7 is complete; browser retry and full slice acceptance
+remain tasks 3.3f–3.3g. The owner requested this backend-only review stop.
 
 ## Browser streaming slice 2
 

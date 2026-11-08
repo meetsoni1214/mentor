@@ -929,6 +929,179 @@
         ]
       }
     },
+    "/api/v1/conversation/turns/{turnId}/retry/stream": {
+      "post": {
+        "operationId": "ConversationController_retryStream",
+        "parameters": [
+          {
+            "name": "turnId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryTurnDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSE events with JSON data: accepted, text_delta, result, or error. Result is saved state (possibly running on replay); EOF is not success. Replays never attach to or restart model work. Recover through history reads.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "x-event-schemas": {
+                    "accepted": {
+                      "$ref": "#/components/schemas/ConversationAcceptedEventDto"
+                    },
+                    "text_delta": {
+                      "$ref": "#/components/schemas/ConversationTextDeltaEventDto"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ConversationResultEventDto"
+                    },
+                    "error": {
+                      "$ref": "#/components/schemas/ConversationStreamErrorEventDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_INPUT for conversation validation; BAD_REQUEST for malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConversationErrorDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiErrorDto"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationErrorDto"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorDto"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "conversation"
+        ]
+      }
+    },
     "/api/v1/conversation/history": {
       "delete": {
         "operationId": "ConversationController_clear",

@@ -5,6 +5,7 @@ import { ConversationLoop } from '../../packages/backend/src/conversation/applic
 import type {
   Admission,
   ConversationProgress,
+  ConversationProgressObserver,
   RunLimits,
   Submission,
 } from '../../packages/backend/src/conversation/application/conversation.contracts.js';
@@ -30,7 +31,7 @@ const output: Extract<RunOutcome, { state: 'completed' }> = {
   contextLimited: false,
 };
 
-function setup() {
+function setup(operation: 'submit' | 'retry' = 'submit') {
   const input: Submission = {
     ownerId: randomUUID(),
     historyVersion: 0,
@@ -51,8 +52,8 @@ function setup() {
     attempt: {
       id: randomUUID(),
       turnId: randomUUID(),
-      requestId: input.requestId,
-      attemptNumber: 1,
+      requestId: operation === 'retry' ? randomUUID() : input.requestId,
+      attemptNumber: operation === 'retry' ? 2 : 1,
       model: 'fake-model',
       state: 'running',
       startedAt: now,
@@ -91,12 +92,31 @@ function setup() {
   const model = {
     complete: vi.fn<ConversationModel['complete']>().mockResolvedValue(output),
   };
+  const loop = new ConversationLoop(repository, {
+    enabled: true,
+    model,
+    limits,
+  });
+  const run = (observer: ConversationProgressObserver) =>
+    operation === 'submit'
+      ? loop.submit(
+          input.ownerId,
+          { requestId: input.requestId, text: input.text, historyVersion: 0 },
+          observer,
+        )
+      : loop.retry(
+          input.ownerId,
+          admission.turn.id,
+          { requestId: admission.attempt.requestId, historyVersion: 0 },
+          observer,
+        );
   return {
     input,
     admission,
+    run,
     repository,
     model,
-    loop: new ConversationLoop(repository, { enabled: true, model, limits }),
+    loop,
   };
 }
 
@@ -105,93 +125,111 @@ afterEach(() => {
 });
 
 describe('bounded conversation execution', () => {
-  it('acknowledges committed admission, delivers provisional text, and awaits persistence before returning', async () => {
-    const { input, loop, model, repository, admission } = setup();
-    const { ownerId, ...command } = input;
-    const events: ConversationProgress[] = [];
-    let finish!: () => void;
-    const stored = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
-    model.complete.mockImplementation(async ({ onTextDelta }) => {
-      expect(repository.submit).toHaveBeenCalled();
-      expect(events).toEqual([{ type: 'accepted', admission }]);
-      onTextDelta?.('Provisional text');
-      return output;
-    });
-    const saved = {
-      ...admission.attempt,
-      state: 'completed' as const,
-      answer: output.answer,
-      finishedAt: new Date(),
-      errorCode: null,
-    };
-    repository.finish.mockImplementation(async () => {
-      await stored;
-      return saved;
-    });
-    let settled = false;
-    const run = loop
-      .submit(ownerId, command, (event) => events.push(event))
-      .then((result) => {
+  it.each(['submit', 'retry'] as const)(
+    '%s acknowledges committed admission, delivers provisional text, and awaits persistence before returning',
+    async (operation) => {
+      const { run: execute, model, repository, admission } = setup(operation);
+      const events: ConversationProgress[] = [];
+      let finish!: () => void;
+      const stored = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      model.complete.mockImplementation(async ({ onTextDelta }) => {
+        expect(repository[operation]).toHaveBeenCalled();
+        expect(events).toEqual([{ type: 'accepted', admission }]);
+        onTextDelta?.('Provisional text');
+        return output;
+      });
+      const saved = {
+        ...admission.attempt,
+        state: 'completed' as const,
+        answer: output.answer,
+        finishedAt: new Date(),
+        errorCode: null,
+      };
+      repository.finish.mockImplementation(async () => {
+        await stored;
+        return saved;
+      });
+      let settled = false;
+      const run = execute((event) => events.push(event)).then((result) => {
         settled = true;
         return result;
       });
-    try {
-      await vi.waitFor(() =>
-        expect(repository.finish).toHaveBeenCalledTimes(1),
-      );
-      expect(settled).toBe(false);
-      expect(events[1]).toEqual({
-        type: 'text_delta',
-        historyVersion: 0,
-        turnId: admission.turn.id,
-        attemptId: admission.attempt.id,
-        delta: 'Provisional text',
+      try {
+        await vi.waitFor(() =>
+          expect(repository.finish).toHaveBeenCalledTimes(1),
+        );
+        expect(settled).toBe(false);
+        expect(events[1]).toEqual({
+          type: 'text_delta',
+          historyVersion: 0,
+          turnId: admission.turn.id,
+          attemptId: admission.attempt.id,
+          delta: 'Provisional text',
+        });
+      } finally {
+        finish();
+      }
+      expect((await run).attempt).toEqual(saved);
+    },
+  );
+
+  it.each(['submit', 'retry'] as const)(
+    '%s reports replayed admission without requesting text or starting another model',
+    async (operation) => {
+      const { run, repository, model, admission } = setup(operation);
+      const replay = { ...admission, execute: false };
+      repository[operation].mockResolvedValue(replay);
+      const observer = vi.fn();
+      expect(await run(observer)).toEqual(replay);
+      expect(observer).toHaveBeenCalledExactlyOnceWith({
+        type: 'accepted',
+        admission: replay,
       });
-    } finally {
-      finish();
-    }
-    expect((await run).attempt).toEqual(saved);
-  });
+      expect(model.complete).not.toHaveBeenCalled();
+    },
+  );
 
-  it('reports replayed admission without requesting text or starting another model', async () => {
-    const { input, loop, repository, model, admission } = setup();
-    const replay = { ...admission, execute: false };
-    repository.submit.mockResolvedValue(replay);
-    const { ownerId, ...command } = input;
-    const observer = vi.fn();
-    expect(await loop.submit(ownerId, command, observer)).toEqual(replay);
-    expect(observer).toHaveBeenCalledExactlyOnceWith({
-      type: 'accepted',
-      admission: replay,
-    });
-    expect(model.complete).not.toHaveBeenCalled();
-  });
+  it.each(['submit', 'retry'] as const)(
+    '%s isolates progress observer errors from admission and persistence',
+    async (operation) => {
+      const { run, model, repository } = setup(operation);
+      model.complete.mockImplementation(async ({ onTextDelta }) => {
+        onTextDelta?.('Text');
+        return output;
+      });
+      expect(
+        (
+          await run(() => {
+            throw new Error('reader gone');
+          })
+        ).attempt.state,
+      ).toBe('completed');
+      expect(repository.finish).toHaveBeenCalledTimes(1);
+    },
+  );
 
-  it('isolates progress observer errors from admission and persistence', async () => {
-    const { input, loop, model, repository } = setup();
-    const { ownerId, ...command } = input;
-    model.complete.mockImplementation(async ({ onTextDelta }) => {
-      onTextDelta?.('Text');
-      return output;
-    });
-    expect(
-      (
-        await loop.submit(ownerId, command, () => {
-          throw new Error('reader gone');
-        })
-      ).attempt.state,
-    ).toBe('completed');
-    expect(repository.finish).toHaveBeenCalledTimes(1);
-  });
-
-  it.each(['deadline', 'clear', 'settled'] as const)(
-    'suppresses late text after %s even if the model ignores cancellation',
-    async (ending) => {
+  it.each([
+    ['submit', 'deadline'],
+    ['submit', 'clear'],
+    ['submit', 'settled'],
+    ['retry', 'deadline'],
+    ['retry', 'clear'],
+    ['retry', 'settled'],
+  ] as const)(
+    '%s suppresses late text after %s even if the model ignores cancellation',
+    async (operation, ending) => {
       vi.useFakeTimers();
-      const { input, loop, model, repository, admission } = setup();
-      const { ownerId, ...command } = input;
+      const {
+        input,
+        loop,
+        run: execute,
+        model,
+        repository,
+        admission,
+      } = setup(operation);
+      const { ownerId } = input;
       let emit!: (delta: string) => void;
       let resolve!: (outcome: RunOutcome) => void;
       model.complete.mockImplementation(({ onTextDelta }) => {
@@ -202,7 +240,7 @@ describe('bounded conversation execution', () => {
         });
       });
       const events: ConversationProgress[] = [];
-      const run = loop.submit(ownerId, command, (event) => events.push(event));
+      const run = execute((event) => events.push(event));
       await vi.advanceTimersByTimeAsync(0);
       if (ending === 'clear') {
         repository.finish.mockResolvedValue(null);
