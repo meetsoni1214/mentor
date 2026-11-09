@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, lt, lte, sql } from 'drizzle-orm';
 import type { DatabaseConnection } from '../../database/index.js';
-import { owners } from '../../identity/schema.js';
+import { lockOwnerForUpdate } from '../../identity/persistence.js';
 import {
   assertRetryable,
   canFinish,
@@ -47,12 +47,8 @@ export class DrizzleConversationRepository implements ConversationRepository {
     operation: (tx: Transaction, now: Date) => Promise<T>,
   ): Promise<T> {
     return this.db.transaction(async (tx) => {
-      const [owner] = await tx
-        .select({ id: owners.id })
-        .from(owners)
-        .where(eq(owners.id, ownerId))
-        .for('update');
-      if (!owner) throw new ConversationError('NOT_FOUND');
+      if (!(await lockOwnerForUpdate(tx, ownerId)))
+        throw new ConversationError('NOT_FOUND');
       // Read after acquiring the lock, rather than transaction-start time.
       const result = await tx.execute<{ now: string }>(
         sql`select clock_timestamp() as now`,

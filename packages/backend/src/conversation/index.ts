@@ -1,4 +1,6 @@
 export { ConversationLoop } from './application/conversation-loop.js';
+export { ConversationActivity } from './application/conversation-activity.js';
+export type { ConversationActivityReader } from './application/ports/conversation-activity.reader.js';
 export type { ConversationExecution } from './application/conversation-loop.js';
 export { ConversationError } from './domain/conversation.js';
 export type {

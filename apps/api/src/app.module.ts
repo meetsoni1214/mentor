@@ -4,9 +4,15 @@ import { APP_FILTER } from '@nestjs/core';
 import { IdentityModule } from './identity/infrastructure/identity.module.js';
 import { HttpErrorFilter } from './http-error.filter.js';
 import { ConversationModule } from './conversation/infrastructure/conversation.module.js';
+import { MemoryModule } from './memory/infrastructure/memory.module.js';
 
 @Module({
-  imports: [IdentityModule, ConversationModule, HealthModule.forService('api')],
+  imports: [
+    IdentityModule,
+    ConversationModule,
+    MemoryModule,
+    HealthModule.forService('api'),
+  ],
   providers: [{ provide: APP_FILTER, useClass: HttpErrorFilter }],
 })
 export class AppModule {}

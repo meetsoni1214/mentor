@@ -50,6 +50,8 @@ export default {
           core: 'Domain and application code may depend only on their own core. Application boundary validation may also use Zod.',
           private:
             'Cross-module imports must use a declared public entry file.',
+          repository:
+            'Repositories must access their own module tables. Use module services at the transaction composition boundary for other modules.',
         },
       },
       create(context) {
@@ -60,7 +62,7 @@ export default {
           ? from.slice(backend.length).split('/')[0]
           : null;
         const core = from.match(
-          /^packages\/backend\/src\/(identity|conversation)\/(domain\/|application\/|index\.ts$)/,
+          /^packages\/backend\/src\/(identity|conversation|memory)\/(domain\/|application\/|index\.ts$)/,
         );
 
         function check(node, specifier) {
@@ -107,6 +109,15 @@ export default {
                 target?.startsWith(`${moduleRoot}application/`)) ||
               (layer === 'application' && specifier === 'zod');
             if (!allowed) messageId = 'core';
+          } else if (
+            fromBackend &&
+            /\/adapters\/.*\.repository\.ts$/.test(from) &&
+            target?.startsWith(backend) &&
+            target.slice(backend.length).split('/')[0] !== fromModule &&
+            publicFiles.has(target) &&
+            /(?:\/schema|\.schema)\.ts$/.test(target)
+          ) {
+            messageId = 'repository';
           } else if (fromBackend && target?.startsWith(backend)) {
             const targetModule = target.slice(backend.length).split('/')[0];
             if (fromModule !== targetModule && !publicFiles.has(target))

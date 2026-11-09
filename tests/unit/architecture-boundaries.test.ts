@@ -11,6 +11,8 @@ const repository =
   'packages/backend/src/conversation/adapters/drizzle-conversation.repository.ts';
 const web = 'apps/web/src/features/auth/auth-api.ts';
 const composition = 'apps/api/src/identity/infrastructure/identity.module.ts';
+const memoryRepository =
+  'packages/backend/src/memory/adapters/drizzle-memory.repository.ts';
 
 async function boundaries(filePath: string, code: string) {
   const [result] = await eslint.lintText(code, { filePath });
@@ -100,6 +102,35 @@ describe('enforced architecture boundaries', () => {
       "import './src/identity/application/sessions.js';",
       'package',
     ],
+    ['packages/backend/src/memory/domain/memory.ts', "import 'zod';", 'core'],
+    [
+      'packages/backend/src/memory/application/personal-memory.ts',
+      "import '@mentor/backend/conversation';",
+      'core',
+    ],
+    [
+      'packages/backend/src/memory/application/personal-memory.ts',
+      "import '../adapters/drizzle-memory.repository.js';",
+      'core',
+    ],
+    [
+      'packages/backend/src/memory/index.ts',
+      "export * from './persistence.js';",
+      'core',
+    ],
+    [web, "import '@mentor/backend/memory';", 'browser'],
+    [memoryRepository, "import '../../identity/schema.js';", 'repository'],
+    [
+      memoryRepository,
+      "import '@mentor/backend/conversation/schema';",
+      'repository',
+    ],
+    [repository, "import '../../identity/schema.js';", 'repository'],
+    [
+      'packages/backend/src/memory/application/ports/memory.transactions.ts',
+      "import type { DatabaseTransaction } from '@mentor/backend/database';",
+      'core',
+    ],
   ])('rejects %s importing %s', async (file, code, messageId) => {
     expect(await boundaries(file, code)).toMatchObject([{ messageId }]);
   });
@@ -117,7 +148,7 @@ describe('enforced architecture boundaries', () => {
     [domain, "import './admission-policy.js';"],
     [
       repository,
-      "import '../../identity/schema.js'; import '../../database/index.js'; import 'drizzle-orm';",
+      "import '../../identity/persistence.js'; import '../../database/index.js'; import 'drizzle-orm';",
     ],
     [
       'packages/backend/src/database/schema.ts',
@@ -134,6 +165,22 @@ describe('enforced architecture boundaries', () => {
     [
       'tests/integration/conversation.test.ts',
       "import '@mentor/backend/conversation'; import '@mentor/backend/conversation/persistence';",
+    ],
+    [
+      composition,
+      "import '@mentor/backend/memory'; import '@mentor/backend/memory/persistence';",
+    ],
+    [
+      'packages/backend/src/memory/application/personal-memory.ts',
+      "import '../domain/memory.js'; import './ports/memory.repository.js'; import 'zod';",
+    ],
+    [
+      memoryRepository,
+      "import './memory.schema.js'; import '../../database/index.js';",
+    ],
+    [
+      'apps/api/src/memory/infrastructure/create-personal-memory.ts',
+      "import '@mentor/backend/identity/persistence'; import '@mentor/backend/conversation'; import '@mentor/backend/conversation/persistence'; import '@mentor/backend/memory/persistence';",
     ],
   ])('allows %s importing %s', async (file, code) => {
     expect(await boundaries(file, code)).toEqual([]);

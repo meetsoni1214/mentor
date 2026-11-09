@@ -59,6 +59,18 @@
     "./http": {
       "types": "./dist/http/public-route.d.ts",
       "import": "./dist/http/public-route.js"
+    },
+    "./memory": {
+      "types": "./dist/memory/index.d.ts",
+      "import": "./dist/memory/index.js"
+    },
+    "./memory/persistence": {
+      "types": "./dist/memory/persistence.d.ts",
+      "import": "./dist/memory/persistence.js"
+    },
+    "./memory/schema": {
+      "types": "./dist/memory/schema.d.ts",
+      "import": "./dist/memory/schema.js"
     }
   },
   "scripts": {

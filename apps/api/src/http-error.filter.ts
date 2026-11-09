@@ -1,5 +1,6 @@
 import type { ServerResponse } from 'node:http';
 import { ConversationError } from '@mentor/backend/conversation';
+import { MemoryError } from '@mentor/backend/memory';
 import { Catch, HttpException, Logger } from '@nestjs/common';
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 
@@ -63,17 +64,56 @@ const conversationErrors: Record<
   },
 };
 
+const memoryErrors: Record<
+  MemoryError['code'],
+  { status: number; message: string }
+> = {
+  INVALID_INPUT: {
+    status: 400,
+    message:
+      'Use a direct Remember that request with nonblank wording of at most 512 UTF-8 bytes and an original request of at most 1024 bytes.',
+  },
+  NOT_FOUND: {
+    status: 404,
+    message: 'The memory was not found.',
+  },
+  IDEMPOTENCY_CONFLICT: {
+    status: 409,
+    message: 'This request identifier was already used with different input.',
+  },
+  BUSY: {
+    status: 409,
+    message:
+      'The assistant is working. Wait for the current attempt to finish before changing memory.',
+  },
+  LIMIT_EXCEEDED: {
+    status: 409,
+    message:
+      'Memory is full. The profile allows 20 entries and 4096 UTF-8 bytes of wording.',
+  },
+};
+
 @Catch()
 export class HttpErrorFilter implements ExceptionFilter {
   catch(error: unknown, host: ArgumentsHost) {
     const response = host.switchToHttp().getResponse<ServerResponse>();
-    const conversationError =
+    const applicationError =
       error instanceof ConversationError
         ? conversationErrors[error.code]
-        : undefined;
+        : error instanceof MemoryError
+          ? memoryErrors[error.code]
+          : undefined;
     const status =
-      conversationError?.status ??
-      (error instanceof HttpException ? error.getStatus() : 500);
+      applicationError?.status ??
+      (error instanceof HttpException
+        ? error.getStatus()
+        : error instanceof Error &&
+            'type' in error &&
+            error.type === 'entity.too.large' &&
+            'status' in error &&
+            error.status === 413
+          ? 413
+          : 500);
     if (status >= 500)
       Logger.error('An API request failed; check service health.', 'HTTP');
     response.statusCode = status;
@@ -82,8 +122,9 @@ export class HttpErrorFilter implements ExceptionFilter {
     response.end(
       JSON.stringify({
         statusCode: status,
-        ...(conversationError && error instanceof ConversationError
-          ? { code: error.code, message: conversationError.message }
+        ...(applicationError &&
+        (error instanceof ConversationError || error instanceof MemoryError)
+          ? { code: error.code, message: applicationError.message }
           : (errors[status] ?? {
               code: 'INTERNAL_ERROR',
               message: 'The request could not be completed.',

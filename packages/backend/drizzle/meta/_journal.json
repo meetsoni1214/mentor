@@ -64,6 +64,13 @@
       "when": 1792920875472,
       "tag": "0008_remove_disclosure_acknowledgements",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794203580380,
+      "tag": "0009_explicit_personal_memory",
+      "breakpoints": true
     }
   ]
 }

@@ -16,3 +16,6 @@ export function createDatabase(environment: DatabaseEnvironment) {
 }
 
 export type DatabaseConnection = ReturnType<typeof createDatabase>;
+export type DatabaseTransaction = Parameters<
+  Parameters<DatabaseConnection['db']['transaction']>[0]
+>[0];
