@@ -11,10 +11,10 @@ export class SaveMemoryDto {
 }
 
 export class MemoryLimitsDto {
-  @ApiProperty({ enum: [20] }) maxEntries!: number;
-  @ApiProperty({ enum: [512] }) maxEntryBytes!: number;
-  @ApiProperty({ enum: [4096] }) maxProfileBytes!: number;
-  @ApiProperty({ enum: [1024] }) maxRequestBytes!: number;
+  @ApiProperty({ type: Number, minimum: 1 }) maxEntries!: number;
+  @ApiProperty({ type: Number, minimum: 1 }) maxEntryBytes!: number;
+  @ApiProperty({ type: Number, minimum: 1 }) maxProfileBytes!: number;
+  @ApiProperty({ type: Number, minimum: 1 }) maxRequestBytes!: number;
 }
 
 export class MemoryEntryDto {

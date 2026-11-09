@@ -13,6 +13,7 @@ export function ConversationComposer({
   onReconcile,
   blockedReason,
   disabled,
+  memoryPayload,
 }: {
   state: SubmissionSnapshot;
   onDraftChange: (draft: string) => void;
@@ -20,6 +21,7 @@ export function ConversationComposer({
   onReconcile: () => void;
   blockedReason: string | null;
   disabled: boolean;
+  memoryPayload?: string | undefined;
 }) {
   const recovering = state.phase === 'uncertain' || state.phase === 'stale';
   const pending = state.phase === 'sending' || state.phase === 'checking';
@@ -34,7 +36,9 @@ export function ConversationComposer({
         ? state.pendingRetryTurnId
           ? 'Check or resend retry'
           : 'Check or resend message'
-        : 'Send message';
+        : memoryPayload !== undefined
+          ? 'Save memory'
+          : 'Send message';
   const hint =
     state.phase === 'sending'
       ? state.pendingRetryTurnId
@@ -50,6 +54,14 @@ export function ConversationComposer({
   return (
     <footer className="composer-region">
       <div className="composer-content">
+        {memoryPayload !== undefined && (
+          <p className="memory-preview">
+            <strong>Save memory:</strong>{' '}
+            <span className="memory-wording">
+              {memoryPayload || 'Enter the wording to save.'}
+            </span>
+          </p>
+        )}
         {state.error && (
           <Alert className="composer-error" id="composer-error">
             <AlertDescription>{state.error}</AlertDescription>
@@ -98,12 +110,16 @@ export function ConversationComposer({
               {hint}
             </p>
             <Button
-              size="icon"
+              size={
+                memoryPayload !== undefined && !recovering ? 'default' : 'icon'
+              }
               type="submit"
               disabled={unavailable}
               aria-label={label}
             >
-              {recovering ? (
+              {memoryPayload !== undefined && !recovering ? (
+                'Save memory'
+              ) : recovering ? (
                 <RotateCcw aria-hidden="true" />
               ) : (
                 <ArrowUp aria-hidden="true" />

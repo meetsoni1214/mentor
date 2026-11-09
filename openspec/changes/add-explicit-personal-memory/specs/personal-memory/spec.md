@@ -55,8 +55,13 @@ The owner SHALL be able to list active memories, inspect its current wording, or
 
 #### Scenario: Inspect source
 
-- **WHEN** the owner opens a memory's source details
-- **THEN** the UI identifies a direct owner memory request and shows its saved wording without inventing a conversation-turn link
+- **WHEN** the owner requests a memory through the protected detail API
+- **THEN** the response includes its original direct owner request, request ID, and creation timestamp without inventing a conversation-turn link
+
+#### Scenario: Focused memory panel
+
+- **WHEN** the owner opens the Memory panel
+- **THEN** the panel lists saved wording without technical IDs, source details, timestamps, capacity counters, byte limits, or implementation plans
 
 ### Requirement: Explicit targeted correction
 

@@ -1,9 +1,9 @@
-export const memoryLimits = Object.freeze({
-  maxEntries: 20,
-  maxEntryBytes: 512,
-  maxProfileBytes: 4096,
-  maxRequestBytes: 1024,
-});
+import {
+  memoryLimits,
+  parseMemoryCommand,
+  wordingBytes,
+} from '@mentor/memory-command';
+export { memoryLimits } from '@mentor/memory-command';
 
 export type MemoryErrorCode =
   | 'INVALID_INPUT'
@@ -18,23 +18,10 @@ export class MemoryError extends Error {
   }
 }
 
-export function wordingBytes(text: string): number {
-  return new TextEncoder().encode(text).byteLength;
-}
-
 export function explicitMemoryWording(request: string): string {
-  // PostgreSQL text cannot retain NUL or unpaired UTF-16 surrogates exactly.
-  if (
-    /[\uD800-\uDFFF]/u.test(request) ||
-    request.includes('\0') ||
-    wordingBytes(request) > memoryLimits.maxRequestBytes ||
-    !/^remember that /i.test(request)
-  )
-    throw new MemoryError('INVALID_INPUT');
-  const text = request.slice('Remember that '.length).trim();
-  if (!text || wordingBytes(text) > memoryLimits.maxEntryBytes)
-    throw new MemoryError('INVALID_INPUT');
-  return text;
+  const command = parseMemoryCommand(request);
+  if (!command?.valid) throw new MemoryError('INVALID_INPUT');
+  return command.text;
 }
 
 export function assertProfileCapacity(texts: string[], text: string): void {

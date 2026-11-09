@@ -11,6 +11,9 @@ import { BrandLockup } from '../../brand/brand-logo';
 import { useConversationSubmission } from './state/use-conversation-submission';
 import { clearNoticeText, retryableTurnId } from './state/submission-state';
 import { hasRunningAttempt } from './state/conversation-polling';
+import { useMemory } from '../memory/state/use-memory';
+import { memoryCommand } from '../memory/api/memory-contracts';
+import { MemoryPanel, MemorySaveNotice } from '../memory/ui/memory-panel';
 import {
   ClearHistoryDialog,
   HistoryClearNotice,
@@ -34,6 +37,13 @@ export function ConversationWorkspace({
     createConversationQueries(session, queryClient),
   );
   const { submission, state } = useConversationSubmission(conversation);
+  const {
+    memory,
+    save: memorySave,
+    state: memoryState,
+  } = useMemory(session, submission.clearSubmittedDraft);
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const command = memoryCommand(state.draft);
   const [clearVersion, setClearVersion] = useState<number | null>(null);
   const clearing = state.historyClear.phase !== 'idle';
   const loadingClearedHistory = ['refreshing', 'refresh-failed'].includes(
@@ -74,6 +84,18 @@ export function ConversationWorkspace({
                 : state.stream || hasRunningAttempt(history.head.data)
                   ? 'Working… You can write your next message while you wait.'
                   : null;
+  const memoryBlockedReason = signingOut
+    ? 'Signing out…'
+    : clearing
+      ? 'Resolve history clearing before continuing.'
+      : state.phase !== 'editing'
+        ? 'Resolve message delivery before saving memory.'
+        : memoryState.pending
+          ? 'Resolve the original memory save before continuing.'
+          : state.stream ||
+              (history.head.data && hasRunningAttempt(history.head.data))
+            ? 'The assistant is working. Wait before saving memory.'
+            : (command?.error ?? null);
 
   return (
     <div className="conversation-workspace">
@@ -83,6 +105,15 @@ export function ConversationWorkspace({
       <header className="workspace-header">
         <BrandLockup />
         <div className="workspace-account-actions">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-haspopup="dialog"
+            onClick={() => setMemoryOpen(true)}
+            disabled={signingOut}
+          >
+            Memory
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -105,6 +136,16 @@ export function ConversationWorkspace({
           </Button>
         </div>
       </header>
+      <MemoryPanel
+        open={memoryOpen}
+        onClose={() => setMemoryOpen(false)}
+        memory={memory}
+      />
+      <MemorySaveNotice
+        state={memoryState}
+        onCheck={() => void memorySave.check()}
+        onRetry={() => void memorySave.retry()}
+      />
       <ClearHistoryDialog
         version={clearVersion}
         currentVersion={state.historyVersion}
@@ -184,9 +225,16 @@ export function ConversationWorkspace({
         provisional={state.stream}
         retryTurnId={retryableTurnId(history.head.data)}
         pendingRetryTurnId={state.pendingRetryTurnId}
-        retryDisabled={!!blockedReason || state.phase !== 'editing'}
+        retryDisabled={
+          !!blockedReason || !!memoryState.pending || state.phase !== 'editing'
+        }
         onRetry={(turnId) => {
-          if (!blockedReason && state.phase === 'editing' && history.head.data)
+          if (
+            !blockedReason &&
+            !memoryState.pending &&
+            state.phase === 'editing' &&
+            history.head.data
+          )
             void submission.retry(turnId, history.head.data);
         }}
       />
@@ -194,12 +242,26 @@ export function ConversationWorkspace({
         state={state}
         onDraftChange={submission.edit}
         onSend={() => {
-          if (!blockedReason && status.data?.limits)
+          if (command) {
+            if (!memoryBlockedReason)
+              void memorySave.save(state.draft, submission.getDraftRevision());
+          } else if (
+            !blockedReason &&
+            !memoryState.pending &&
+            status.data?.limits
+          )
             void submission.send(status.data.limits.maxMessageBytes);
         }}
         onReconcile={() => void submission.reconcile()}
-        blockedReason={blockedReason}
-        disabled={signingOut || clearing || state.historyVersion === undefined}
+        blockedReason={
+          command
+            ? memoryBlockedReason
+            : memoryState.pending
+              ? 'Resolve the original memory save before sending.'
+              : blockedReason
+        }
+        memoryPayload={command?.text}
+        disabled={signingOut || clearing}
       />
     </div>
   );

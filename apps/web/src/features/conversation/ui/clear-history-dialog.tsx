@@ -65,6 +65,7 @@ export function ClearHistoryDialog({
         sources, plus your current draft. This cannot be undone.
       </p>
       <p>Clearing cannot retract content already sent to the model provider.</p>
+      <p>Explicitly saved memories and their original requests will remain.</p>
       {changed && (
         <p role="status">
           History changed. Cancel and review the current conversation before

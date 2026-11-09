@@ -2538,27 +2538,19 @@
         "properties": {
           "maxEntries": {
             "type": "number",
-            "enum": [
-              20
-            ]
+            "minimum": 1
           },
           "maxEntryBytes": {
             "type": "number",
-            "enum": [
-              512
-            ]
+            "minimum": 1
           },
           "maxProfileBytes": {
             "type": "number",
-            "enum": [
-              4096
-            ]
+            "minimum": 1
           },
           "maxRequestBytes": {
             "type": "number",
-            "enum": [
-              1024
-            ]
+            "minimum": 1
           }
         },
         "required": [

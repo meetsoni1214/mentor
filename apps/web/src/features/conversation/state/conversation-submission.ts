@@ -44,6 +44,7 @@ export class ConversationSubmission {
   private clearController: AbortController | undefined;
   private clearGeneration = 0;
   private readonly listeners = new Set<() => void>();
+  private draftRevision = 0;
 
   constructor(
     private readonly port: SubmissionPort,
@@ -58,6 +59,7 @@ export class ConversationSubmission {
 
   private transition(next: state.SubmissionState) {
     if (next === this.state) return;
+    if (next.draft !== this.state.draft) this.draftRevision++;
     this.state = next;
     this.snapshot = state.projectSnapshot(next);
     for (const listener of this.listeners) listener();
@@ -78,6 +80,11 @@ export class ConversationSubmission {
 
   edit = (draft: string) => {
     this.transition(state.editDraft(this.state, draft));
+  };
+
+  getDraftRevision = () => this.draftRevision;
+  clearSubmittedDraft = (revision: number) => {
+    if (revision === this.draftRevision) this.edit('');
   };
 
   observe = (history: ConversationHistory) => {

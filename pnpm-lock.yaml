@@ -80,6 +80,9 @@ importers:
       '@mentor/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
+      '@mentor/memory-command':
+        specifier: workspace:*
+        version: link:../../packages/memory-command
       '@radix-ui/react-collapsible':
         specifier: ^1.2.1
         version: 1.2.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -175,6 +178,9 @@ importers:
 
   packages/backend:
     dependencies:
+      '@mentor/memory-command':
+        specifier: workspace:*
+        version: link:../memory-command
       '@nestjs/common':
         specifier: ^11.1.19
         version: 11.2.7(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -212,6 +218,8 @@ importers:
       drizzle-kit:
         specifier: ^0.31.9
         version: 0.31.11
+
+  packages/memory-command: {}
 
 packages:
 

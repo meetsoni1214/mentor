@@ -450,14 +450,10 @@ export interface components {
             message: string;
         };
         MemoryLimitsDto: {
-            /** @enum {number} */
-            maxEntries: 20;
-            /** @enum {number} */
-            maxEntryBytes: 512;
-            /** @enum {number} */
-            maxProfileBytes: 4096;
-            /** @enum {number} */
-            maxRequestBytes: 1024;
+            maxEntries: number;
+            maxEntryBytes: number;
+            maxProfileBytes: number;
+            maxRequestBytes: number;
         };
         MemoryEntryDto: {
             /** Format: uuid */

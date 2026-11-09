@@ -16,13 +16,17 @@ All tasks start unchecked. This file plans the whole milestone; it does not auth
 
 ## 2. Checkpoint 2 — Composer capture and Memory panel
 
-**Demo:** Type `Remember that I prefer learning through small exercises.`, see **Save memory**, submit once, inspect the source in the Memory panel, and reload to see the saved entry. Model personalization is still unavailable.
+**Demo:** Type `Remember that I prefer learning through small exercises.`, see **Save memory**, submit once, review the saved wording in the Memory panel, and reload to see the saved entry. Model personalization is still unavailable.
 
-- [ ] 2.1 Add browser-owned memory contracts, stateless generated-client operations, session-scoped queries, and saved-request lookup; verify malformed responses are rejected, late replaced-session reads are ignored, and memory details remain private to the current session.
-- [ ] 2.2 Route the documented composer command to a dedicated memory coordinator while retaining existing draft ownership and ordinary conversation sending; verify the visible Save memory label/payload, model-independent availability, preservation on rejection, and successful clearing of only the submitted draft. A memory save must not create a fake model turn or assistant answer.
-- [ ] 2.3 Add the focused Memory panel with current entries, original requests, limits, empty/loading/error states, and saved-memory notices using brand tokens/shadcn controls; verify accessible focus and phone/desktop layout, and update the existing Clear history confirmation to explain that explicitly saved memories remain.
-- [ ] 2.4 Implement explicit saved-request checking and exact-command retry for uncertain saves without automatic replay; verify lost responses, absent saved-request results that do not prove failure, duplicate clicks, conflicting request-ID reuse, logout/expiry, and preservation of an independent next draft using browser API/coordinator behavior tests.
-- [ ] 2.5 Run phone/desktop save/inspect/reload and AI-disabled scenarios plus `pnpm check`, strict change validation, and whitespace checks; update the walkthrough with browser evidence and the explicit lack of model personalization, then stop for checkpoint 2 review. Repeat database integration only if this checkpoint changes backend behavior.
+- [x] 2.1 Add browser-owned memory contracts, stateless generated-client operations, session-scoped queries, and saved-request lookup; verify malformed responses are rejected, late replaced-session reads are ignored, and memory details remain private to the current session.
+- [x] 2.2 Route the documented composer command to a dedicated memory coordinator while retaining existing draft ownership and ordinary conversation sending; verify the visible Save memory label/payload, model-independent availability, preservation on rejection, and successful clearing of only the submitted draft. A memory save must not create a fake model turn or assistant answer.
+- [x] 2.3 Add the focused Memory panel with current entries, original requests, limits, empty/loading/error states, and saved-memory notices using brand tokens/shadcn controls; verify accessible focus and phone/desktop layout, and update the existing Clear history confirmation to explain that explicitly saved memories remain.
+- [x] 2.4 Implement explicit saved-request checking and exact-command retry for uncertain saves without automatic replay; verify lost responses, absent saved-request results that do not prove failure, duplicate clicks, conflicting request-ID reuse, logout/expiry, and preservation of an independent next draft using browser API/coordinator behavior tests.
+- [x] 2.5 Run phone/desktop save/inspect/reload and AI-disabled scenarios plus `pnpm check`, strict change validation, and whitespace checks; update the walkthrough with browser evidence and the explicit lack of model personalization, then stop for checkpoint 2 review. Repeat database integration only if this checkpoint changes backend behavior.
+
+- [x] 2.6 Simplify save coordination to a TanStack Query mutation with explicit recovery and no automatic retry/offline queue, reuse generated API types, share literal command parsing in a browser-safe package, and limit response validation to transport shape/identity. Verify draft/session/deadline recovery, changed server limits, and unchanged backend save policy; regenerate the numeric-limit OpenAPI contract, run full checks and disposable integration, update the guide, and stop before checkpoint 3.
+
+- [x] 2.7 Simplify the Memory panel at the owner's request to show saved wording with empty/loading/error states and a close action. Remove technical metadata, limits, counters, and implementation notes; retain provenance in the protected API and preserve recovery behavior. Verify web typing/lint, memory tests, and phone/desktop presentation, and update the guide/spec to match.
 
 ## 3. Checkpoint 3 — Targeted correction and forgetting
 
@@ -55,7 +59,7 @@ All tasks start unchecked. This file plans the whole milestone; it does not auth
 
 ## Workflow follow-up
 
-- Checkpoint 1 is simplified to the owner-approved one-table design and verified; see `docs/personal-memory.md`. Stop for review before checkpoint 2. All later checkpoints remain pending an explicit request.
+- Checkpoints 1–2 are implemented and verified with the owner-approved one-table design, composer capture, Memory panel, and scoped save recovery; see `docs/personal-memory.md`. Stop for checkpoint 2 review before checkpoint 3. Later checkpoints remain pending an explicit request.
 - Before implementation, review the proposed user-facing defaults: literal supported capture syntax, direct saved-memory result without a fake chat turn, explicit memories surviving Clear history, busy rejection during generation, and fresh model context after memory changes.
 - Checkpoint 3 begins with a review of mutation recovery before code: no command ledger, tombstone schema, revision history, or profile-wide version is authorized by this simplification. Add only the reviewed fields/behavior needed for correction, forgetting, and context boundaries.
 - Before archive, reconcile the shared `personal-memory` capability with `build-personal-knowledge-assistant` and the completed conversation change. Do not mark inferred memory, semantic retrieval, export, background work, or proactivity complete from this narrower milestone.

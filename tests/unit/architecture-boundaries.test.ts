@@ -21,6 +21,27 @@ async function boundaries(filePath: string, code: string) {
 }
 
 describe('enforced architecture boundaries', () => {
+  it('allows only memory core to consume the shared browser-safe command parser', async () => {
+    expect(
+      await boundaries(
+        'packages/backend/src/memory/domain/memory.ts',
+        "import '@mentor/memory-command';",
+      ),
+    ).toEqual([]);
+    expect(await boundaries(web, "import '@mentor/memory-command';")).toEqual(
+      [],
+    );
+    expect(
+      await boundaries(domain, "import '@mentor/memory-command';"),
+    ).toMatchObject([{ messageId: 'core' }]);
+    expect(
+      await boundaries(
+        'packages/memory-command/src/index.ts',
+        "import '@mentor/backend/memory';",
+      ),
+    ).toMatchObject([{ messageId: 'browser' }]);
+  });
+
   it.each([
     [web, "import '@mentor/backend/identity';", 'browser'],
     [web, "import '@mentor/backend/config/ai';", 'browser'],

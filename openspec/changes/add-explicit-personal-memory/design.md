@@ -2,7 +2,8 @@
 
 ## Context
 
-See proposal.md and docs/memory-evaluation.md for motivation and evaluation. The owner confirmed saving their wording directly, then requested simpler persistence after reviewing checkpoint 1. This design replaces the initial four-table implementation with one `memories` table. No browser integration or model personalization is implemented yet.
+See proposal.md and docs/memory-evaluation.md for motivation and evaluation. The owner confirmed saving their wording directly, then requested simpler persistence after reviewing checkpoint 1. This design replaces the initial four-table implementation with one `memories` table. Checkpoint 2 implements composer capture, the Memory panel, and scoped save
+recovery. Model personalization remains disabled.
 
 Preserve the existing boundaries: framework-independent memory core, Drizzle and HTTP adapters, authenticated session ownership, and PostgreSQL as conversation authority. Conversation admission already locks the owner row. Memory reuses that lock. The browser's draft/recovery coordinator and public session-scope contract remain the integration points for checkpoint 2.
 
@@ -45,7 +46,7 @@ Proposed bounds remain 20 entries, 512 UTF-8 bytes per wording, 4096 bytes of to
 
 Accept a case-insensitive, start-of-input `Remember that ` followed by nonblank wording. Trim only payload boundary whitespace; retain the entire original request. Do not scan nested quotes, code blocks, retrieved text, ordinary chat, or model output for commands.
 
-Checkpoint 2 will show **Save memory** and its payload in the composer, call the dedicated API, and display a saved-memory notice/panel. It creates no fake conversation turn or model answer and works with assistant execution disabled.
+Checkpoint 2 shows **Save memory** and its payload in the composer, calls the dedicated API, and displays a saved-memory notice/panel. It creates no fake conversation turn or model answer and works with assistant execution disabled.
 
 Implemented endpoints under `/api/v1/memory`:
 
@@ -58,6 +59,12 @@ Implemented endpoints under `/api/v1/memory`:
 
 There is no receipt DTO or command endpoint. Generate OpenAPI/client output. Keep browser validation and session-scoped query ownership when adding UI integration.
 
+The literal parser and default bounds live in the browser-safe
+`@mentor/memory-command` package and are shared with backend save validation.
+Browser DTO types come from the generated API. Runtime browser schemas check wire
+shape rather than repeating capacity or wording/provenance policy. Reported
+limits are positive numeric fields, not literal enums fixed in the client.
+
 ### 3. Save recovery and transaction coordination
 
 Take the owner row lock first. An existing owner/request row returns its saved result when the exact source request matches; changed reuse returns `IDEMPOTENCY_CONFLICT`. Check replay before busy/capacity checks. New requests are rejected while an unexpired conversation attempt runs, using database time. Expired attempts do not block memory; existing deadline checks prevent their late publication.
@@ -68,7 +75,12 @@ Keep queries with their owning modules. `DrizzleMemoryRepository` only reads/ins
 
 API composition implements that port by opening one transaction, calling identity persistence's public `lockOwnerForUpdate`, and binding both `DrizzleMemoryRepository` and the public `ConversationActivity` service to it. The conversation service delegates to its own activity reader, which queries conversation-owned tables using database time. Conversation admission reuses the same identity lock function. The lock is never released between the activity check and memory insert; ordinary independent service transactions would reintroduce a race. Architecture lint rejects foreign-schema imports from repositories while allowing module calls at composition boundaries.
 
-For uncertain saves, checkpoint 2 retains the exact request, looks it up by request ID, and permits deliberate same-request retry. An absent lookup does not prove an in-flight save cannot commit. Never replay a mutation automatically. Clear private state on session replacement and preserve an independently typed next draft.
+For uncertain saves, the browser retains the exact request, looks it up by request ID, and permits deliberate same-request retry. An absent lookup does not prove an in-flight save cannot commit. Never replay a mutation automatically. The browser uses one TanStack Query
+mutation with retries disabled and `networkMode: 'always'`, with state derived
+from its result instead of a custom observable store. A lifetime signal cancels
+delivery on unmount, and a synchronous hook guard blocks duplicate clicks.
+Clear private state on session replacement and preserve an independently typed
+next draft.
 
 ### 4. Correction and forgetting are a later design checkpoint
 

@@ -135,6 +135,7 @@ acceptance. Browser changes remain a review checkpoint; commit when requested.
   If repository metadata is not writable, report that limitation and never
   claim a commit was created.
 - Explain the request/data flow and important tradeoffs in plain language.
+- Keep user-facing UI and copy minimal; show only useful content and controls, and hide technical limits, internal IDs, and implementation details.
 - Keep strict typing, meaningful validation, and explicit error handling.
 - Keep code easy to read; refactor complex logic into clear steps with descriptive names while preserving behavior.
 - Do not add unexplained `any`, suppress compiler errors, or weaken lint to pass.

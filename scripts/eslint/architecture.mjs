@@ -71,7 +71,8 @@ export default {
           let messageId;
           if (
             (from.startsWith('apps/web/') ||
-              from.startsWith('packages/api-client/')) &&
+              from.startsWith('packages/api-client/') ||
+              from.startsWith('packages/memory-command/')) &&
             (specifier === '@mentor/backend' ||
               specifier.startsWith('@mentor/backend/') ||
               target?.startsWith('packages/backend/') ||
@@ -107,7 +108,8 @@ export default {
               target?.startsWith(`${moduleRoot}domain/`) ||
               (layer === 'application' &&
                 target?.startsWith(`${moduleRoot}application/`)) ||
-              (layer === 'application' && specifier === 'zod');
+              (layer === 'application' && specifier === 'zod') ||
+              (core[1] === 'memory' && specifier === '@mentor/memory-command');
             if (!allowed) messageId = 'core';
           } else if (
             fromBackend &&

@@ -692,3 +692,42 @@
   padding: 0.5rem 0.75rem;
   text-decoration: none;
 }
+
+.memory-wording {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.memory-preview {
+  margin-bottom: 0.75rem;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+.memory-list {
+  padding: 0;
+  list-style: none;
+}
+.memory-list li {
+  padding-block: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+.memory-list details,
+.memory-save-notice details {
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+}
+.memory-list summary,
+.memory-save-notice summary {
+  cursor: pointer;
+}
+.memory-save-notice {
+  flex-shrink: 0;
+}
+@media (max-width: 480px) {
+  .workspace-header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .workspace-account-actions {
+    flex-wrap: wrap;
+  }
+}
