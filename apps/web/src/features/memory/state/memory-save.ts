@@ -1,9 +1,12 @@
 import { mutationOptions } from '@tanstack/react-query';
 import type { MutationObserverResult } from '@tanstack/react-query';
-import { ObsoleteSessionError } from '../../auth/session-scope';
-import { RequestError } from '../../../lib/api-request';
 import { MemoryApiError } from '../api/memory-api';
 import type { MemoryEntry, SaveMemoryInput } from '../api/memory-contracts';
+import {
+  isMemoryVersionError,
+  memoryFailure,
+  runMemoryRequest,
+} from './memory-recovery';
 
 type PendingSave = { input: SaveMemoryInput; draftRevision: number };
 export type MemorySaveAction = {
@@ -33,29 +36,20 @@ export function memorySaveOptions(
     gcTime: 0,
     networkMode: 'always',
     mutationFn: async ({ kind, command }: MemorySaveAction) => {
-      const signal = AbortSignal.any([lifetime(), AbortSignal.timeout(15_000)]);
-      let rejectAborted!: () => void;
-      const aborted = new Promise<never>((_, reject) => {
-        rejectAborted = () => reject(signal.reason);
-        signal.addEventListener('abort', rejectAborted, { once: true });
-      });
-      try {
-        port.assertCurrent();
-        signal.throwIfAborted();
-        const entry = await Promise.race([
+      const entry = await runMemoryRequest(
+        lifetime(),
+        port.assertCurrent,
+        (signal) =>
           kind === 'save'
             ? port.save(command.input, signal)
             : port.find(command.input.requestId, signal),
-          aborted,
-        ]);
-        signal.throwIfAborted();
-        port.assertCurrent();
-        if (entry.sourceRequest !== command.input.sourceRequest)
-          throw new Error('Mismatched saved memory.');
-        return entry;
-      } finally {
-        signal.removeEventListener('abort', rejectAborted);
-      }
+      );
+      if (entry.sourceRequest !== command.input.sourceRequest)
+        throw new Error('Mismatched saved memory.');
+      return entry;
+    },
+    onError: (error) => {
+      if (isMemoryVersionError(error)) port.changed();
     },
     onSuccess: (_entry, { command }) => {
       port.assertCurrent();
@@ -89,19 +83,11 @@ export function memorySaveState(
       notice: 'Memory saved.',
     };
   const error = result.error;
-  if (
-    error instanceof ObsoleteSessionError ||
-    (error instanceof RequestError && error.status === 401)
-  )
+  const failure = memoryFailure(error, action.recovering);
+  if (failure === 'session-ended')
     return { phase: 'idle', pending: null, notice: '' };
-  // A rejected replay does not establish that the earlier uncertain save failed.
-  if (
-    !action.recovering &&
-    (error instanceof MemoryApiError ||
-      (error instanceof RequestError &&
-        [400, 403, 413, 415, 422, 429].includes(error.status)))
-  )
-    return { phase: 'rejected', pending: null, notice: error.message };
+  if (failure === 'rejected')
+    return { phase: 'rejected', pending: null, notice: error?.message ?? '' };
   return {
     phase: 'uncertain',
     pending: action.command,

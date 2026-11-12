@@ -11,3 +11,14 @@ export interface MemorySnapshot {
   limits: typeof memoryLimits;
   entries: MemoryEntry[];
 }
+
+export interface EditMemory extends SaveMemory {
+  entryId: string;
+  expectedRevision: number;
+}
+export interface ForgetMemory {
+  ownerId: string;
+  entryId: string;
+  requestId: string;
+  expectedRevision: number;
+}

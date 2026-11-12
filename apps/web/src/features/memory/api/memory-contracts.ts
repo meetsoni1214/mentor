@@ -3,6 +3,10 @@ import { parseMemoryCommand } from '@mentor/memory-command';
 import { z } from 'zod';
 
 export { memoryLimits, wordingBytes as bytes } from '@mentor/memory-command';
+export type EditMemoryInput = components['schemas']['EditMemoryDto'];
+export type ForgetMemoryInput = components['schemas']['ForgetMemoryDto'];
+export type ForgottenMemory = components['schemas']['ForgottenMemoryDto'];
+export type MemoryRecord = MemoryEntry | ForgottenMemory;
 export type MemoryEntry = components['schemas']['MemoryEntryDto'];
 export type MemorySnapshot = components['schemas']['MemorySnapshotDto'];
 export type SaveMemoryInput = components['schemas']['SaveMemoryDto'];
@@ -23,6 +27,8 @@ export function memoryCommand(sourceRequest: string) {
 
 // Validate the wire shape; capacity and wording/provenance policy belong to the server.
 export const memoryEntrySchema: z.ZodType<MemoryEntry> = z.object({
+  revision: z.number().int().positive(),
+  lastMutationRequestId: z.uuid().nullable(),
   id: z.uuid(),
   requestId: z.uuid(),
   text: z.string(),
@@ -38,3 +44,16 @@ export const memorySnapshotSchema: z.ZodType<MemorySnapshot> = z.object({
     maxRequestBytes: z.number().int().positive(),
   }),
 });
+
+export const forgottenMemorySchema: z.ZodType<ForgottenMemory> = z.object({
+  state: z.literal('forgotten'),
+  id: z.uuid(),
+  requestId: z.uuid(),
+  revision: z.number().int().positive(),
+  lastMutationRequestId: z.uuid().nullable(),
+  forgottenAt: z.iso.datetime({ offset: true }),
+});
+export const memoryRecordSchema = z.union([
+  memoryEntrySchema,
+  forgottenMemorySchema,
+]);

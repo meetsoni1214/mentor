@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase, migrateDatabase } from '@mentor/backend/database';
@@ -58,7 +59,7 @@ afterAll(async () => {
 });
 
 describe('durable explicit memory', () => {
-  it('creates only one memory table with six columns', async () => {
+  it('keeps one memory table with content-free recovery metadata', async () => {
     const tables = await connection.pool.query<{ table_name: string }>(
       "select table_name from information_schema.tables where table_schema='public' and (table_name='memories' or table_name like 'memory_%' or table_name='owner_memory_state') order by table_name",
     );
@@ -73,6 +74,9 @@ describe('durable explicit memory', () => {
       'text',
       'source_request',
       'created_at',
+      'revision',
+      'last_mutation_request_id',
+      'forgotten_at',
     ]);
   });
 
@@ -95,6 +99,8 @@ describe('durable explicit memory', () => {
     const input = command();
     const saved = await memory.save(ownerId, input);
     expect(saved).toEqual({
+      revision: 1,
+      lastMutationRequestId: null,
       id: expect.any(String),
       requestId: input.requestId,
       text: 'I prefer  small\nexercises. 🌱',
@@ -392,9 +398,9 @@ describe('durable explicit memory', () => {
     const saved = await memory.save(ownerId, input);
     await conversation.clear(ownerId, 0);
     expect(await memory.findByRequest(ownerId, input.requestId)).toEqual(saved);
-    expect((await memory.get(ownerId, saved.id)).sourceRequest).toBe(
-      input.sourceRequest,
-    );
+    expect(await memory.get(ownerId, saved.id)).toMatchObject({
+      sourceRequest: input.sourceRequest,
+    });
   });
 
   it('enforces ownership, UTF-8 bounds and unique request IDs in PostgreSQL', async () => {
@@ -425,5 +431,280 @@ describe('durable explicit memory', () => {
       await expect(
         connection.pool.query(query, parameters),
       ).rejects.toMatchObject({ code });
+  });
+});
+
+describe('memory correction and forgetting', () => {
+  const edit = (revision: number, text = 'I prefer explanations first.') => ({
+    ...command(text),
+    expectedRevision: revision,
+  });
+  const forget = (revision: number) => ({
+    requestId: randomUUID(),
+    expectedRevision: revision,
+  });
+
+  it('replaces wording/source, recovers the latest edit, and rejects older save/edit/delete requests', async () => {
+    const initial = command('Old synthetic preference');
+    const saved = await memory.save(ownerId, initial);
+    const first = edit(saved.revision);
+    const changed = await memory.edit(ownerId, saved.id, first);
+    expect(changed).toMatchObject({
+      revision: 2,
+      sourceRequest: first.sourceRequest,
+      lastMutationRequestId: first.requestId,
+    });
+    expect(await memory.edit(ownerId, saved.id, first)).toEqual(changed);
+    await expect(
+      memory.edit(ownerId, saved.id, {
+        ...first,
+        sourceRequest: 'Remember that conflicting',
+      }),
+    ).rejects.toEqual(new MemoryError('IDEMPOTENCY_CONFLICT'));
+    await expect(memory.save(ownerId, initial)).rejects.toEqual(
+      new MemoryError('ENTRY_CHANGED'),
+    );
+    const latest = await memory.edit(
+      ownerId,
+      saved.id,
+      edit(2, 'Newest preference'),
+    );
+    await expect(memory.edit(ownerId, saved.id, first)).rejects.toEqual(
+      new MemoryError('ENTRY_CHANGED'),
+    );
+    await expect(memory.forget(ownerId, saved.id, forget(2))).rejects.toEqual(
+      new MemoryError('ENTRY_CHANGED'),
+    );
+    expect(await memory.get(ownerId, saved.id)).toEqual(latest);
+  });
+
+  it('erases forgotten content, suppresses old requests, and permits a deliberate fresh save', async () => {
+    const initial = command('Secret synthetic wording');
+    const saved = await memory.save(ownerId, initial);
+    const editedInput = edit(1);
+    await memory.edit(ownerId, saved.id, editedInput);
+    const deletion = forget(2);
+    const removed = await memory.forget(ownerId, saved.id, deletion);
+    expect(removed).toMatchObject({ state: 'forgotten', revision: 3 });
+    expect(await memory.forget(ownerId, saved.id, deletion)).toEqual(removed);
+    expect(await memory.forget(ownerId, saved.id, forget(1))).toEqual(removed);
+    expect((await memory.list(ownerId)).entries).toEqual([]);
+    expect(await memory.get(ownerId, saved.id)).toEqual(removed);
+    expect(await memory.findByRequest(ownerId, initial.requestId)).toEqual(
+      removed,
+    );
+    for (const operation of [
+      () => memory.save(ownerId, initial),
+      () => memory.edit(ownerId, saved.id, editedInput),
+    ])
+      await expect(operation()).rejects.toEqual(new MemoryError('FORGOTTEN'));
+    const row = (
+      await connection.pool.query(
+        'select text, source_request from memories where id=$1',
+        [saved.id],
+      )
+    ).rows[0];
+    expect(row).toEqual({ text: null, source_request: null });
+    expect(JSON.stringify(removed)).not.toContain('wording');
+    expect(
+      (await memory.save(ownerId, command('Secret synthetic wording'))).id,
+    ).not.toBe(saved.id);
+  });
+
+  it('allows only one competing tab edit and does not spend capacity on forgotten markers', async () => {
+    const entries = await Promise.all(
+      Array.from({ length: 20 }, () => memory.save(ownerId, command('x'))),
+    );
+    const saved = entries[0]!;
+    const results = await Promise.allSettled([
+      memory.edit(ownerId, saved.id, edit(1, 'first')),
+      memory.edit(ownerId, saved.id, edit(1, 'second')),
+    ]);
+    expect(
+      results.filter((value) => value.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(results.filter((value) => value.status === 'rejected')).toHaveLength(
+      1,
+    );
+    await memory.forget(ownerId, saved.id, forget(2));
+    await memory.save(ownerId, command('replacement'));
+    expect((await memory.list(ownerId)).entries).toHaveLength(20);
+    expect(await countMemories()).toBe(21);
+  });
+
+  it('enforces mutation ownership and capacity while preserving current content on rejection', async () => {
+    const saved = await memory.save(ownerId, command('original'));
+    await expect(memory.edit(otherOwnerId, saved.id, edit(1))).rejects.toEqual(
+      new MemoryError('NOT_FOUND'),
+    );
+    await expect(
+      memory.forget(otherOwnerId, saved.id, forget(1)),
+    ).rejects.toEqual(new MemoryError('NOT_FOUND'));
+    for (let i = 0; i < 7; i++)
+      await memory.save(ownerId, command('a'.repeat(512)));
+    await memory.save(ownerId, command('a'.repeat(504)));
+    await expect(
+      memory.edit(ownerId, saved.id, edit(1, 'a'.repeat(512))),
+    ).rejects.toEqual(new MemoryError('LIMIT_EXCEEDED'));
+    expect(await memory.get(ownerId, saved.id)).toEqual(saved);
+  });
+
+  it('rejects new changes while generating but allows replays and deadline release', async () => {
+    const saved = await memory.save(ownerId, command());
+    const editInput = edit(1);
+    const changed = await memory.edit(ownerId, saved.id, editInput);
+    const admitted = await conversation.submit(
+      {
+        ownerId,
+        historyVersion: 0,
+        requestId: randomUUID(),
+        text: 'Synthetic question',
+      },
+      limits,
+    );
+    await expect(memory.edit(ownerId, saved.id, edit(2))).rejects.toEqual(
+      new MemoryError('BUSY'),
+    );
+    await expect(memory.forget(ownerId, saved.id, forget(2))).rejects.toEqual(
+      new MemoryError('BUSY'),
+    );
+    expect(await memory.edit(ownerId, saved.id, editInput)).toEqual(changed);
+    await connection.pool.query(
+      "update conversation_attempts set started_at=clock_timestamp()-interval '2 seconds', deadline_at=clock_timestamp()-interval '1 second' where id=$1",
+      [admitted.attempt.id],
+    );
+    await memory.forget(ownerId, saved.id, forget(2));
+    const result = await conversation.finish(
+      { ownerId, historyVersion: 0, attemptId: admitted.attempt.id },
+      {
+        state: 'completed',
+        answer: 'Old wording',
+        usage: null,
+        sources: [],
+        activity: [],
+        contextLimited: false,
+      },
+    );
+    expect(result?.state).toBe('interrupted');
+  });
+
+  it('excludes earlier exchanges after each mutation and resets the boundary with Clear history', async () => {
+    async function completed(text: string, version = 0) {
+      const admitted = await conversation.submit(
+        { ownerId, historyVersion: version, requestId: randomUUID(), text },
+        limits,
+      );
+      const ref = {
+        ownerId,
+        historyVersion: version,
+        attemptId: admitted.attempt.id,
+      };
+      await conversation.finish(ref, {
+        state: 'completed',
+        answer: `Restating ${text}`,
+        usage: null,
+        sources: [],
+        activity: [],
+        contextLimited: false,
+      });
+      return { admitted, ref };
+    }
+    await completed('old preference');
+    const saved = await memory.save(ownerId, command());
+    const next = await completed('new question');
+    expect(
+      await conversation.context(next.ref, next.admitted.turn.sequence),
+    ).toEqual([]);
+    const after = await completed('follow up');
+    expect(
+      await conversation.context(after.ref, after.admitted.turn.sequence),
+    ).toEqual([{ text: 'new question', answer: 'Restating new question' }]);
+    await memory.edit(ownerId, saved.id, edit(1));
+    const edited = await completed('after edit');
+    expect(
+      await conversation.context(edited.ref, edited.admitted.turn.sequence),
+    ).toEqual([]);
+    await memory.forget(ownerId, saved.id, forget(2));
+    const forgotten = await completed('after forget');
+    expect(
+      await conversation.context(
+        forgotten.ref,
+        forgotten.admitted.turn.sequence,
+      ),
+    ).toEqual([]);
+    expect((await conversation.history(ownerId)).turns).toHaveLength(5);
+    await conversation.clear(ownerId, 0);
+    await completed('first new version', 1);
+    const second = await completed('second new version', 1);
+    expect(
+      await conversation.context(second.ref, second.admitted.turn.sequence),
+    ).toEqual([
+      { text: 'first new version', answer: 'Restating first new version' },
+    ]);
+  });
+
+  it('rolls back both the edit and context boundary if context reset fails', async () => {
+    const saved = await memory.save(ownerId, command());
+    await conversation.clear(ownerId, 0);
+    await connection.pool.query(
+      "create function reject_memory_context() returns trigger language plpgsql as $$ begin raise exception 'synthetic'; end $$",
+    );
+    try {
+      await connection.pool.query(
+        'create trigger reject_memory_context before update on conversations for each row execute function reject_memory_context()',
+      );
+      await expect(memory.edit(ownerId, saved.id, edit(1))).rejects.toThrow();
+      expect(await memory.get(ownerId, saved.id)).toEqual(saved);
+    } finally {
+      await connection.pool.query(
+        'drop trigger if exists reject_memory_context on conversations',
+      );
+      await connection.pool.query(
+        'drop function if exists reject_memory_context()',
+      );
+    }
+  });
+
+  it('backfills existing conversation boundaries through the actual upgrade SQL', async () => {
+    const client = await connection.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query('create schema memory_upgrade_test');
+      await client.query('set local search_path = memory_upgrade_test, public');
+      await client.query(
+        'create table conversations(owner_id uuid, next_sequence integer not null)',
+      );
+      await client.query(
+        'create table memories(owner_id uuid, text text not null, source_request text not null)',
+      );
+      const other = randomUUID();
+      await client.query('insert into conversations values($1,7),($2,4)', [
+        ownerId,
+        other,
+      ]);
+      await client.query(
+        "insert into memories values($1,'wording','Remember that wording')",
+        [ownerId],
+      );
+      const migration = await readFile(
+        new URL(
+          '../../packages/backend/drizzle/0010_memory_mutations.sql',
+          import.meta.url,
+        ),
+        'utf8',
+      );
+      for (const statement of migration.split('--> statement-breakpoint'))
+        if (statement.trim()) await client.query(statement);
+      const rows = await client.query(
+        'select context_start_sequence from conversations order by next_sequence',
+      );
+      expect(rows.rows).toEqual([
+        { context_start_sequence: 1 },
+        { context_start_sequence: 7 },
+      ]);
+    } finally {
+      await client.query('rollback');
+      client.release();
+    }
   });
 });

@@ -2,7 +2,10 @@ import type { MemoryRepository } from './memory.repository.js';
 
 export interface MemoryTransactionScope {
   memories: MemoryRepository;
-  conversation: { hasRunningAttempt(ownerId: string): Promise<boolean> };
+  conversation: {
+    hasRunningAttempt(ownerId: string): Promise<boolean>;
+    startFreshContext(ownerId: string): Promise<void>;
+  };
 }
 
 export interface MemoryTransactions {

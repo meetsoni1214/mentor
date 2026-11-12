@@ -6,6 +6,13 @@ import { conversationAttempts, conversations } from './conversation.schema.js';
 export class DrizzleConversationActivityReader implements ConversationActivityReader {
   constructor(private readonly transaction: DatabaseTransaction) {}
 
+  async startFreshContext(ownerId: string): Promise<void> {
+    await this.transaction
+      .update(conversations)
+      .set({ contextStartSequence: conversations.nextSequence })
+      .where(eq(conversations.ownerId, ownerId));
+  }
+
   async hasUnexpiredRunningAttempt(ownerId: string): Promise<boolean> {
     const [attempt] = await this.transaction
       .select({ id: conversationAttempts.id })

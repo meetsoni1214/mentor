@@ -40,6 +40,6 @@ describe('database bootstrap on a fresh PostgreSQL instance', () => {
     const result = await connection.pool.query<{ count: number }>(
       'select count(*)::integer as count from drizzle.__drizzle_migrations',
     );
-    expect(result.rows[0]?.count).toBe(10);
+    expect(result.rows[0]?.count).toBe(11);
   });
 });

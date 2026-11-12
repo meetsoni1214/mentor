@@ -182,6 +182,8 @@ describe('actual authenticated memory HTTP boundary', () => {
       await request('/memory', 'POST', command),
     );
     expect(saved).toEqual({
+      revision: 1,
+      lastMutationRequestId: null,
       id: expect.any(String),
       requestId: command.requestId,
       text: 'I prefer  small\nexercises. 🌱',
@@ -348,11 +350,87 @@ describe('actual authenticated memory HTTP boundary', () => {
     );
   });
 
-  it('does not offer edit or forget routes before checkpoint 3', async () => {
+  it('rejects incomplete edit and forget commands', async () => {
     const saved = await json<MemoryEntryDto>(
       await request('/memory', 'POST', input()),
     );
     for (const method of ['PATCH', 'DELETE'])
-      await json(await request(`/memory/${saved.id}`, method, {}), 404);
+      await json(await request(`/memory/${saved.id}`, method, {}), 400);
   });
+  it('edits, recovers, rejects stale requests, and forgets without returning content', async () => {
+    const initial = input();
+    const saved = await json<MemoryEntryDto>(
+      await request('/memory', 'POST', initial),
+    );
+    const edit = {
+      requestId: randomUUID(),
+      expectedRevision: saved.revision,
+      sourceRequest: 'Remember that New synthetic wording',
+    };
+    const path = `/memory/${saved.id}`;
+    const changed = await json<MemoryEntryDto>(
+      await request(path, 'PATCH', edit),
+    );
+    expect(changed).toMatchObject({
+      revision: 2,
+      text: 'New synthetic wording',
+      lastMutationRequestId: edit.requestId,
+    });
+    expect(await json(await request(path, 'PATCH', edit))).toEqual(changed);
+    await json(await request('/memory', 'POST', initial), 409);
+    await json(
+      await request(path, 'PATCH', { ...edit, requestId: randomUUID() }),
+      409,
+    );
+    const deletion = { requestId: randomUUID(), expectedRevision: 2 };
+    const removed = await json<Record<string, unknown>>(
+      await request(path, 'DELETE', deletion),
+    );
+    expect(removed).toMatchObject({ state: 'forgotten', revision: 3 });
+    expect(removed).not.toHaveProperty('text');
+    expect(removed).not.toHaveProperty('sourceRequest');
+    expect(await json(await request(path, 'GET'))).toEqual(removed);
+    expect(
+      await json(await request(`/memory/requests/${initial.requestId}`)),
+    ).toEqual(removed);
+    expect(await json(await request(path, 'DELETE', deletion))).toEqual(
+      removed,
+    );
+    await json(await request(path, 'PATCH', edit), 410);
+    await json(await request('/memory', 'POST', initial), 410);
+    expect((await json<MemorySnapshotDto>(await request())).entries).toEqual(
+      [],
+    );
+  });
+
+  it.each(['PATCH', 'DELETE'])(
+    'protects %s with authentication, Origin, CSRF, and JSON decoding',
+    async (method) => {
+      const saved = await json<MemoryEntryDto>(
+        await request('/memory', 'POST', input()),
+      );
+      const body =
+        method === 'PATCH'
+          ? {
+              requestId: randomUUID(),
+              expectedRevision: 1,
+              sourceRequest: 'Remember that changed',
+            }
+          : { requestId: randomUUID(), expectedRevision: 1 };
+      const path = `/memory/${saved.id}`;
+      for (const headers of [
+        { cookie: '' },
+        { origin: 'http://other.example.test' },
+        { 'x-csrf-token': '' },
+      ])
+        await json(await request(path, method, body, headers), 403);
+      await json(
+        await request(path, method, body, { 'content-type': 'text/plain' }),
+        415,
+      );
+      expect((await json<MemoryEntryDto>(await request(path))).text).toBe(
+        saved.text,
+      );
+    },
+  );
 });

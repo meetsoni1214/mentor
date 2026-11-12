@@ -68,6 +68,11 @@ const memoryErrors: Record<
   MemoryError['code'],
   { status: number; message: string }
 > = {
+  ENTRY_CHANGED: {
+    status: 409,
+    message: 'This memory has changed. Review its current wording.',
+  },
+  FORGOTTEN: { status: 410, message: 'This memory has been forgotten.' },
   INVALID_INPUT: {
     status: 400,
     message:

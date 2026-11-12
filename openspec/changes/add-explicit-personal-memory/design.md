@@ -82,19 +82,28 @@ delivery on unmount, and a synchronous hook guard blocks duplicate clicks.
 Clear private state on session replacement and preserve an independently typed
 next draft.
 
-### 4. Correction and forgetting are a later design checkpoint
+### 4. Correction and forgetting (checkpoint 3)
 
-Checkpoint 3 adds targeted correction and stale-edit protection, then forgetting. Corrections replace current wording; no historical revision browser is planned. No patch/delete route exists today.
+The owner reviewed the [mutation decisions](../../../docs/personal-memory-mutations.md).
+The [personal-memory walkthrough](../../../docs/personal-memory.md#checkpoint-3-correction-and-forgetting)
+is the implementation reference for storage, replay/conflict behavior, source
+provenance, request flow, and verification. Keep entry revisions, content-free
+forgotten records, owner locking, and atomic context-boundary updates. Model use
+remains deferred to checkpoint 4.
 
-Before implementing those routes, review the concrete recovery contract for old save/edit/delete requests. A hard delete loses the save request ID, and matching a save against current text becomes insufficient after correction. That must be addressed before shipping mutations, using the smallest reviewed approach; neither a command ledger nor tombstone schema is prebuilt here. Do not claim the current save replay mechanism already covers editing or forgetting.
-
-Future behavior must reject stale edits, prevent delayed requests from restoring forgotten text or overwriting a newer edit, and leave no forgotten wording in recovery metadata. A new deliberate save with a fresh ID remains allowed. This is an explicit checkpoint-3 prerequisite, not a reason to add tables to checkpoint 1.
+The owner-approved browser cleanup shares only execution and failure mechanics,
+uses one list cache with stale-read cancellation, and requires explicit review of
+a newer entry while preserving the edit draft. Save-specific draft handling and
+edit-specific checks remain separate. PATCH/DELETE payloads and backend policy
+are unchanged by that cleanup.
 
 ### 5. Conversation use remains gated
 
-Before profile injection, checkpoint 3 establishes a conservative context boundary `(historyVersion, nextSequence)` on memory changes. Future model context excludes older exchanges, including old assistant restatements; visible history remains readable. Clear history preserves explicit memory and its source. Its new history version prevents an older sequence cutoff from excluding new exchanges.
-
-Decide where boundary metadata belongs when implementing it; there is no owner-memory-state table today. Mutation/admission coordination keeps the profile stable during a run. The UI must explain that changing memory starts fresh model context.
+Checkpoint 3 establishes the conversation-owned `context_start_sequence`
+boundary on accepted memory changes. Earlier exchanges are omitted from model
+context while visible history remains readable. Clear history resets this field
+with the sequence counter. See the walkthrough for coordination and migration
+behavior.
 
 Checkpoint 4 adds a conversation-owned profile port at API composition and a separate labeled personal-data field at the model boundary. Fit the full profile and current input within existing context bytes, then fit eligible prior exchanges. If required context cannot fit, fail visibly before a provider call. Replay returns saved conversation state; intentional retry uses current memory. Preserve SDK defaults, existing privacy/retry controls, and always-available hosted search with valid model configuration.
 

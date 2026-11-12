@@ -42,6 +42,8 @@ const session = {
   idleExpiresAt: '2099-11-09T10:00:00Z',
 };
 const entry = {
+  revision: 1,
+  lastMutationRequestId: null,
   id: randomUUID(),
   requestId: randomUUID(),
   text: 'I prefer  small exercises.',
@@ -186,7 +188,7 @@ describe('browser memory contracts and generated transport', () => {
       if (status === 401) expect(queries.getQueryData(sessionKey)).toBeNull();
     },
   );
-  it('drops late list/detail responses from a replaced session even if transport ignores abort', async () => {
+  it('drops late list responses from a replaced session even if transport ignores abort', async () => {
     let release!: (response: Response) => void;
     respond = () =>
       new Promise((resolve) => {
@@ -214,5 +216,56 @@ describe('browser memory contracts and generated transport', () => {
     expect(
       createMemoryQueries(auth.scope(), queries).listOptions().queryKey,
     ).not.toEqual(oldKey);
+  });
+  it('publishes a committed edit/forget immediately so a slow refresh cannot display old wording', async () => {
+    await queries.fetchQuery(api.listOptions());
+    const updated = {
+      ...entry,
+      revision: 2,
+      lastMutationRequestId: randomUUID(),
+      text: 'New wording',
+      sourceRequest: 'Remember that New wording',
+    };
+    api.changed(updated);
+    expect(queries.getQueryData(api.listOptions().queryKey)).toMatchObject({
+      entries: [updated],
+    });
+    const forgotten = {
+      state: 'forgotten' as const,
+      id: entry.id,
+      requestId: entry.requestId,
+      revision: 3,
+      lastMutationRequestId: randomUUID(),
+      forgottenAt: '2026-11-09T10:02:00Z',
+    };
+    api.changed(forgotten);
+    expect(queries.getQueryData(api.listOptions().queryKey)).toMatchObject({
+      entries: [],
+    });
+  });
+  it('discards an older in-flight list read after publishing an edited memory', async () => {
+    await queries.fetchQuery(api.listOptions());
+    let release!: (response: Response) => void;
+    respond = () =>
+      new Promise((resolve) => {
+        release = resolve;
+      });
+    const pending = queries.fetchQuery(api.listOptions());
+    const settled = pending.catch(() => undefined);
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    const updated = {
+      ...entry,
+      revision: 2,
+      text: 'New wording',
+      sourceRequest: 'Remember that New wording',
+      lastMutationRequestId: randomUUID(),
+    };
+    api.changed(updated);
+    await settled;
+    release(Response.json({ entries: [entry], limits: memoryLimits }));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(queries.getQueryData(api.listOptions().queryKey)).toMatchObject({
+      entries: [updated],
+    });
   });
 });

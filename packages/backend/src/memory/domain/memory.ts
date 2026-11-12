@@ -8,6 +8,8 @@ export { memoryLimits } from '@mentor/memory-command';
 export type MemoryErrorCode =
   | 'INVALID_INPUT'
   | 'NOT_FOUND'
+  | 'ENTRY_CHANGED'
+  | 'FORGOTTEN'
   | 'IDEMPOTENCY_CONFLICT'
   | 'BUSY'
   | 'LIMIT_EXCEEDED';
@@ -40,4 +42,19 @@ export interface MemoryEntry {
   text: string;
   sourceRequest: string;
   createdAt: Date;
+  revision: number;
+  lastMutationRequestId: string | null;
+}
+
+export interface ForgottenMemory {
+  state: 'forgotten';
+  id: string;
+  requestId: string;
+  revision: number;
+  lastMutationRequestId: string | null;
+  forgottenAt: Date;
+}
+export type MemoryRecord = MemoryEntry | ForgottenMemory;
+export function isForgotten(entry: MemoryRecord): entry is ForgottenMemory {
+  return 'state' in entry;
 }

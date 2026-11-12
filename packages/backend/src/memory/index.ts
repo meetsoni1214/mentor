@@ -1,6 +1,11 @@
 export { PersonalMemory } from './application/personal-memory.js';
 export { MemoryError, memoryLimits } from './domain/memory.js';
-export type { MemoryEntry, MemoryErrorCode } from './domain/memory.js';
+export type {
+  MemoryEntry,
+  MemoryErrorCode,
+  MemoryRecord,
+  ForgottenMemory,
+} from './domain/memory.js';
 export type {
   MemorySnapshot,
   SaveMemory,

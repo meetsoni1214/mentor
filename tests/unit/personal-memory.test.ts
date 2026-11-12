@@ -12,6 +12,8 @@ import type {
 
 function entry(): MemoryEntry {
   return {
+    revision: 1,
+    lastMutationRequestId: null,
     id: randomUUID(),
     requestId: randomUUID(),
     text: 'Examples help.',
@@ -22,6 +24,8 @@ function entry(): MemoryEntry {
 
 function setup() {
   const repository = {
+    edit: vi.fn<MemoryRepository['edit']>(),
+    forget: vi.fn<MemoryRepository['forget']>(),
     insert: vi
       .fn<MemoryRepository['insert']>()
       .mockImplementation(async (input) => ({
@@ -37,6 +41,7 @@ function setup() {
       .mockResolvedValue(null),
   };
   const conversation = {
+    startFreshContext: vi.fn(async () => {}),
     hasRunningAttempt: vi
       .fn<(ownerId: string) => Promise<boolean>>()
       .mockResolvedValue(false),

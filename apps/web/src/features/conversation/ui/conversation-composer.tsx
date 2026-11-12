@@ -50,7 +50,10 @@ export function ConversationComposer({
           ? 'Refresh your conversation before writing another message.'
           : recovering
             ? 'Confirm delivery before writing another message.'
-            : (blockedReason ?? 'Enter to send · Shift + Enter for a new line');
+            : (blockedReason ??
+              (memoryPayload !== undefined
+                ? 'Saving memory starts fresh context. Your history stays.'
+                : 'Enter to send · Shift + Enter for a new line'));
   return (
     <footer className="composer-region">
       <div className="composer-content">

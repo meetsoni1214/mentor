@@ -23,6 +23,8 @@ import { ConversationSubmission } from '../src/features/conversation/state/conve
 const sourceRequest = 'Remember that I prefer  small exercises.  ';
 const requestId = randomUUID();
 const entry: MemoryEntry = {
+  revision: 1,
+  lastMutationRequestId: null,
   id: randomUUID(),
   requestId,
   sourceRequest,
@@ -268,4 +270,17 @@ describe('Query mutation memory save recovery', () => {
     submission.clearSubmittedDraft(submission.getDraftRevision());
     expect(submission.getSnapshot().draft).toBe('');
   });
+  it.each(['ENTRY_CHANGED', 'FORGOTTEN'] as const)(
+    'settles an obsolete save as %s without clearing the draft',
+    async (code) => {
+      const { port, run } = setup();
+      port.find.mockRejectedValueOnce(
+        new MemoryApiError(code === 'FORGOTTEN' ? 410 : 409, code),
+      );
+      const state = await run('check', true);
+      expect(state).toMatchObject({ phase: 'rejected', pending: null });
+      expect(port.clearSubmittedDraft).not.toHaveBeenCalled();
+      expect(port.changed).toHaveBeenCalledOnce();
+    },
+  );
 });

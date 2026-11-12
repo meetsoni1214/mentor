@@ -1,10 +1,10 @@
 # Explicit personal memory
 
-Checkpoints 1–2 implement authenticated API save/read with one `memories` table,
+Checkpoints 1–3 implement authenticated API save/read with one `memories` table,
 composer capture, and a focused Memory panel. The owner requested the simpler
-storage design after reviewing the initial four-table version. Correction,
-forgetting, and model use remain later
-[checkpoints](../openspec/changes/add-explicit-personal-memory/tasks.md).
+storage design after reviewing the initial four-table version. Correction and
+forgetting are implemented in checkpoint 3. Model use remains a later
+[checkpoint](../openspec/changes/add-explicit-personal-memory/tasks.md).
 
 ## Storage
 
@@ -17,12 +17,13 @@ creates six columns:
 | `owner_id`       | Authenticated owner, enforced by foreign key |
 | `request_id`     | Original save UUID; unique per owner         |
 | `text`           | Saved wording                                |
-| `source_request` | Exact original direct request                |
+| `source_request` | Direct request for current wording           |
 | `created_at`     | Database creation timestamp                  |
 
-There are no revision-history, profile-state, or command-receipt tables. There
-is no entry revision, profile version, or update timestamp yet. These operations
-currently save new memories and read them; nothing edits or deletes a memory.
+There are no revision-history, profile-state, or command-receipt tables.
+Checkpoint 3 adds entry revision, latest mutation request ID, and forgetting
+metadata; see the mutation guide below. There is no profile-wide version or
+revision-history browser.
 
 Bounds remain 20 entries, 512 UTF-8 bytes per wording, 4096 bytes of total wording,
 and 1024 bytes per original request. PostgreSQL checks per-row bounds;
@@ -156,8 +157,8 @@ const recovered = await fetch(
 console.log({ saved, reopened, recovered });
 ```
 
-Keep the IDs to repeat reads after reload/restart. This checkpoint has no edit or
-forget route, so a manual save persists until those later operations exist.
+Keep the IDs to repeat reads after reload/restart. Edit and Forget are now
+available through the Memory panel and protected API.
 
 ## Migration and verification
 
@@ -191,16 +192,11 @@ reject foreign-schema repository imports and ORM types in the transaction port.
 
 ## Later checkpoints
 
-Checkpoint 3 first reviews
-edit/forget recovery, then adds those operations and conversation context
-boundaries. A hard delete would lose the save request ID; correction would change
-the text currently used to compare replays. The save-only mechanism does not
-claim to solve either problem yet. Historical revision browsing and separate
-command receipts are not prebuilt requirements.
-
-Profile injection stays disabled until those behaviors are verified. Real-authenticated integrated browser memory acceptance belongs to checkpoint 5;
-deployed TLS/proxy behavior is also unverified.
-Commit/archive and advancing to the next checkpoint require a separate request.
+Checkpoint 3 implements correction, forgetting, and context boundaries under the
+[reviewed mutation design](personal-memory-mutations.md). Checkpoint 4 supplies
+active memories to model input; checkpoint 5 performs integrated local browser
+acceptance. Model personalization remains disabled. Commit/archive and advancing
+to the next checkpoint require a separate request.
 
 ## Checkpoint 2: Composer capture and inspection
 
@@ -225,7 +221,7 @@ history loading. Reading remains available during generation; known running work
 blocks the save action and the backend remains authoritative across tabs. A
 rejected save preserves the draft. No fake conversation turn or model answer is
 created, and saved wording is **not supplied to the model yet**. Editing and
-forgetting are still unavailable.
+forgetting are implemented in checkpoint 3 below.
 
 ### Browser request and state flow
 
@@ -363,3 +359,192 @@ tests and eight synthetic phone/desktop panel scenarios pass (loaded, empty,
 loading, error, focus return, and no horizontal overflow). Artifacts are under
 `output/playwright/personal-memory/panel-*` and `simple-panel-*`. This UI-only
 refinement does not repeat backend integration or live-provider verification.
+
+## Checkpoint 3: correction and forgetting
+
+In Memory, select the saved wording to edit it, then choose **Save**. The small
+pencil marks each editable row. **Forget** is available inside the editor and
+removes the selected entry through one confirmation. An × in the header closes
+the panel; Escape also closes it and returns focus to the Memory button. The action
+explains that changing memory starts fresh model context; visible history stays.
+New saves also reset context and disclose that effect in the composer hint.
+Model personalization is still disabled.
+
+Use the same model-disabled application to manage memory. Rejected edits preserve
+the edit draft. A stale-tab rejection shows current wording. Choose **Review
+latest** to accept that entry version while keeping your draft, then explicitly
+save or confirm forgetting. The panel never silently adopts a newer revision;
+another concurrent change requires another review. Uncertain
+changes retain their exact operation for **Check change** or **Retry change**,
+without automatic replay or offline queuing. An unchanged or missing read does
+not prove an in-flight write failed. The composer draft is independent.
+Session replacement/unmount cancels delivery and clears scoped private state.
+
+### Read the change
+
+1. [Reviewed design decisions](personal-memory-mutations.md): why recovery keeps
+   minimal metadata and why edits replace current-source provenance. This section
+   is the canonical implementation walkthrough.
+2. [PersonalMemory](../packages/backend/src/memory/application/personal-memory.ts):
+   replay, revision/conflict, busy, capacity, and context-reset policy through
+   transaction-scoped module capabilities.
+3. [Memory repository](../packages/backend/src/memory/adapters/drizzle-memory.repository.ts)
+   and [migration 0010](../packages/backend/drizzle/0010_memory_mutations.sql):
+   nine-column memory table, null forgotten content, owner-scoped updates, and
+   existing-conversation context-boundary backfill. Migration 0009 is unchanged.
+4. [API controller](../apps/api/src/memory/adapters/driving/http/memory.controller.ts)
+   and generated client: PATCH/DELETE `/memory/{entryId}` target an expected
+   revision and fresh mutation ID. PATCH submits `sourceRequest`, replacing the
+   previous wording and source rather than retaining its history. GET detail and
+   saved-request lookup return active entries or text-free forgotten metadata.
+5. [Browser change operation](../apps/web/src/features/memory/state/memory-change.ts)
+   and [panel](../apps/web/src/features/memory/ui/memory-panel.tsx): response
+   validation, exact explicit recovery, session/deadline cancellation, and minimal
+   edit/forget controls. Obsolete save recovery resolves changed/forgotten
+   outcomes without recreating text or clearing the next draft.
+
+Save and change operations share [bounded request execution and failure
+classification](../apps/web/src/features/memory/state/memory-recovery.ts) and
+[component lifetime/duplicate-action handling](../apps/web/src/features/memory/state/use-memory-operation.ts).
+Each operation retains its own result validation and recovery commands; save
+alone clears its submitted composer draft. Only the list has a query cache;
+recovery reads the selected entry directly. Confirmed changes cancel obsolete
+list reads, update the displayed list, and invalidate it for a fresh read.
+
+### Exact request and context trace
+
+An edit submits `{ requestId, expectedRevision: 1, sourceRequest: "Remember that
+I prefer explanations first." }` to a selected entry. Within the existing owner
+lock, the use case checks replay, revision, busy state and capacity; the memory
+repository replaces wording/source and increments the revision; the conversation
+service sets its own `context_start_sequence` to `next_sequence`. One transaction
+commits both operations. No module queries another module's tables directly.
+
+After editing, `sourceRequest` describes the latest wording change. The browser
+currently constructs that command from the editor text; it is not an untouched
+copy of the original save request. Replacing it removes the older source text.
+
+A lost response can be checked through GET detail: the latest mutation ID,
+revision and exact source identify the accepted edit. A newer revision belonging
+to another operation is a conflict. A forgotten state resolves a forget without
+another DELETE; edit recovery sees FORGOTTEN. Earlier accepted edits become stale
+after later changes. Original save IDs never recreate edited/forgotten content.
+
+Forgetting nulls both `text` and `source_request`. Retained IDs, revision and
+forgetting timestamps prevent old requests from resurrecting the entry. These
+markers do not consume active capacity and are not automatically purged; there
+is no old-text history, hash, or command ledger. Visible transcripts, database
+backups and provider retention remain separate from active-memory forgetting.
+
+Future context reads exclude sequences before the boundary, including assistant
+restatements. Later exchanges accumulate normally. Clear history resets both
+sequence fields while incrementing the history version. Known replays do not
+advance the boundary. Reads remain available during generation, while new writes
+are rejected as busy until the current attempt ends or its durable deadline
+expires. The existing deadline check prevents an expired response from publishing.
+
+### Run locally
+
+Before trying checkpoint 3 against a local development database, deliberately run
+`pnpm db:migrate`, then use the running app. This checkpoint creates migration
+0010 but does not apply it to development data during verification.
+
+### Checkpoint 3 evidence (2026-11-09)
+
+- `pnpm check` passes formatting, lint, types, all 570 unit/contract tests, and
+  the default Turbopack production build.
+- `pnpm test:integration` passes all 155 disposable PostgreSQL/HTTP/SDK checks.
+  New cases cover exact and older edit replay, stale deletion, forgotten content
+  nulling, deliberate new saves, active-capacity reuse, competing edits,
+  ownership/CSRF/Origin protections, running-attempt busy behavior and expired
+  completion, atomic rollback, context exclusion/reset, and real upgrade SQL
+  backfill. The disposable database container and network were removed.
+- All 22 synthetic phone/desktop mutation scenarios pass at 1440×1000 and
+  390×844: edit, forget, cancel, stale-tab response, busy response, lost edit
+  response with read or exact retry, lost forget response with metadata lookup,
+  missing/unchanged recovery reads, and session expiry. Independent composer
+  drafts and horizontal layout remain intact. Scripts, results and screenshots
+  are under `output/playwright/personal-memory/checkpoint3/`.
+- Browser API responses are synthetic; this does not claim integrated real-auth
+  memory acceptance, deployed proxy behavior, or live model obedience. API tests
+  separately use real cookies/CSRF and the disposable migrated database. Model
+  personalization and checkpoint 5's integrated memory demo remain deferred.
+- Strict OpenSpec and whitespace checks pass. Generated contracts add mutation
+  routes, entry revision/latest-operation metadata, forgotten outcomes and
+  changed/forgotten errors. The lockfile and earlier migrations are unchanged.
+  No live provider call, existing `.env` edit, development-data operation, commit,
+  or archive occurred.
+
+Checkpoint 3 is implemented and verified through the final checkpoint report
+below. Checkpoint 4 requires a separate request.
+
+### Memory controls simplification (2026-11-12)
+
+The list now uses one clickable wording row with a pencil icon per memory.
+Forget is inside the editor, with the existing single confirmation. A header
+close icon replaces the large footer button. Mutation and recovery rules are
+unchanged.
+
+Web typing, focused ESLint, formatting, all 60 memory API/save/change tests, and
+all 22 synthetic phone/desktop mutation scenarios pass. Browser checks also
+cover keyboard activation, close/Escape focus return, independent composer
+drafts, and layout at both sizes. The script and screenshots are under
+`output/playwright/personal-memory/checkpoint3/simple-*`. This presentation-only
+change does not repeat database integration or establish real-auth browser or
+live-model acceptance.
+
+### Browser recovery cleanup (2026-11-12)
+
+The owner approved the review's unused-cache removal, shared recovery mechanics,
+explicit conflict resolution, and focused documentation consolidation. The list
+is the only query cache. Save and change flows share small request/lifetime/error
+helpers while retaining their own result checks and draft policy. A conflict
+requires **Review latest** before another explicit save or forget, preserving
+the editor draft. A failed latest-entry read offers **Try again**. Reviewing
+updates the selected version without submitting the form.
+
+Verification:
+
+- `pnpm check` passes formatting, lint, types, all 572 unit/contract tests, and
+  the default Turbopack production build. The sandbox initially blocked localhost
+  stub servers and subprocess checks; the full check passed with the required
+  local process permissions.
+- All 91 focused memory API/save/change/application tests pass, including an
+  in-flight list response that must not restore obsolete wording after an edit.
+- All 70 synthetic browser scenarios pass at 1440×1000 and 390×844: 34 save,
+  22 mutation, and 14 conflict/review scenarios. New cases cover repeat conflicts,
+  stale deletion, lost responses after reviewing, forgotten entries, failed
+  latest reads, and duplicate submissions. Independent drafts, explicit retries,
+  focus return, and layout remain covered. Scripts, result JSON, and screenshots
+  are under `output/playwright/personal-memory/cleanup/`.
+- Strict OpenSpec and whitespace checks pass. Generated OpenAPI/client output,
+  migration SQL/metadata, and the lockfile match their pre-cleanup contents.
+  No backend behavior changed, so disposable database integration was not
+  repeated for this browser-only cleanup. Final checkpoint verification below
+  separately reruns integration and completes task 3.5.
+- Browser API responses are synthetic. This does not establish integrated
+  real-auth memory acceptance or live model behavior. No live provider calls,
+  development-data operations, commit, or archive were performed.
+
+Removing Forget's request ID and changing the editor payload to plain wording
+remain separate design decisions. Checkpoint 4 remains deferred.
+
+### Final checkpoint 3 verification (2026-11-12)
+
+The owner reviewed the implementation, approved the browser cleanup and typed
+identifier arguments, and requested a commit. `PersonalMemory` accepts string
+identifiers with runtime UUID validation and unknown request bodies with Zod
+validation. Blank lines separate the use case's logical steps.
+
+- `pnpm check` passes all 572 unit/contract tests, formatting, lint, types, and
+  the default Turbopack production build on the final code.
+- `pnpm test:integration` passes all 155 disposable PostgreSQL/HTTP/SDK checks.
+  The test database uses real migrations; its container and network were removed.
+- The 70 synthetic phone/desktop scenarios from the cleanup report remain the
+  browser evidence. Later identifier-type and spacing edits do not change browser
+  behavior; browser acceptance was not repeated for those edits.
+- Strict OpenSpec and whitespace checks pass. Generated contracts accompany the
+  protected mutation routes, and migration 0010 carries the schema changes.
+- Task 3.5's final verification is complete. Checkpoint 4's model use and checkpoint
+  5's integrated memory acceptance remain deferred. No live provider calls,
+  development-data operations, or archive were performed.

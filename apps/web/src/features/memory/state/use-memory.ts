@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ObsoleteSessionError } from '../../auth/session-scope';
 import type { SessionScope } from '../../auth/session-scope';
 import { memoryCommand } from '../api/memory-contracts';
 import { createMemoryQueries } from './memory-queries';
 import { memorySaveOptions, memorySaveState } from './memory-save';
-import type { MemorySaveAction } from './memory-save';
+import { useMemoryOperation } from './use-memory-operation';
 
 export function useMemory(
   session: SessionScope,
@@ -13,32 +12,11 @@ export function useMemory(
 ) {
   const queries = useQueryClient();
   const [memory] = useState(() => createMemoryQueries(session, queries));
-  const lifetime = useRef<AbortController | null>(null);
-  // Synchronous guard also covers duplicate actions before React rerenders.
-  const active = useRef(false);
-  useEffect(() => {
-    const controller = new AbortController();
-    lifetime.current = controller;
-    return () => controller.abort(new ObsoleteSessionError());
-  }, []);
+  const operation = useMemoryOperation();
   const mutation = useMutation(
-    memorySaveOptions({ ...memory, clearSubmittedDraft }, () => {
-      if (!lifetime.current) throw new ObsoleteSessionError();
-      return lifetime.current.signal;
-    }),
+    memorySaveOptions({ ...memory, clearSubmittedDraft }, operation.signal),
   );
   const state = memorySaveState(mutation);
-  const run = async (action: MemorySaveAction) => {
-    if (active.current) return;
-    active.current = true;
-    try {
-      await mutation.mutateAsync(action);
-    } catch {
-      /* The mutation result owns the visible failure/recovery state. */
-    } finally {
-      active.current = false;
-    }
-  };
   return {
     memory,
     state,
@@ -46,30 +24,38 @@ export function useMemory(
       save: (sourceRequest: string, draftRevision: number) => {
         const command = memoryCommand(sourceRequest);
         if (state.pending || !command || command.error) return;
-        return run({
-          kind: 'save',
-          command: {
-            input: { requestId: crypto.randomUUID(), sourceRequest },
-            draftRevision,
-          },
-          recovering: false,
-        });
+        return operation.run(() =>
+          mutation.mutateAsync({
+            kind: 'save',
+            command: {
+              input: { requestId: crypto.randomUUID(), sourceRequest },
+              draftRevision,
+            },
+            recovering: false,
+          }),
+        );
       },
       check: () => {
-        if (state.phase === 'uncertain' && state.pending)
-          return run({
-            kind: 'check',
-            command: state.pending,
-            recovering: true,
-          });
+        const command = state.pending;
+        if (state.phase === 'uncertain' && command)
+          return operation.run(() =>
+            mutation.mutateAsync({
+              kind: 'check',
+              command,
+              recovering: true,
+            }),
+          );
       },
       retry: () => {
-        if (state.phase === 'uncertain' && state.pending)
-          return run({
-            kind: 'save',
-            command: state.pending,
-            recovering: true,
-          });
+        const command = state.pending;
+        if (state.phase === 'uncertain' && command)
+          return operation.run(() =>
+            mutation.mutateAsync({
+              kind: 'save',
+              command,
+              recovering: true,
+            }),
+          );
       },
     },
   };

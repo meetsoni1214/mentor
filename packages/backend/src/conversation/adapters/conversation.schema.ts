@@ -31,6 +31,9 @@ export const conversations = pgTable(
       .references(() => owners.id, { onDelete: 'cascade' }),
     historyVersion: integer('history_version').notNull().default(0),
     nextSequence: integer('next_sequence').notNull().default(1),
+    contextStartSequence: integer('context_start_sequence')
+      .notNull()
+      .default(1),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -39,6 +42,10 @@ export const conversations = pgTable(
     check(
       'conversation_version_nonnegative',
       sql`${table.historyVersion} >= 0`,
+    ),
+    check(
+      'conversation_context_start_positive',
+      sql`${table.contextStartSequence} > 0`,
     ),
     check('conversation_sequence_positive', sql`${table.nextSequence} > 0`),
   ],

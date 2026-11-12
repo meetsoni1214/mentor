@@ -6,11 +6,22 @@ import {
   mutationHeaders,
   requestFailure,
 } from '../../../lib/api-request';
-import { memoryEntrySchema, memorySnapshotSchema } from './memory-contracts';
-import type { SaveMemoryInput } from './memory-contracts';
+import {
+  memoryEntrySchema,
+  memorySnapshotSchema,
+  memoryRecordSchema,
+  forgottenMemorySchema,
+} from './memory-contracts';
+import type {
+  SaveMemoryInput,
+  EditMemoryInput,
+  ForgetMemoryInput,
+} from './memory-contracts';
 
 type MemoryErrorCode = components['schemas']['MemoryErrorDto']['code'];
 const messages: Record<MemoryErrorCode, string> = {
+  ENTRY_CHANGED: 'This memory has changed. Review its current wording.',
+  FORGOTTEN: 'This memory has been forgotten.',
   INVALID_INPUT: 'This memory request is invalid. Your draft is kept.',
   NOT_FOUND: 'No saved memory was found for this request.',
   IDEMPOTENCY_CONFLICT:
@@ -54,7 +65,7 @@ export async function getMemory(entryId: string, signal: AbortSignal) {
     { params: { path: { entryId } }, signal, cache: 'no-store' },
   );
   if (!response.ok) throw failure(response, error);
-  const entry = memoryEntrySchema.parse(data);
+  const entry = memoryRecordSchema.parse(data);
   if (entry.id !== entryId) throw new Error('Invalid memory detail response.');
   return entry;
 }
@@ -64,9 +75,11 @@ export async function findSavedMemory(requestId: string, signal: AbortSignal) {
     { params: { path: { requestId } }, signal, cache: 'no-store' },
   );
   if (!response.ok) throw failure(response, error);
-  const entry = memoryEntrySchema.parse(data);
+  const entry = memoryRecordSchema.parse(data);
   if (entry.requestId !== requestId)
     throw new Error('Invalid saved-request response.');
+  if ('state' in entry) throw new MemoryApiError(410, 'FORGOTTEN');
+  if (entry.revision > 1) throw new MemoryApiError(409, 'ENTRY_CHANGED');
   return entry;
 }
 export async function saveMemory(input: SaveMemoryInput, signal: AbortSignal) {
@@ -85,5 +98,54 @@ export async function saveMemory(input: SaveMemoryInput, signal: AbortSignal) {
     entry.sourceRequest !== input.sourceRequest
   )
     throw new Error('Invalid memory save response.');
+  return entry;
+}
+
+export async function editMemory(
+  entryId: string,
+  input: EditMemoryInput,
+  signal: AbortSignal,
+) {
+  const token = await csrfToken(signal);
+  signal.throwIfAborted();
+  const { data, error, response } = await apiClient.PATCH(
+    '/api/v1/memory/{entryId}',
+    {
+      body: input,
+      params: { path: { entryId }, header: mutationHeaders(token) },
+      signal,
+      cache: 'no-store',
+    },
+  );
+  if (!response.ok) throw failure(response, error);
+  const entry = memoryEntrySchema.parse(data);
+  if (
+    entry.id !== entryId ||
+    entry.lastMutationRequestId !== input.requestId ||
+    entry.revision !== input.expectedRevision + 1 ||
+    entry.sourceRequest !== input.sourceRequest
+  )
+    throw new Error('Invalid memory edit response.');
+  return entry;
+}
+export async function forgetMemory(
+  entryId: string,
+  input: ForgetMemoryInput,
+  signal: AbortSignal,
+) {
+  const token = await csrfToken(signal);
+  signal.throwIfAborted();
+  const { data, error, response } = await apiClient.DELETE(
+    '/api/v1/memory/{entryId}',
+    {
+      body: input,
+      params: { path: { entryId }, header: mutationHeaders(token) },
+      signal,
+      cache: 'no-store',
+    },
+  );
+  if (!response.ok) throw failure(response, error);
+  const entry = forgottenMemorySchema.parse(data);
+  if (entry.id !== entryId) throw new Error('Invalid memory forget response.');
   return entry;
 }

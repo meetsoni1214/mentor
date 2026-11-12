@@ -27,7 +27,7 @@ The system SHALL save a personal memory only through an explicit owner memory op
 
 ### Requirement: Durable and recoverable explicit saves
 
-The system SHALL acknowledge a save only after its owner-scoped memory row commits. Repeating an accepted save request SHALL return the saved memory without duplication; conflicting key reuse SHALL be rejected. The owner SHALL be able to find a saved memory by request ID. Uncertain delivery SHALL retain the original request for explicit checking or retry.
+The system SHALL acknowledge a save only after its owner-scoped memory row commits. Repeating an accepted save request for an unchanged entry SHALL return the saved memory without duplication; edited entries SHALL return a changed outcome and forgotten entries a forgotten outcome, without restoring old content; conflicting key reuse SHALL be rejected. The owner SHALL be able to find a saved memory by request ID. Uncertain delivery SHALL retain the original request for explicit checking or retry.
 
 #### Scenario: Save response is lost
 
@@ -46,7 +46,7 @@ The system SHALL acknowledge a save only after its owner-scoped memory row commi
 
 ### Requirement: Inspectable active memory and provenance
 
-The owner SHALL be able to list active memories, inspect its current wording, original explicit source request, request ID, and creation timestamp. Saved memory SHALL survive reload and replacement of the browser session without relying on browser storage.
+The owner SHALL be able to list active memories, inspect their current wording, source request for the current wording, original save request ID, and creation timestamp. A correction SHALL replace wording and source without retaining old text. Saved memory SHALL survive reload and replacement of the browser session without relying on browser storage.
 
 #### Scenario: Reopen Mentor
 
@@ -56,7 +56,7 @@ The owner SHALL be able to list active memories, inspect its current wording, or
 #### Scenario: Inspect source
 
 - **WHEN** the owner requests a memory through the protected detail API
-- **THEN** the response includes its original direct owner request, request ID, and creation timestamp without inventing a conversation-turn link
+- **THEN** the response includes the source request for its current wording, original save request ID, and creation timestamp without inventing a conversation-turn link
 
 #### Scenario: Focused memory panel
 
@@ -65,7 +65,7 @@ The owner SHALL be able to list active memories, inspect its current wording, or
 
 ### Requirement: Explicit targeted correction
 
-The owner SHALL be able to replace a specified memory using its expected revision. Successful correction SHALL replace the current wording without retaining historical wording for browsing. Stale edits SHALL be rejected. Ordinary chat or a separate save SHALL not implicitly resolve semantic conflicts.
+The owner SHALL be able to replace a specified memory using its expected revision. Successful correction SHALL replace the current wording and its direct source request without retaining historical wording for browsing. Source inspection SHALL describe the explicit operation that supplied the current wording. Stale edits SHALL be rejected. Ordinary chat or a separate save SHALL not implicitly resolve semantic conflicts.
 
 #### Scenario: Change learning preference
 
@@ -76,6 +76,12 @@ The owner SHALL be able to replace a specified memory using its expected revisio
 
 - **WHEN** a second tab submits an edit based on an obsolete revision
 - **THEN** the edit is rejected and the current version is shown without overwriting it
+
+#### Scenario: Review a conflicting edit without losing the draft
+
+- **WHEN** an edit conflicts with a newer entry revision
+- **THEN** the owner can explicitly review that latest version while retaining the edit draft, and only a subsequent explicit submission targets the reviewed revision
+- **AND** another concurrent change still requires review rather than silently advancing the expected revision
 
 #### Scenario: Untargeted conversational correction
 

@@ -1,3 +1,4 @@
+import { gte } from 'drizzle-orm';
 import { and, desc, eq, inArray, lt, lte, sql } from 'drizzle-orm';
 import type { DatabaseConnection } from '../../database/index.js';
 import { lockOwnerForUpdate } from '../../identity/persistence.js';
@@ -357,6 +358,7 @@ export class DrizzleConversationRepository implements ConversationRepository {
           and(
             eq(turns.conversationId, conversation.id),
             lt(turns.sequence, beforeSequence),
+            gte(turns.sequence, conversation.contextStartSequence),
             eq(attempts.state, 'completed'),
           ),
         )
@@ -439,7 +441,7 @@ export class DrizzleConversationRepository implements ConversationRepository {
       const historyVersion = conversation.historyVersion + 1;
       await tx
         .update(conversations)
-        .set({ historyVersion, nextSequence: 1 })
+        .set({ historyVersion, nextSequence: 1, contextStartSequence: 1 })
         .where(eq(conversations.id, conversation.id));
       return historyVersion;
     });

@@ -196,22 +196,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/memory/requests/{requestId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["MemoryController_findByRequest"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/memory/{entryId}": {
         parameters: {
             query?: never;
@@ -220,6 +204,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["MemoryController_get"];
+        put?: never;
+        post?: never;
+        delete: operations["MemoryController_forget"];
+        options?: never;
+        head?: never;
+        patch: operations["MemoryController_edit"];
+        trace?: never;
+    };
+    "/api/v1/memory/requests/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["MemoryController_findByRequest"];
         put?: never;
         post?: never;
         delete?: never;
@@ -446,26 +446,42 @@ export interface components {
         MemoryErrorDto: {
             statusCode: number;
             /** @enum {string} */
-            code: "INVALID_INPUT" | "NOT_FOUND" | "IDEMPOTENCY_CONFLICT" | "BUSY" | "LIMIT_EXCEEDED";
+            code: "INVALID_INPUT" | "NOT_FOUND" | "ENTRY_CHANGED" | "FORGOTTEN" | "IDEMPOTENCY_CONFLICT" | "BUSY" | "LIMIT_EXCEEDED";
             message: string;
         };
-        MemoryLimitsDto: {
-            maxEntries: number;
-            maxEntryBytes: number;
-            maxProfileBytes: number;
-            maxRequestBytes: number;
-        };
         MemoryEntryDto: {
+            revision: number;
+            /** Format: uuid */
+            lastMutationRequestId: string | null;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
             requestId: string;
             /** @description Owner wording, at most 512 UTF-8 bytes. */
             text: string;
-            /** @description Original direct owner request, at most 1024 UTF-8 bytes. */
+            /** @description Direct owner request for the current wording, at most 1024 UTF-8 bytes. */
             sourceRequest: string;
             /** Format: date-time */
             createdAt: string;
+        };
+        ForgottenMemoryDto: {
+            /** @enum {string} */
+            state: "forgotten";
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            requestId: string;
+            revision: number;
+            /** Format: uuid */
+            lastMutationRequestId: string | null;
+            /** Format: date-time */
+            forgottenAt: string;
+        };
+        MemoryLimitsDto: {
+            maxEntries: number;
+            maxEntryBytes: number;
+            maxProfileBytes: number;
+            maxRequestBytes: number;
         };
         MemorySnapshotDto: {
             limits: components["schemas"]["MemoryLimitsDto"];
@@ -476,6 +492,18 @@ export interface components {
             requestId: string;
             /** @description Start with Remember that (case insensitive) and one space, then nonblank wording. At most 1024 UTF-8 bytes overall, 512 bytes after trimming payload boundary whitespace. The original request is retained as source. */
             sourceRequest: string;
+        };
+        EditMemoryDto: {
+            /** Format: uuid */
+            requestId: string;
+            /** @description Start with Remember that (case insensitive) and one space, then nonblank wording. At most 1024 UTF-8 bytes overall, 512 bytes after trimming payload boundary whitespace. The original request is retained as source. */
+            sourceRequest: string;
+            expectedRevision: number;
+        };
+        ForgetMemoryDto: {
+            /** Format: uuid */
+            requestId: string;
+            expectedRevision: number;
         };
     };
     responses: never;
@@ -1372,6 +1400,14 @@ export interface operations {
                     "application/json": components["schemas"]["MemoryErrorDto"];
                 };
             };
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"];
+                };
+            };
             413: {
                 headers: {
                     [name: string]: unknown;
@@ -1463,85 +1499,7 @@ export interface operations {
                     "application/json": components["schemas"]["MemoryErrorDto"];
                 };
             };
-            413: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorDto"];
-                };
-            };
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorDto"];
-                };
-            };
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorDto"];
-                };
-            };
-        };
-    };
-    MemoryController_findByRequest: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                requestId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Find the saved memory by its original request ID. NOT_FOUND does not prove a pending save cannot still commit; no automatic mutation replay. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemoryEntryDto"];
-                };
-            };
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemoryErrorDto"] | components["schemas"]["ApiErrorDto"];
-                };
-            };
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorDto"];
-                };
-            };
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorDto"];
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemoryErrorDto"];
-                };
-            };
-            409: {
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1591,6 +1549,206 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    "application/json": components["schemas"]["MemoryEntryDto"] | components["schemas"]["ForgottenMemoryDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"] | components["schemas"]["ApiErrorDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"];
+                };
+            };
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+        };
+    };
+    MemoryController_forget: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": string;
+                Origin: string;
+            };
+            path: {
+                entryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForgetMemoryDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForgottenMemoryDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"] | components["schemas"]["ApiErrorDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"];
+                };
+            };
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+        };
+    };
+    MemoryController_edit: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": string;
+                Origin: string;
+            };
+            path: {
+                entryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditMemoryDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/json": components["schemas"]["MemoryEntryDto"];
                 };
             };
@@ -1627,6 +1785,108 @@ export interface operations {
                 };
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"];
+                };
+            };
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+        };
+    };
+    MemoryController_findByRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Find the saved memory by its original request ID. NOT_FOUND does not prove a pending save cannot still commit; no automatic mutation replay. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryEntryDto"] | components["schemas"]["ForgottenMemoryDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"] | components["schemas"]["ApiErrorDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryErrorDto"];
+                };
+            };
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };
