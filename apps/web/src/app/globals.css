@@ -236,10 +236,6 @@
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
 }
-.message-meta span {
-  color: var(--color-text-secondary);
-  font-weight: var(--font-weight-medium);
-}
 .message-meta time {
   color: var(--color-text-muted);
   font-size: var(--font-size-2xs);
@@ -265,6 +261,27 @@
   color: var(--color-message-user-text);
   border-radius: var(--radius-lg) var(--radius-lg) var(--radius-xs)
     var(--radius-lg);
+}
+.message-bubble:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 4px;
+}
+/* Reserve metadata space so revealing it never moves the conversation. */
+@media (hover: hover) and (pointer: fine) {
+  .message-meta time,
+  .run-details-trigger {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .message:hover .message-meta time,
+  .message:focus-within .message-meta time,
+  .message:has(.run-details[data-state='open']) .message-meta time,
+  .message:hover .run-details-trigger,
+  .message:focus-within .run-details-trigger,
+  .run-details[data-state='open'] .run-details-trigger {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 .message-outcome {
   color: var(--color-text-soft);

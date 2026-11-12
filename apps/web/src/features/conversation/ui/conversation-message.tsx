@@ -52,20 +52,21 @@ export function ConversationMessage({
     >
       <div className="message message-user">
         <div className="message-meta">
-          <span>You</span>
           <MessageTime value={turn.createdAt} />
         </div>
-        <div className="message-bubble">{turn.text}</div>
+        <div className="message-bubble" tabIndex={0}>
+          {turn.text}
+        </div>
       </div>
       <div className="message message-assistant">
         <div className="message-meta">
-          <span>{brand.name}</span>
           {latest && (
             <MessageTime value={latest.finishedAt ?? latest.startedAt} />
           )}
         </div>
         <div
           className={`message-bubble${latest?.state === 'completed' ? '' : ' message-outcome'}`}
+          tabIndex={0}
         >
           {latest?.state === 'completed' ? (
             <AssistantContent
