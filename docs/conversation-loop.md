@@ -11,8 +11,9 @@ checkpoint sections retain their historical results and limits.
 [Personal memory checkpoint 4](personal-memory.md#checkpoint-4-active-memory-in-conversation)
 now supplies active saved wording to new attempts through an application-owned
 profile port. Correction and forgetting exclude earlier exchanges from future
-context while preserving visible history. Integrated browser acceptance of the
-full memory journey remains its separate checkpoint 5.
+context while preserving visible history. [Personal memory checkpoint 5](personal-memory.md#checkpoint-5-integrated-milestone-acceptance)
+verifies the full journey in 26 phone/desktop scenarios through the real local
+authentication/proxy/database/SDK path, using localhost model responses.
 
 Mentor will have one continuous conversation. The owner will not create, name,
 or choose threads. This checkpoint implements its backend persistence and run

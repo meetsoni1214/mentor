@@ -1,11 +1,14 @@
 # Explicit personal memory
 
-Checkpoints 1–4 implement authenticated API save/read with one `memories` table,
+Checkpoints 1–5 implement authenticated API save/read with one `memories` table,
 composer capture, and a focused Memory panel. The owner requested the simpler
 storage design after reviewing the initial four-table version. Correction and
 forgetting are implemented in checkpoint 3. Checkpoint 4 supplies the active
-profile to conversation attempts as labeled personal data. Integrated browser
-acceptance remains [checkpoint 5](../openspec/changes/add-explicit-personal-memory/tasks.md).
+profile to conversation attempts as labeled personal data. Checkpoint 5 verifies
+the complete journey through the real local browser/API/database path; see the
+[acceptance report](#checkpoint-5-integrated-milestone-acceptance). Earlier
+checkpoint sections retain their historical verification results. Live model
+behavior and deployment acceptance remain unverified.
 
 ## Storage
 
@@ -681,3 +684,152 @@ These tests inspect real SDK requests to a localhost stub; all other provider
 traffic is denied. Fixture answers are supplied by the stub and do not establish
 live model obedience, teaching quality, or universal prompt-injection protection.
 Checkpoint 5's integrated phone/desktop memory journey remains deferred.
+
+## Checkpoint 5: integrated milestone acceptance
+
+The complete explicit-memory journey passes through the local production web
+build, its `/api` rewrite, real NestJS authentication and CSRF guards, migrated
+disposable PostgreSQL, and the pinned Agents SDK/client. The SDK's provider
+transport points only to a localhost response stub. No production behavior needed
+changes in this checkpoint.
+
+### Reading and review order
+
+1. [Composer](../apps/web/src/features/conversation/ui/conversation-composer.tsx)
+   shows the literal **Save memory** action. [Save coordination](../apps/web/src/features/memory/state/memory-save.ts)
+   owns the exact request and submitted-draft revision; checking or retrying an
+   uncertain save requires an explicit action.
+2. [Memory panel](../apps/web/src/features/memory/ui/memory-panel.tsx) lists current
+   wording and targets one entry for correction or forgetting.
+   [Change coordination](../apps/web/src/features/memory/state/memory-change.ts)
+   checks entry revision/request identity; conflicting edits require **Review
+   latest**, preserving the editor draft before a new explicit submission.
+3. [Memory use case](../packages/backend/src/memory/application/personal-memory.ts)
+   and [transaction composition](../apps/api/src/memory/infrastructure/create-personal-memory.ts)
+   coordinate memory writes, conversation admission, and context boundaries under
+   the owner lock. [Checkpoint 4's reading order](#read-the-change) follows current
+   wording from this boundary to the captured SDK input.
+4. The local [acceptance server](../output/playwright/integrated/memory/server.mjs)
+   creates a disposable database using `compose.test.yaml`, migrates it, provisions
+   a synthetic owner, and boots the real API. Its harness-only substitution
+   redirects model transport; neither production configuration nor request input
+   can choose that URL. [Browser scenarios](../output/playwright/integrated/memory/check.cjs)
+   exercise the real web build with Playwright CLI.
+5. Inspect [results](../output/playwright/integrated/memory/results.json),
+   [desktop saved memory](../output/playwright/integrated/memory/saved-1440.png),
+   [phone saved memory](../output/playwright/integrated/memory/saved-390.png), and
+   [phone conflict review](../output/playwright/integrated/memory/conflict-390.png).
+   [Desktop SDK captures](../output/playwright/integrated/memory/requests-1.json)
+   and [phone SDK captures](../output/playwright/integrated/memory/requests-14.json)
+   show the complete main journey. Browser harnesses, screenshots, and captures
+   remain local artifacts under the existing ignored `output/playwright/` tree,
+   separate from the earlier conversation acceptance results.
+
+### Verified behavior (2026-11-12)
+
+All 13 scenarios pass at both **1440×1000** and **390×844**, for **26 passing
+scenarios**. Assertions inspect visible behavior, actual persisted rows and
+captured SDK requests. There are no uncaught browser errors, remote browser
+requests, or unexpected provider requests. Expected HTTP errors are exercised
+deliberately, including unauthorized sessions, busy/conflicting writes, forgotten
+requests, and absent saved-request lookups.
+
+| Scenario                                               | Observed result                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Save → inspect → reload → use → correct → use → forget | Literal wording persists without a model call or chat turn; detail API retains provenance with private/no-store caching; later attempts use current wording. Prior user and assistant restatements stay visible but leave model context after mutation. Old save/edit replays return forgotten outcomes without restoring text. |
+| Clear history                                          | Confirmation explains memory preservation; wording and source survive. New-version exchanges enter model context normally.                                                                                                                                                                                                      |
+| Preference outside recent context                      | After 32 synthetic archive exchanges, the active profile still accompanies the newest question, the attempt reports omitted history, and older messages remain browsable.                                                                                                                                                       |
+| Lost committed save response                           | **Check saved request** reads the persisted row without another POST; an independent next draft survives.                                                                                                                                                                                                                       |
+| Save never reaches server                              | A real absent-request lookup leaves delivery uncertain; **Retry original save** uses the identical request ID and wording.                                                                                                                                                                                                      |
+| Lost committed edit response                           | **Check change** confirms the real saved revision without replay and preserves the conversation draft.                                                                                                                                                                                                                          |
+| Lost committed forget response                         | **Retry change** resends the identical command and resolves the content-free forgotten record; wording/source remain null.                                                                                                                                                                                                      |
+| Two competing tabs                                     | A stale edit receives a real revision conflict. **Review latest** preserves the draft and performs no write; only the following explicit Save targets the reviewed revision.                                                                                                                                                    |
+| Generation versus mutation                             | An unexpired streamed attempt rejects both edit and forget. Backdating its durable deadline releases memory management; late model completion is interrupted and cannot enter fresh context.                                                                                                                                    |
+| Logout during unresolved save                          | Late delivery cannot put a success notice, draft, or pending command into the sign-in/replacement session. Signing in again reads the committed memory from the server.                                                                                                                                                         |
+| Session expiry during unresolved save                  | Real database session expiry causes authentication cleanup and the same late-delivery exclusion; private browser storage remains empty.                                                                                                                                                                                         |
+| AI-disabled management                                 | With invalid model configuration, save, inspect, correct, and forget still work without a conversation turn or provider request.                                                                                                                                                                                                |
+| Required context exceeds limit                         | Three valid entries exceed the harness's 1024-byte conversation bound. The UI shows the saved execution-limit failure with zero provider calls. Removing entries and intentionally retrying uses current memory, keeps one turn, and starts one provider request.                                                               |
+
+Ordinary scenarios use real API/database responses. Fault cases selectively
+intercept memory mutation delivery: a response is dropped after `route.fetch()`
+has reached the real server, a save is blocked before delivery, or a committed
+response is held until logout/expiry. These interceptions do not supply fake
+memory data. Test-only control operations expire sessions/attempt deadlines,
+switch model configuration by restarting the API, and seed archive history;
+they are confined to the disposable harness and are not application endpoints.
+
+### Reproduce the local acceptance
+
+Use the existing local harness and installed Playwright CLI from the repository
+root. These commands do not load a provider key or use the development database.
+The harness sets its own synthetic credentials and isolated database URL.
+
+```sh
+API_INTERNAL_URL=http://127.0.0.1:3271 pnpm build
+node output/playwright/integrated/memory/server.mjs
+```
+
+In a second terminal, serve the production build:
+
+```sh
+pnpm --filter @mentor/web exec next start --hostname 127.0.0.1 --port 3270
+```
+
+In another terminal, run the browser script:
+
+```sh
+playwright-cli --session memory-acceptance open http://127.0.0.1:3270
+playwright-cli --session memory-acceptance run-code --filename output/playwright/integrated/memory/check.cjs
+playwright-cli --session memory-acceptance close
+curl --request POST http://127.0.0.1:3272/stop
+```
+
+The stop operation removes only the harness's disposable Compose project and
+database. Stop the acceptance web process as well. `pnpm check` subsequently
+rebuilds the ordinary production output without the acceptance rewrite override.
+Ports 3270–3272 are local acceptance ports; do not point this harness at the
+owner's running workspace or persistent database. The owner-provided
+`https://mentor.localhost/` was checked for reachability only; acceptance writes
+used the separate stack above.
+
+### Scope and remaining limits
+
+Explicit capture, inspection, targeted correction/forgetting, request recovery,
+active-profile use, context exclusion, and local integrated acceptance are
+implemented. Earlier checkpoint reports distinguish their own synthetic browser
+fixtures from this integrated path. The final repository gates are recorded below.
+
+No live provider call, actual personal data, existing `.env` edit, or development
+database operation is part of acceptance. Fixture answers are supplied by the
+stub: they establish request roles, context selection, persistence, and UI
+behavior, not live model obedience, lesson quality, public search compatibility,
+or universal prompt-injection protection. Local HTTP cookies/proxy acceptance
+does not establish deployed Secure-cookie/TLS/reverse-proxy behavior. The running
+local HTTPS app's unauthenticated sign-in screen is not deployment acceptance.
+
+Automatic extraction, inferred traits, semantic retrieval, exports, background
+consolidation, documents/screenshots, reminders, proactivity, and external actions
+remain deferred. No new model tool, permission system, or cumulative execution
+budget is introduced. Review this milestone before committing or archiving;
+reconciling the overlapping historical roadmap remains a separate archive step.
+
+### Final checkpoint 5 verification
+
+- `pnpm check` passes formatting, lint, strict typing, all **589 unit/contract
+  tests**, generated API/client steps, and the default Turbopack production build.
+- `pnpm test:integration` passes all **163 disposable PostgreSQL/HTTP/SDK checks**
+  using actual migrations. Both test infrastructure and acceptance infrastructure
+  were removed; no acceptance containers, networks, or listeners on ports
+  3270–3272 remain.
+- All **26 integrated browser scenarios** pass on the final harness. The main
+  SDK captures include literal old wording in both prior user and assistant
+  messages, then exclude it after correction and forgetting. Screenshots were
+  inspected for phone layout and conflict review.
+- Strict OpenSpec validation and whitespace checks pass. Regeneration produces
+  no API/client, migration, or lockfile drift. No application code changed.
+  The generated Next.js environment declaration was restored to its incoming
+  development paths after verification, and the final production build restores
+  the ordinary API rewrite without the acceptance override.
+- All **28/28 change tasks** are complete. Stop for milestone review: this
+  checkpoint is uncommitted and unarchived. No live provider access, personal
+  content, persistent development-data changes, or `.env` edits were used.

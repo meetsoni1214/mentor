@@ -17,10 +17,13 @@ completion. See the [search evidence checkpoint](docs/conversation-loop.md#searc
 Task 4.3 adds [synthetic investigation/adversarial fixtures](docs/conversation-loop.md#adversarial-investigation-fixtures-task-43)
 and explicit account-access/action limits in the instructions. Fixture checks
 verify permissions and evidence handling, not universal live-model truthfulness.
-The [first personal-memory checkpoint](docs/personal-memory.md) adds protected
-API saving and inspection of explicit owner wording and source requests in one
-table, with request IDs preventing duplicate saves. Browser memory controls, correction/forgetting, and model use remain
-later checkpoints. Notes, email access, and external actions remain future work.
+[Explicit personal memory](docs/personal-memory.md) supports literal composer
+capture, a Memory panel, targeted correction/forgetting, explicit recovery, and
+active wording in model context. Memory changes exclude older exchanges from
+future model context while preserving visible history. The complete journey has
+[local integrated phone/desktop acceptance](docs/personal-memory.md#checkpoint-5-integrated-milestone-acceptance)
+with real authentication/database behavior and localhost model responses.
+Automatic extraction, notes, email access, and external actions remain future work.
 
 Browser branding, design tokens, and reusable controls follow the
 [design system guide](docs/design-system.md). Name, logo, colors, and typography

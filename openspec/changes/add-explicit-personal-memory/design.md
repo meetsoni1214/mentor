@@ -127,6 +127,13 @@ API/schema changes. Preparation/read failures are redacted and deadline-bounded.
 
 Every checkpoint includes its own behavior checks and documentation. Stop for owner review; commit/archive separately when requested.
 
+All five checkpoints are implemented. The [integrated acceptance report](../../../docs/personal-memory.md#checkpoint-5-integrated-milestone-acceptance)
+records 26 passing phone/desktop scenarios through real local authentication,
+the production proxy, disposable PostgreSQL, and the actual SDK with localhost
+responses. The final gates pass 589 unit/contract tests, 163 integration checks,
+and the production build. Live model and deployed TLS/proxy behavior remain
+unverified; stop for milestone review before commit/archive or broader memory work.
+
 ## Risks / Trade-offs
 
 - Keeping only current wording drops historical revision browsing -> accepted simplification; retain direct provenance for current save inspection.
