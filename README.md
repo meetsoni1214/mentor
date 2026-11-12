@@ -1,33 +1,16 @@
 # Mentor
 
-A personal assistant built incrementally. Owner provisioning, password recovery,
-browser sign-in, database sessions, and logout are implemented. The backend now
-provides one continuous conversation per owner, persistent turns and attempts,
-bounded context, an OpenAI Agents SDK/Responses adapter, and protected conversation
-HTTP endpoints with generated client types. The signed-in web screen now shows a
-conversation workspace with history pagination, run details, sending, draft
-recovery, and polling. An opt-in backend SSE submission endpoint now provides
-provisional text and saved results. The browser consumes that stream, keeping
-partial text temporary and recovering through history after a disconnect.
-Explicit attempt retry and Clear history are implemented. Task 4.1 makes hosted
-public-web search available whenever assistant execution is configured; the model
-chooses when to search. Task 4.2 saves observed search activity and validated
-citations, with clickable inline references and a visible source list after
-completion. See the [search evidence checkpoint](docs/conversation-loop.md#search-evidence-and-citations-task-42).
-Task 4.3 adds [synthetic investigation/adversarial fixtures](docs/conversation-loop.md#adversarial-investigation-fixtures-task-43)
-and explicit account-access/action limits in the instructions. Fixture checks
-verify permissions and evidence handling, not universal live-model truthfulness.
-[Explicit personal memory](docs/personal-memory.md) supports literal composer
-capture, a Memory panel, targeted correction/forgetting, explicit recovery, and
-active wording in model context. Memory changes exclude older exchanges from
-future model context while preserving visible history. The complete journey has
-[local integrated phone/desktop acceptance](docs/personal-memory.md#checkpoint-5-integrated-milestone-acceptance)
-with real authentication/database behavior and localhost model responses.
-Automatic extraction, notes, email access, and external actions remain future work.
+A private personal assistant with owner provisioning/password recovery, browser
+sign-in, and one continuous conversation. The workspace supports persistent
+history, streamed answers, explicit retry, Clear history, hosted public-web search,
+and validated citations. Explicit personal memory supports literal capture,
+inspection, correction/forgetting, recovery, and current wording in model context.
 
-Browser branding, design tokens, and reusable controls follow the
-[design system guide](docs/design-system.md). Name, logo, colors, and typography
-are shared across sign-in and the conversation workspace.
+Automatic extraction, semantic retrieval, notes, email access, background jobs,
+proactivity, and external actions are not implemented. Local integrated
+phone/desktop acceptance uses real authentication and disposable PostgreSQL with
+localhost model responses. Live model behavior and deployed TLS/proxy behavior
+remain unverified.
 
 ## Prerequisites
 
@@ -107,71 +90,41 @@ excluded from Git.
 See [owner setup](docs/owner-setup.md) for the command's flow and current limits.
 After creating the account, open https://mentor.localhost and sign in. Keep this
 browser address consistent: mutation requests must match `APP_ORIGIN`, which
-`pnpm dev` sets from Portless's public URL. Restart `pnpm dev` after applying the
-new migration. See [sign-in and sessions](docs/sign-in.md) for the request flow.
+`pnpm dev` sets from Portless's public URL. See
+[sign-in and sessions](docs/sign-in.md) for the request flow.
 
-## Conversation API checkpoint
+## Conversation and memory
 
-The API exposes these authenticated endpoints under `/api/v1`:
+Set server-only `OPENAI_API_KEY` and an explicit account-available
+`OPENAI_CHAT_MODEL` in the existing environment, then restart the API. There is
+no default model or enable flag. Valid configuration enables paid submit/retry
+requests and always offers hosted web search; the model chooses whether to use it.
+History and memory management remain available with execution disabled.
 
-| Method | Path                                 | Purpose                                                 |
-| ------ | ------------------------------------ | ------------------------------------------------------- |
-| GET    | `/assistant/status`                  | Read execution readiness and safe settings              |
-| GET    | `/conversation`                      | Read the singleton transcript with versioned pagination |
-| POST   | `/conversation/turns`                | Submit text with a request UUID and history version     |
-| POST   | `/conversation/turns/{turnId}/retry` | Explicitly retry the latest unsuccessful turn           |
-| DELETE | `/conversation/history`              | Clear local history using its observed version          |
+PostgreSQL owns history and attempts. Provisional streamed text stays temporary;
+lost delivery recovers through saved history without automatic replay. An
+intentional retry creates a fresh attempt on the latest unsuccessful message.
+Clear history preserves explicit memories.
 
-Mutations require the existing session, exact `APP_ORIGIN`, and session-bound
-`X-CSRF-Token`. Responses use private/no-store caching. There are no conversation
-creation or selection endpoints. See the development OpenAPI explorer for the
-generated DTOs and [the conversation guide](docs/conversation-loop.md#protected-api-contract)
-for request bodies, pagination, and recovery errors.
+Type `Remember that I prefer learning through small exercises.` to save literal
+wording without a model call. Inspect/edit/forget it in **Memory**. Memory changes
+start fresh model context while retaining visible conversation history. New
+attempts receive all active wording plus bounded eligible recent exchanges.
 
-To configure execution, set `OPENAI_API_KEY` and an explicit account-available
-`OPENAI_CHAT_MODEL` in your existing server environment, then restart the API.
-There is no default model or enable flag. Once configuration is valid, an
-authenticated submit or retry can make paid requests to OpenAI. The current web
-workspace enables Send when assistant status is ready and no attempt is running.
-It preserves rejected drafts and reconciles uncertain delivery with the original
-request ID. See [the sending checkpoint](docs/conversation-ui-plan.md#checkpoint-3a-sending-and-delivery-recovery).
+Messages, active memory, and selected recent context go to OpenAI. Hosted search
+may send derived queries externally. The adapter disables provider retries and
+tracing/export and sets `store: false`; this does not promise zero provider
+retention. Clearing local history cannot retract externally sent content.
+Per-call limits and deadlines do not impose a cumulative spending cap.
 
-The request path is controller → application validation/admission → persisted
-turn/attempt → bounded context → Agents SDK → conditional database completion.
-PostgreSQL owns history; the SDK has no durable session or cross-turn provider
-conversation. Defaults are 8 KiB per message, 32 KiB for the initial transcript,
-2,048 output tokens per model call, a 60-second attempt deadline, and one active
-attempt per owner. The pinned SDK uses its default ten-iteration limit. These
-settings do not impose a cumulative token or daily spending cap.
+See [the conversation guide](docs/conversation-loop.md) for API routes,
+configuration, streaming/recovery, context, citations, and verification. See
+[personal memory](docs/personal-memory.md) for storage, mutation recovery, and
+model-context guarantees.
 
-The adapter sets `store: false`, disables automatic retries and tracing/export,
-and omits sensitive SDK logging. This does not promise zero provider retention.
-Messages and selected recent context go to OpenAI. Hosted public-web search is
-always offered with valid AI configuration, and the model chooses when to use it.
-There is no separate search enable flag. Only observed web activity and validated
-provider annotations become recorded evidence. Generated prose links remain inert.
-`AI_MAX_TOOL_CALLS` is the provider's per-Responses-request built-in-tool setting,
-not a whole-run budget. Search may send derived queries to OpenAI and incur
-additional charges; it does not grant private-account access. Restart the API
-after changing server settings. The composer has
-no cloud-processing or privacy footer, at the owner's request. No persisted
-acknowledgement is required. Clearing local
-history cannot retract content already sent externally.
-
-Execution runs inside the original HTTP request. A lost response can be reconciled
-with history or the same request key; it must not cause a new automatic attempt.
-Process failure can leave a running attempt until its deadline is reconciled as
-interrupted. Retry starts fresh and is explicit. The worker does not resume runs.
-The [configuration and recovery guide](docs/conversation-loop.md) records these
-limits and the local verification evidence. [Integrated acceptance](docs/conversation-loop.md#integrated-acceptance-task-44)
-now covers real local cookies, API/database, and Next.js proxy behavior on phone
-and desktop with a localhost SDK stub. Live OpenAI and deployed TLS/proxy behavior
-remain unverified.
-
-The separate [live smoke command](docs/conversation-loop.md#opt-in-live-smoke-task-45),
-`pnpm smoke:conversation --live`, uses configured server credentials/model and
-three bounded synthetic turns without accessing owner history or the database.
-It can incur OpenAI charges and is never part of ordinary verification.
+The separate `pnpm smoke:conversation --live` command makes paid synthetic
+requests with no database access. It is opt-in and never part of ordinary
+verification. See [the command and its limits](docs/conversation-loop.md#opt-in-live-smoke).
 
 ## Daily commands
 
@@ -201,12 +154,13 @@ apps/
   api/             NestJS HTTP entry point
   worker/          NestJS worker entry point and health listener
 packages/
-  backend/         Identity/conversation use cases, ports, adapters, migrations
+  backend/         Identity/conversation/memory use cases, adapters, migrations
   api-client/      OpenAPI-generated types and typed fetch client
+  memory-command/  Browser-safe literal memory-command parser
 scripts/           Isolated integration-test runner
 tests/             Unit and real-database integration checks
 docs/              Architecture and development notes
-openspec/          Product plan and tracked milestones
+openspec/          Configuration for future specification changes
 ```
 
 Read [the architecture walkthrough](docs/architecture.md) for the service

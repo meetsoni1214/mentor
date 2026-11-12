@@ -89,9 +89,10 @@ redaction. They do not need Docker or cloud credentials.
 `pnpm test:integration` starts an isolated Compose project with a random
 loopback port and temporary PostgreSQL storage. It applies the real migrations,
 checks a real vector operation, verifies migration replay is safe, and removes
-that test project. It also exercises owner provisioning, password recovery, and
-session lifecycle against PostgreSQL. HTTP tests start the compiled API on random
-local ports with the test database URL to check authentication and request
+that test project. It also exercises owner provisioning, password recovery,
+sessions, conversation admission/recovery, and personal-memory mutations/context
+against PostgreSQL. HTTP tests start the compiled API on random local ports with
+the test database URL to check authentication and request
 protections. Test files run sequentially because they reset the shared disposable
 fixtures. The runner never uses the development `DATABASE_URL`.
 
@@ -115,8 +116,8 @@ pullable. Missing Docker is a failed/unavailable integration check, not a pass.
   `API_INTERNAL_URL`; for PostgreSQL update both `POSTGRES_PORT` and `DATABASE_URL`.
 - **Missing generated client types:** run `pnpm build:services` followed by
   `pnpm api:generate`.
-- **No background jobs execute:** expected at this milestone. The worker is a
-  running foundation; capture and queue processors have not been implemented.
+- **No background jobs execute:** the worker provides health checks only;
+  capture and queue processors have not been implemented.
 - **Sign-in returns 403:** with `pnpm dev`, open the HTTPS URL Portless prints
   (normally https://mentor.localhost). With `pnpm dev:direct` or individually
   started services, use the exact `APP_ORIGIN` browser address from `.env`/defaults.
@@ -133,11 +134,3 @@ pullable. Missing Docker is a failed/unavailable integration check, not a pass.
   minutes. Wait for the `Retry-After` interval; restarting the API does not reset it.
 - **Sign-in returns 500:** check service health and apply migration
   `0002_owner_sessions.sql` with `pnpm db:migrate`.
-
-## Next milestone
-
-The current slice adds [browser login and sessions](sign-in.md). Administrative
-password reset is available with `pnpm owner:reset-password`. A minimal capture
-flow remains future work.
-The remainder of the OpenSpec roadmap is not authorization to build everything
-at once.

@@ -69,6 +69,7 @@ The Radix-based shadcn `new-york` components live in
 | `Textarea`                                                | Controlled conversation composer                            |
 | `Alert`, `AlertDescription`                               | Authentication errors, availability notices, refresh errors |
 | `Collapsible`, `CollapsibleTrigger`, `CollapsibleContent` | Keyboard-accessible run details                             |
+| `Dialog`                                                  | Clear-history confirmation and Memory panel                 |
 
 These are adapted from the [official shadcn registry](https://ui.shadcn.com/docs/registry).
 `Button` retains shadcn's variants and `asChild` composition. Our defaults use the
@@ -119,26 +120,12 @@ reflect pending, uncertain, unavailable, and running states through the same
 primitives. The owner removed its
 cloud-processing line and Privacy & context section; the design system does not
 restore either. Provider processing and retention are documented in the
-[conversation guide](conversation-loop.md#cloud-processing-disclosure-and-current-capability-boundary).
+[conversation guide](conversation-loop.md#ai-configuration-and-context).
 
 ## Verification
 
-The shared-brand/shadcn checkpoint passed `pnpm check`, including all 252 tests,
-generated contracts, and the production build. Production browser checks exercise
-the shared sign-in/workspace branding, native button types, and changing the
-primary token across logos, controls, outgoing bubbles, and focus rings while
-neutral text remains unchanged. The conversation regression checks also cover
-pagination, keyboard use, errors, disabled sending, and phone/desktop layouts
-with synthetic API responses. UI dependencies now include Tailwind, Radix
-primitives, class-variance-authority, clsx, tailwind-merge, and Lucide. Database
-integration and live provider calls are outside this frontend migration.
-
-The shadcn migration passed 28 browser scenarios using synthetic responses,
-including Enter/Space toggling and expanded-state announcements for run details,
-associated sign-in labels, shared Input/Textarea use, the minimal header, and the
-existing conversation regression checks. Screenshots and the acceptance script
-are kept under the ignored `output/playwright/conversation-ui/` directory.
-
-The sending slice repeats these 28 browser regressions with the enabled composer
-and adds 29 sending/recovery scenarios. Controls remain the same local shadcn
-primitives; sending state and recovery belong to the conversation feature.
+`pnpm check` verifies web typing, lint, behavior tests, and production compilation.
+Local phone/desktop acceptance covers shared branding, keyboard controls, focus,
+readable citations, minimal memory controls, and layout without horizontal overflow.
+See [conversation](conversation-loop.md#verification) and
+[memory](personal-memory.md#verification) for the acceptance boundary.

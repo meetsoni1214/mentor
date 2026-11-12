@@ -1,8 +1,7 @@
 # Identity boundaries
 
-Identity is Mentor's first reference module for the architecture conventions
-inspired by Rolai's SSO/EMR modules. It owns owner provisioning, administrative
-password recovery, and browser sessions. HTTP integration belongs to the API;
+Identity owns owner provisioning, administrative password recovery, and browser
+sessions. HTTP integration belongs to the API;
 shared behavior belongs to the backend package.
 
 ## Find the code
@@ -38,9 +37,10 @@ dependencies; they do not use Nest decorators or read process environment.
 Zod validates credentials at application entry boundaries.
 
 Driven adapters implement the ports. Drizzle types and SQL remain in persistence
-adapters. The database schema aggregator and conversation's existing owner
-foreign-key/lock references use the relocated owner schema; no database schema
-or migration changes are needed for these file moves.
+adapters. Feature schemas reference the public identity schema for owner foreign
+keys.
+Composition uses identity persistence's public owner-lock capability; repositories
+query only their own module's tables.
 
 ## Follow sign-in
 
@@ -48,8 +48,9 @@ At startup, `IdentityModule` validates authentication configuration and construc
 `Sessions` from a Drizzle repository, password verifier, token generator, and
 session lifetime values. It injects that use case and HTTP settings into
 `AuthHttpService`, and registers the controller and global `AccessGuard`.
-The root API module composes identity and health and keeps the global HTTP error
-filter. OpenAPI export can construct this graph without connecting to PostgreSQL.
+The root API module composes identity, conversation, memory, and health, and
+keeps the global HTTP error filter. OpenAPI export can construct this graph without
+connecting to PostgreSQL.
 
 For a login, the guard checks Origin/CSRF, then the controller validates the
 request and calls `Sessions.login`. The use case reserves a login attempt,
@@ -101,33 +102,6 @@ Origin/CSRF, cookies, global authorization, and restart behavior.
 Identity use cases are available through `@mentor/backend/identity`. Crypto,
 persistence, and schemas have separate entry points; the former root export has
 been removed. [Module boundaries](module-boundaries.md) documents the exports and
-lint enforcement added in the later architecture checkpoint. Conversation mapping
+lint enforcement. Conversation mapping
 and state-specific types are covered in [the conversation walkthrough](conversation-loop.md).
-The conversation walkthrough also describes the subsequent pure context selector.
-
-## Verification record
-
-Verified on 2026-10-25. Before this refactor, formatting, lint, strict types,
-49 unit tests, and 48 isolated integration tests passed; the production web
-build passed outside the sandbox after the existing Next.js advisory notice.
-
-After the refactor:
-
-- `pnpm check` passes outside the sandbox, including 66 unit tests, API contract
-  generation, strict types, lint, formatting, and the production build.
-- `pnpm test:integration` passes all 48 database/HTTP checks on a disposable
-  PostgreSQL instance. This includes concurrent login budget reservation and
-  exact-window recovery, session expiry/restart/logout, password reset and
-  rollback, and existing conversation behavior after owner-schema relocation.
-- The moved `pnpm owner:create` and `pnpm owner:reset-password` commands pass an
-  interactive smoke check against another disposable database with synthetic
-  credentials. Input stays hidden; the previous password is rejected after
-  recovery, and the replacement password establishes a usable session.
-- Generated OpenAPI/client files and versioned migrations have no changes.
-  Strict validation of `add-assistant-conversation-loop` still passes.
-
-Both test databases were removed. Browser acceptance was not rerun for this
-structural checkpoint; the earlier browser evidence remains in sign-in.md.
-The existing sandbox TypeScript-child-process limitation and Next.js 16.4.0
-security advisory remain unresolved. The build's first advisory notice stops
-the command; a subsequent invocation completes while retaining the warning.
+The conversation walkthrough also describes the pure context selector.

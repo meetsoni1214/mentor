@@ -13,6 +13,10 @@ or `dist/` files through the package name.
 | `identity/schema`                    | Owner, session, and login-budget tables                                        |
 | `conversation`                       | Conversation use case, contracts, ports, and domain types                      |
 | `conversation/persistence`           | Drizzle conversation repository                                                |
+| `conversation/model`                 | OpenAI SDK model adapter                                                       |
+| `memory`                             | Personal-memory use case, contracts, ports, and domain types                   |
+| `memory/persistence`                 | Drizzle memory repository                                                      |
+| `memory/schema`                      | Memory table                                                                   |
 | `conversation/schema`                | Conversation, turn, and attempt tables                                         |
 | `config`                             | Validated runtime environment readers                                          |
 | `config/ai`                          | Server-only AI readiness, credentials, and finite run limits                   |
@@ -35,7 +39,7 @@ public source files, avoiding a separate list of internal entry points.
 
 - Web code and the API client cannot import backend implementations, API/worker
   code, Nest, Drizzle, or PostgreSQL clients. The browser uses `@mentor/api-client`.
-- Identity and conversation domain code can import only their own domain files.
+- Identity, conversation, and memory domain code can import only their own domain files.
   Application code and the core entry files can import their own domain and
   application files. Application validation may also use Zod. Frameworks,
   adapters, runtime configuration, and other feature internals are excluded.
@@ -58,17 +62,16 @@ policy review when introduced.
 
 ## Keep the shared database dependency explicit
 
-Conversation persistence imports the owner table through `identity/schema`.
-The database schema aggregator uses the identity and conversation schema entries.
-These are infrastructure dependencies: the existing owner foreign key and owner
-row lock remain necessary for transaction behavior. Neither feature core imports
-those tables. Adding a forwarding service would not remove this coupling.
+Feature schemas reference identity's owner table through `identity/schema` for
+foreign keys. The database schema aggregator imports declared feature schema
+entries. Repositories query only their own module's tables. Identity exposes the
+owner-lock operation, and conversation exposes activity/context-reset capabilities;
+API composition binds these with memory persistence in one shared transaction.
+Feature core code imports neither foreign tables nor Drizzle types.
 
-This checkpoint changes exports and import paths only. It preserves SQL,
-migrations, transaction boundaries, HTTP contracts, and use-case behavior.
-The subsequent [context-selection slice](conversation-loop.md#retained-history-and-model-context)
-extracts a pure application function within these same boundaries. Provider,
-HTTP, and UI integration remain later feature work.
+[Context selection](conversation-loop.md#ai-configuration-and-context) remains a
+pure application function. SDK and HTTP integration stay in adapters; browser
+code uses the generated API client.
 
 ## Review and verification
 
@@ -77,22 +80,3 @@ Read the lint rule and `tests/unit/architecture-boundaries.test.ts` next. Those
 tests exercise the actual ESLint configuration against forbidden and supported
 imports, and check Node's rejection of private/root package imports. Integration
 tests consume the compiled public package entry points.
-
-The incoming checkpoint passed lint and 93 unit tests. Its recorded full-gate
-and isolated PostgreSQL results were 93 unit tests and 50 integration tests.
-
-Verified on 2026-10-25 after this checkpoint:
-
-- `pnpm check` passes outside the sandbox: formatting, lint, strict types, 130
-  unit tests (including 37 boundary checks), contract generation, and production
-  builds.
-- `pnpm test:integration` passes all 50 database/HTTP tests using the compiled
-  public entry points. Its disposable PostgreSQL container and network were
-  removed after the run.
-- Generated OpenAPI/client files and versioned migrations are unchanged.
-  `openspec validate add-assistant-conversation-loop --strict` passes.
-
-The existing Next.js 16.4.0 security advisory remains unresolved and an upgrade
-is still recommended. Its initial notice stops the build; the repeated full
-gate completes with the warning. Browser acceptance and live model access were
-not rerun for this import-only checkpoint.

@@ -1,6 +1,6 @@
 # Owner account creation
 
-This slice adds account storage and an interactive administrative command.
+Owner setup uses account storage and an interactive administrative command.
 There is no public registration endpoint. Browser login, sessions, and password
 verification are described in [sign-in and sessions](sign-in.md). Administrative
 password recovery is available through the local reset command below.
@@ -65,15 +65,14 @@ matching an [OWASP recommended minimum](https://cheatsheetseries.owasp.org/cheat
 The [Node 24.14 crypto API](https://nodejs.org/download/release/v24.14.0/docs/api/crypto.html#cryptoargon2algorithm-parameters-callback)
 labels its Argon2 API a release candidate. It is isolated behind `PasswordHasher`
 so the implementation can change without changing the account-creation use case.
-No extra native npm dependency is required for this slice.
+No extra native npm dependency is required for hashing.
 
-## Current verification limits
+## Verification
 
-Real-database integration tests verify Argon2 credentials, refusal to replace an
-existing owner, and competing provisioning attempts preserving a single owner.
-The hidden-input provision/reset commands also passed a local interactive check
-against a disposable database. See [sign-in verification](sign-in.md#verification-status)
-for the session, HTTP, and browser checks and remaining deployment limits.
+Disposable-database integration checks cover Argon2 credentials, singleton
+provisioning under competing requests, reset/session invalidation, and rollback.
+See [sign-in verification](sign-in.md#verification) for HTTP/session coverage and
+remaining deployment limits.
 
 ## Recover a forgotten password
 

@@ -1,110 +1,92 @@
-# The first layer
+# Architecture
 
-The bootstrap establishes three application processes and a database. Each
-process has an entry point, environment validation, and a clear responsibility.
+Mentor has three application processes and one PostgreSQL database:
 
 ```text
-Browser
-   |
-   v
-Next.js :3000 -- /api/* proxy --> NestJS API :3001
-                                      |
-                                      v
-                              PostgreSQL :55432
-                                      ^
-                                      |
-                              NestJS worker :3002
+Browser → Portless HTTPS → Next.js web → /api rewrite → NestJS API → PostgreSQL
+                                                       |
+                                                       └→ OpenAI Responses
+NestJS worker → PostgreSQL readiness checks
 ```
 
-## Why separate these services?
+`pnpm dev` serves the web app at https://mentor.localhost and supplies that origin
+for cookie/CSRF checks. The API and worker listen on loopback ports 3001 and 3002;
+PostgreSQL uses port 55432 by default. Direct development without Portless uses
+http://127.0.0.1:3000. See [development](development.md) for configuration.
 
-**Web** renders the interface. Its `/api/*` rewrite forwards requests to NestJS,
-which keeps browser calls on the same origin. There are no database queries or
-backend business rules in Next.js.
+## Process responsibilities
 
-**API** will receive requests, authenticate them, and invoke application use
-cases. It now exposes authentication and health endpoints plus development API
-docs. A global guard requires a valid session unless a route is explicitly public;
-mutations additionally require an allowed Origin and a valid CSRF token.
+**Web** renders sign-in, the conversation workspace, and the Memory panel.
+Generated API types and browser-owned response validation sit at its HTTP boundary.
+TanStack Query holds session-scoped saved state; drafts and provisional answer
+text remain in memory. Next.js proxies API calls and contains no database queries
+or backend business rules.
 
-**Worker** is a separately runnable NestJS process. It currently exposes health
-checks and closes database connections on shutdown. It has no job handlers yet;
-durable queue dispatch will be added with capture processing.
+**API** authenticates requests, checks exact Origin and CSRF for mutations, and
+invokes backend use cases. Controllers own decoding and response presentation;
+`ConversationStreamService` owns SSE delivery. Composition supplies database,
+model, and cross-module capabilities to plain application classes.
 
-**PostgreSQL** stores persistent data. The first Drizzle migration enables
-pgvector so future semantic search can use the same database. A second migration
-adds the single owner account used by the administrative setup command.
-A third adds sessions and a shared login-attempt budget.
+**Worker** exposes liveness/readiness and closes its database connections on
+shutdown. It has no job handlers and does not resume conversation attempts.
 
-The service entry points share a backend package. As features arrive, their
-domain and application code will stay separate from NestJS transport and Drizzle
-adapters. No empty hierarchy is needed before those behaviors exist.
+**PostgreSQL** stores the owner, sessions, login budget, conversation, turns,
+attempts, and explicit memories. Versioned Drizzle migrations include pgvector;
+semantic retrieval is not implemented.
 
-The first feature module is `packages/backend/src/identity`: the CLI validates
-input, an application use case coordinates hashing and account creation, and
-adapters implement the hashing and database ports. See [owner setup](owner-setup.md)
-for its execution flow.
-The same module now owns session use cases. API controllers and guards adapt
-HTTP requests; the frontend calls the generated client and stores session state
-in TanStack Query. See [sign-in](sign-in.md) for the complete path.
+## Module ownership
 
-Identity is the first module organized with explicit domain models/errors/policy,
-application ports and use cases, driving CLI/HTTP adapters, and driven
-Drizzle/crypto adapters. API-specific adapters and Nest composition remain in
-`apps/api/src/identity`; shared use cases and adapters remain in
-`packages/backend/src/identity`. The API imports `IdentityModule`, whose provider
-factory constructs the plain `Sessions` class and registers the global guard.
-See [identity boundaries](identity-architecture.md) for the reference layout and
-the atomic login-throttle boundary. Other modules retain their existing layouts
-until their own review checkpoints.
+| Module       | Owns                                                                                   | Implementation guide                            |
+| ------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Identity     | Owner provisioning/reset, credentials, sessions, throttling, owner lock                | [Identity boundaries](identity-architecture.md) |
+| Conversation | Singleton history, admission/replay, retries, context selection, deadlines, completion | [Conversation loop](conversation-loop.md)       |
+| Memory       | Literal capture, active wording, revisions, forgetting, mutation recovery              | [Personal memory](personal-memory.md)           |
 
-The next module, `packages/backend/src/conversation`, implements one continuous
-conversation's persistence and run lifecycle. Domain types and rules live in
-`domain/`; use-case coordination and contracts live in `application/`, with
-repository/model ports in `application/ports/`. Adapters implement those ports
-and depend inward on the application and domain.
-Conversation admission policies own replay, conflict, history-version, and
-concurrency decisions. The Drizzle adapter loads their inputs and evaluates them
-under its database lock before persisting changes; the policies have no ORM or
-framework dependencies.
-Explicit persistence mappers return application turns and state-specific run
-attempts, excluding database-only columns. State-dependent answer, error, and
-finish fields are checked at that boundary and represented by a domain union.
-The pure `application/select-context.ts` function owns bounded message selection;
-the conversation loop retains provider coordination, deadlines, and cancellation.
-It is tested directly with real PostgreSQL and an injected fake provider; it has
-no HTTP or UI integration yet. See [the conversation-loop walkthrough](conversation-loop.md)
-for its request flow, concurrency rules, and review order.
+Backend domain/application code stays independent of NestJS, HTTP, Drizzle, and
+the model SDK. Application ports describe capabilities; adapters implement them.
+Declared package entry points and ESLint enforce import direction. See
+[module boundaries](module-boundaries.md).
 
-Backend consumers now use explicit package subpaths instead of one root export.
-Feature core, concrete adapters, schemas, and framework integration have separate
-entry points. ESLint checks dependency direction and cross-module access during
-`pnpm lint` and `pnpm check`; see [module boundaries](module-boundaries.md) for
-the supported imports and the shared-schema exception.
+Repositories query only their module's tables. API composition coordinates memory
+mutations and conversation context resets through public capabilities in one
+transaction under the identity-owned owner lock. Conversation admission takes the
+same lock, preventing a new memory change from racing active generation. Model
+calls run outside database transactions.
 
-## Follow a request
+## Follow a message
 
-1. The web page links to `/api/v1/health/ready`.
-2. Next.js forwards that request to the API.
-3. The health controller asks the shared database service whether PostgreSQL is
-   reachable and the vector extension exists.
-4. The API responds with HTTP 200 when ready or HTTP 503 otherwise.
+1. The browser gets a session-bound CSRF token and submits text, a request UUID,
+   and the observed history version through the Next.js rewrite.
+2. The API guard authenticates and checks Origin/CSRF; application validation
+   checks the command before admission.
+3. Under the owner lock, conversation admission resolves replay/conflicts or
+   commits a turn and running attempt. SSE acceptance describes committed state.
+4. The use case reads current active memories and eligible recent completed
+   exchanges, then selects bounded context.
+5. The SDK adapter calls Responses, offering hosted web search. Text deltas are
+   provisional and never become durable context.
+6. Conditional completion checks the deadline/history version before saving the
+   final answer, validated evidence, usage, or a sanitized failure.
+7. The browser displays saved state. Disconnects recover through history without
+   automatically submitting another attempt.
 
-`/health/live` does not query the database. This distinction lets a supervisor
-tell a stopped process from a running process whose dependency is unavailable.
-Health responses do not expose connection strings or passwords.
+## Contracts and health
 
-## Follow a contract change
+`pnpm build:services && pnpm api:generate` exports NestJS OpenAPI and generates
+`packages/api-client` types without a database connection. The browser imports
+that client, never backend implementations. `packages/memory-command` contains
+browser-safe literal command parsing shared with the backend.
 
-NestJS describes the HTTP contract through OpenAPI. `pnpm api:generate` exports
-that contract without requiring database access, then generates TypeScript types
-in `packages/api-client`. The frontend consumes the client package and never
-imports backend implementations. Build and development commands perform this
-generation before web compilation.
+Liveness checks show that a process is running. Readiness checks query PostgreSQL;
+API readiness also verifies the vector extension. They return fixed responses
+without credentials or owner content.
 
-## What the foundation does not prove
+## Verification boundary
 
-Successful bootstrap checks establish that the services build, connect, and
-shut down correctly. They do not establish authentication, safe personal-data
-handling, AI quality, background task reliability, or production readiness.
-Those behaviors have their own later implementation and verification steps.
+Unit tests exercise application/domain behavior with injected ports. Integration
+checks apply real migrations to disposable PostgreSQL and test authenticated HTTP
+and SDK composition. SDK tests use localhost provider responses. Local integrated
+phone/desktop acceptance covers real cookies/CSRF, the Next.js rewrite, persistence,
+streaming, recovery, and memory context changes. These results do not establish
+live model behavior or deployed TLS/proxy behavior. See the feature guides for
+verification commands and remaining limits.
