@@ -1,10 +1,11 @@
 # Explicit personal memory
 
-Checkpoints 1–3 implement authenticated API save/read with one `memories` table,
+Checkpoints 1–4 implement authenticated API save/read with one `memories` table,
 composer capture, and a focused Memory panel. The owner requested the simpler
 storage design after reviewing the initial four-table version. Correction and
-forgetting are implemented in checkpoint 3. Model use remains a later
-[checkpoint](../openspec/changes/add-explicit-personal-memory/tasks.md).
+forgetting are implemented in checkpoint 3. Checkpoint 4 supplies the active
+profile to conversation attempts as labeled personal data. Integrated browser
+acceptance remains [checkpoint 5](../openspec/changes/add-explicit-personal-memory/tasks.md).
 
 ## Storage
 
@@ -194,9 +195,9 @@ reject foreign-schema repository imports and ORM types in the transaction port.
 
 Checkpoint 3 implements correction, forgetting, and context boundaries under the
 [reviewed mutation design](personal-memory-mutations.md). Checkpoint 4 supplies
-active memories to model input; checkpoint 5 performs integrated local browser
-acceptance. Model personalization remains disabled. Commit/archive and advancing
-to the next checkpoint require a separate request.
+active memories to model input as described below; checkpoint 5 performs integrated
+local browser acceptance. Commit/archive and advancing to the next checkpoint
+require a separate request.
 
 ## Checkpoint 2: Composer capture and inspection
 
@@ -368,7 +369,8 @@ removes the selected entry through one confirmation. An × in the header closes
 the panel; Escape also closes it and returns focus to the Memory button. The action
 explains that changing memory starts fresh model context; visible history stays.
 New saves also reset context and disclose that effect in the composer hint.
-Model personalization is still disabled.
+Model personalization was still disabled at checkpoint 3; checkpoint 4 below
+connects the active profile to conversation.
 
 Use the same model-disabled application to manage memory. Rejected edits preserve
 the edit draft. A stale-tab rejection shows current wording. Choose **Review
@@ -548,3 +550,134 @@ validation. Blank lines separate the use case's logical steps.
 - Task 3.5's final verification is complete. Checkpoint 4's model use and checkpoint
   5's integrated memory acceptance remain deferred. No live provider calls,
   development-data operations, or archive were performed.
+
+## Checkpoint 4: active memory in conversation
+
+New attempts now read the current owner's complete active profile and pass its
+literal wording as labeled personal data. Capture still makes no model call or
+fake conversation turn. An empty profile adds no message. Only wording travels
+to the provider: IDs, source requests, timestamps, revisions, and forgotten
+entries stay out of the profile input. List ordering remains creation time then
+ID, so an unchanged profile has a stable representation across requests.
+
+### Read the change
+
+1. [Conversation profile port](../packages/backend/src/conversation/application/ports/conversation-profile.reader.ts)
+   defines `read(ownerId)` and the readonly string profile. Conversation core
+   imports neither memory implementation nor persistence.
+2. [API composition](../apps/api/src/conversation/infrastructure/conversation.module.ts)
+   supplies the port using `PersonalMemory.list`, mapping only active wording.
+   The memory use case retains its owner-scoped transaction and owner lock.
+3. [ConversationLoop](../packages/backend/src/conversation/application/conversation-loop.ts)
+   reads eligible history and the profile after new admission. Replayed requests
+   return their saved attempt without rereading either. Intentional retry uses
+   current memory with the original accepted question.
+4. [Context selection](../packages/backend/src/conversation/application/select-context.ts)
+   reserves the complete profile plus current input before fitting whole recent
+   exchanges. [Personal-context serialization](../packages/backend/src/conversation/application/personal-context.ts)
+   is shared by accounting and the model adapter, including its label, JSON
+   escaping, message fields, and UTF-8 representation.
+5. [SDK adapter](../packages/backend/src/conversation/adapters/openai-conversation.model.ts)
+   places that labeled data in a separate user message before the chronological
+   transcript. Governing instructions describe its role; saved content is never
+   interpolated into those instructions. Production still registers only hosted
+   web search. Memories cannot register write tools or grant permissions.
+
+### Exact request and data trace
+
+Save `Remember that I prefer learning through small exercises.` using **Save
+memory**. The committed row contains `I prefer learning through small exercises.`
+and its source request; saving starts fresh model context without creating a
+conversation turn or invoking the provider.
+
+Submit `Teach me database indexes.` through the existing conversation endpoint.
+Admission commits the running attempt under the owner lock. The use case reads
+eligible completed exchanges and asks the composed profile port for active
+wording. With no eligible history, its model input contains:
+
+```json
+{
+  "personalContext": ["I prefer learning through small exercises."],
+  "messages": [{ "role": "user", "text": "Teach me database indexes." }]
+}
+```
+
+The SDK receives a first user message whose content is exactly:
+
+```text
+Saved personal memories (owner-provided data):
+["I prefer learning through small exercises."]
+```
+
+The next user message contains the current question. Eligible earlier exchanges,
+when present, appear between the profile and current question. Existing SDK
+iterations, output settings, per-request hosted-search setting, deadlines,
+storage/tracing controls, and no automatic provider retry remain unchanged.
+There is no provider session or response-ID chain.
+
+Correct the selected entry to `I prefer a complete explanation first.`. The
+existing transaction replaces wording/source and advances the conversation's
+context boundary. The next attempt receives only current wording and exchanges
+at or after that boundary. Old user and assistant restatements remain readable
+in history but cannot enter context through history selection. New exchanges
+accumulate normally. Forgetting removes the entry from the profile and advances
+the boundary again. This does not prevent a new user message from deliberately
+supplying the same wording. Clear history preserves active memories and resets
+the boundary with sequence numbering for the new history version.
+
+The composer hint and memory editor already explain that a memory change starts
+fresh model context while history stays. Those disclosures remain in place;
+no extra confirmation or composer privacy footer is added.
+
+### Limits and recovery
+
+If the full serialized profile plus current question exceeds the configured
+context bound, the admitted attempt is saved as `failed / LIMIT_EXCEEDED` without
+a provider request. The existing UI displays “This response reached an execution
+limit.” It remains inspectable and explicitly retryable. Review memory or the
+server's context setting before retrying; repeated identical retries cannot fix
+the same size constraint. The profile is never silently truncated. When only
+older eligible exchanges are omitted, the completed attempt's `contextLimited`
+flag retains the existing older-messages notice.
+
+A profile-read failure also prevents a provider request and saves the existing
+redacted `PROVIDER_ERROR` failure. The deadline bounds preparation as well as
+model execution; a late profile read cannot start provider work after the
+attempt is interrupted. Memory changes remain busy during an unexpired attempt;
+durable database deadline checks prevent expired answers from publishing after
+memory changes. No new schema, API contract, enable flag, or cumulative budget
+is introduced.
+
+### Checkpoint 4 verification (2026-11-12)
+
+Focused unit and localhost SDK checks cover exact serialized profile limits,
+Unicode/escaping, empty profiles, replay, redacted read failures, delayed reads,
+streaming and JSON input roles, and unregistered memory-write calls. Composed
+PostgreSQL/SDK scenarios in
+[personal-memory-context.test.ts](../tests/integration/personal-memory-context.test.ts)
+cover literal active-entry ordering, singleton-owner replacement, capture without
+provider calls, correction/forgetting with prior restatements, Clear history,
+101 earlier exchanges, profile-size rejection, intentional retry with current
+memory, omitted history, and busy/expired attempts.
+
+- `pnpm check` passes formatting, lint, strict typing, all 589 unit/contract
+  tests, and the default Turbopack production build.
+- `pnpm test:integration` passes all 163 disposable PostgreSQL/HTTP/SDK checks,
+  including eight new composed profile scenarios. The harness removes its test
+  container, volume, and network afterward.
+- Strict OpenSpec validation and whitespace checks pass. Regenerated API/client
+  contracts have no drift; this slice adds no migration or dependency change.
+  Development-startup and lockfile edits already present in the workspace remain
+  separate from this checkpoint.
+- Generated `.playwright-cli/` snapshots are ignored alongside existing browser
+  artifacts; the initial full check encountered formatting in three such files.
+  Their contents were preserved, and the full check then passed. Local SDK tests
+  and production build used the permitted execution route for localhost listening.
+- No live provider calls, development-data operations, new browser acceptance,
+  commit, or archive were performed. The walkthrough above is the review entry
+  point; stop here before checkpoint 5.
+
+These tests inspect real SDK requests to a localhost stub; all other provider
+traffic is denied. Fixture answers are supplied by the stub and do not establish
+live model obedience, teaching quality, or universal prompt-injection protection.
+Checkpoint 5's integrated phone/desktop memory journey remains deferred.

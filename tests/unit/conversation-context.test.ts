@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { selectContext } from '../../packages/backend/src/conversation/application/select-context.js';
+import {
+  ContextLimitError,
+  selectContext,
+} from '../../packages/backend/src/conversation/application/select-context.js';
 import type { ModelMessage } from '../../packages/backend/src/conversation/application/conversation.contracts.js';
 
 const current = {
@@ -8,6 +11,50 @@ const current = {
 } satisfies ModelMessage;
 
 describe('conversation context selection', () => {
+  it.each(['🌱 café 你好', '"quoted"\n\\path\t'])(
+    'reserves the complete labeled profile, including serialization overhead for %j',
+    (wording) => {
+      const profile = [wording, 'I prefer small exercises.'];
+      const personalMessage = {
+        role: 'user',
+        text: `Saved personal memories (owner-provided data):\n${JSON.stringify(profile)}`,
+      };
+      const exactBytes = Buffer.byteLength(
+        JSON.stringify([personalMessage, current]),
+      );
+      expect(
+        selectContext(
+          current.text,
+          [{ text: 'Q', answer: 'A' }],
+          exactBytes,
+          profile,
+        ),
+      ).toEqual({
+        messages: [current],
+        contextLimited: true,
+      });
+      expect(() =>
+        selectContext(current.text, [], exactBytes - 1, profile),
+      ).toThrow(ContextLimitError);
+
+      const history = [{ text: 'Q', answer: 'A' }];
+      const messages: ModelMessage[] = [
+        { role: 'user', text: 'Q' },
+        { role: 'assistant', text: 'A' },
+        current,
+      ];
+      const withHistory = Buffer.byteLength(
+        JSON.stringify([personalMessage, ...messages]),
+      );
+      expect(
+        selectContext(current.text, history, withHistory, profile),
+      ).toEqual({ messages, contextLimited: false });
+      expect(
+        selectContext(current.text, history, withHistory - 1, profile),
+      ).toEqual({ messages: [current], contextLimited: true });
+    },
+  );
+
   it('retains the current message when there is no completed history', () => {
     expect(selectContext(current.text, [], 1024)).toEqual({
       messages: [current],

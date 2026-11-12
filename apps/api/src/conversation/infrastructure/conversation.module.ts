@@ -6,6 +6,7 @@ import type { AIEnvironment } from '@mentor/backend/config/ai';
 import type { DatabaseConnection } from '@mentor/backend/database';
 import { DatabaseModule, DatabaseService } from '@mentor/backend/database/nest';
 import { Module } from '@nestjs/common';
+import { createPersonalMemory } from '../../memory/infrastructure/create-personal-memory.js';
 import {
   AssistantController,
   ConversationController,
@@ -20,6 +21,7 @@ export function createConversationLoop(
   configuration: AIEnvironment,
   transport: ConstructorParameters<typeof OpenAIConversationModel>[1] = {},
 ): ConversationLoop {
+  const memory = createPersonalMemory(db);
   return new ConversationLoop(
     new DrizzleConversationRepository(db),
     configuration.enabled
@@ -29,6 +31,13 @@ export function createConversationLoop(
           model: new OpenAIConversationModel(configuration.apiKey, transport),
         }
       : { enabled: false },
+    undefined,
+    {
+      read: async (ownerId) => {
+        const profile = await memory.list(ownerId);
+        return profile.entries.map((entry) => entry.text);
+      },
+    },
   );
 }
 

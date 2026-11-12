@@ -8,6 +8,12 @@ SDK with a localhost provider stub, and the production Next.js proxy. Live
 OpenAI behavior and a deployed TLS/proxy environment remain unverified. Earlier
 checkpoint sections retain their historical results and limits.
 
+[Personal memory checkpoint 4](personal-memory.md#checkpoint-4-active-memory-in-conversation)
+now supplies active saved wording to new attempts through an application-owned
+profile port. Correction and forgetting exclude earlier exchanges from future
+context while preserving visible history. Integrated browser acceptance of the
+full memory journey remains its separate checkpoint 5.
+
 Mentor will have one continuous conversation. The owner will not create, name,
 or choose threads. This checkpoint implements its backend persistence and run
 lifecycle, server-only AI configuration, and a standard Agents SDK adapter verified
@@ -903,13 +909,17 @@ History is paginated, newest page first with messages ordered chronologically
 within each page. The cursor carries its history version. Older messages remain
 available even when they do not fit in a model request.
 
-For a new attempt, the use case selects the newest contiguous completed pairs
-that fit its serialized UTF-8 byte limit, up to 100 pairs. It always retains the
-current message. Failed and interrupted partial output is excluded. Omission sets
+For a new attempt, the use case reserves the complete active personal profile
+and current message, then selects the newest contiguous eligible completed pairs
+that fit its serialized UTF-8 byte limit, up to 100 pairs. The profile's labeled
+message and JSON escaping count toward that limit. If the required profile and
+current input cannot fit, the attempt fails visibly with `LIMIT_EXCEEDED` before
+any provider call. Failed and interrupted partial output is excluded. Omission sets
 `contextLimited`; it never starts another conversation or deletes old messages.
 
 `application/select-context.ts` owns that selection as a pure function. It accepts
-the current text, completed pairs ordered newest first, and the byte budget. It
+the current text, completed pairs ordered newest first, byte budget, and active
+personal context. It
 returns `{ messages, contextLimited }` without changing its inputs. Each pair is
 included whole, and selection stops at the first pair that cannot fit; it does
 not skip that pair to include smaller older ones. The selected messages are sent
@@ -930,10 +940,21 @@ Admission and completion transactions are unchanged, and model calls still run
 outside those transactions. The selector remains private to the module; no new
 service, injected strategy, or package entry point is needed.
 
-The use case bounds the initial transcript passed to the model port. SDK
+The API composes the conversation-owned profile port with `PersonalMemory.list`
+and passes only current wording to the model. The SDK receives this as a separate
+labeled user-data message, never interpolated into governing instructions.
+An empty profile leaves the transcript unchanged. Admission and memory changes
+share the existing owner lock; new memory changes remain busy while an unexpired
+attempt runs. A memory change atomically advances `context_start_sequence`, so
+earlier user/assistant restatements remain visible but are excluded from context.
+Clear history resets this boundary with its sequence/version. Ordinary replay
+returns the saved snapshot; an intentional retry reads the current profile.
+
+The use case bounds the initial transcript and profile passed to the model port. SDK
 serialization overhead and later intermediate context follow the SDK's normal
-behavior without an extra adapter byte check. Long-term memory, historical retrieval, and
-automatic summarization are not implemented. Stored history alone is not a
+behavior without an extra adapter byte check. Explicit saved memory is implemented;
+automatic memory extraction, semantic historical retrieval, and summarization
+remain deferred. Stored history alone is not a
 promise that the model can recall every older fact.
 
 ## Clear history and stale tabs

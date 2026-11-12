@@ -8,8 +8,13 @@ import type {
 } from './conversation.contracts.js';
 import type { ConversationModel } from './ports/conversation.model.js';
 import type { ConversationRepository } from './ports/conversation.repository.js';
+import type { ConversationProfileReader } from './ports/conversation-profile.reader.js';
 import type { RunOutcome } from '../domain/conversation.js';
-import { contextByteLength, selectContext } from './select-context.js';
+import {
+  ContextLimitError,
+  contextByteLength,
+  selectContext,
+} from './select-context.js';
 import {
   clearHistorySchema,
   historyOptionsSchema,
@@ -34,6 +39,9 @@ export class ConversationLoop {
     private readonly repository: ConversationRepository,
     private readonly execution: ConversationExecution,
     private readonly clock: () => Date = () => new Date(),
+    private readonly profile: ConversationProfileReader = {
+      read: async () => [],
+    },
   ) {
     if (!execution.enabled) return;
     const { limits } = execution;
@@ -181,61 +189,74 @@ export class ConversationLoop {
     const timer = setTimeout(() => controller.abort(), remainingMs);
     let delivering = true;
     try {
-      const history = await this.repository.context(
-        ref,
-        admission.turn.sequence,
-      );
-      const { messages, contextLimited } = selectContext(
-        admission.turn.text,
-        history,
-        limits.maxContextBytes,
-      );
-      let outcome: RunOutcome;
-      if (
-        controller.signal.aborted ||
-        this.clock().getTime() >= admission.attempt.deadlineAt.getTime()
-      ) {
-        controller.abort();
-        outcome = interrupted;
-      } else {
-        try {
-          outcome = await Promise.race([
-            model.complete({
-              model: limits.model,
-              messages,
-              tools: limits.allowedTools,
-              maxOutputTokens: limits.maxOutputTokens,
-              maxToolCalls: limits.maxToolCalls,
-              signal: controller.signal,
-              ...(onProgress
-                ? {
-                    onTextDelta: (delta: string) => {
-                      if (
-                        delivering &&
-                        !controller.signal.aborted &&
-                        this.clock().getTime() <
-                          admission.attempt.deadlineAt.getTime() &&
-                        delta
-                      )
-                        notify({
-                          type: 'text_delta',
-                          historyVersion: ref.historyVersion,
-                          turnId: admission.turn.id,
-                          attemptId: ref.attemptId,
-                          delta,
-                        });
-                    },
-                  }
-                : {}),
-            }),
-            aborted,
-          ]);
-        } catch {
-          // Never propagate provider payloads or uncertain exceptions to callers/logs.
-          outcome = controller.signal.aborted
-            ? interrupted
-            : { state: 'failed', errorCode: 'PROVIDER_ERROR' };
+      let contextLimited = false;
+      const run = async (): Promise<RunOutcome> => {
+        const history = await this.repository.context(
+          ref,
+          admission.turn.sequence,
+        );
+        const personalContext = await this.profile.read(ownerId);
+        const selected = selectContext(
+          admission.turn.text,
+          history,
+          limits.maxContextBytes,
+          personalContext,
+        );
+        const { messages } = selected;
+        contextLimited = selected.contextLimited;
+        if (
+          controller.signal.aborted ||
+          this.clock().getTime() >= admission.attempt.deadlineAt.getTime()
+        ) {
+          controller.abort();
+          return interrupted;
+        } else {
+          return model.complete({
+            model: limits.model,
+            messages,
+            personalContext,
+            tools: limits.allowedTools,
+            maxOutputTokens: limits.maxOutputTokens,
+            maxToolCalls: limits.maxToolCalls,
+            signal: controller.signal,
+            ...(onProgress
+              ? {
+                  onTextDelta: (delta: string) => {
+                    if (
+                      delivering &&
+                      !controller.signal.aborted &&
+                      this.clock().getTime() <
+                        admission.attempt.deadlineAt.getTime() &&
+                      delta
+                    )
+                      notify({
+                        type: 'text_delta',
+                        historyVersion: ref.historyVersion,
+                        turnId: admission.turn.id,
+                        attemptId: ref.attemptId,
+                        delta,
+                      });
+                  },
+                }
+              : {}),
+          });
         }
+      };
+      let outcome: RunOutcome;
+      try {
+        outcome = await Promise.race([run(), aborted]);
+      } catch (error) {
+        if (error instanceof ConversationError) throw error;
+        // Never propagate provider payloads or uncertain exceptions to callers/logs.
+        outcome = controller.signal.aborted
+          ? interrupted
+          : {
+              state: 'failed',
+              errorCode:
+                error instanceof ContextLimitError
+                  ? 'LIMIT_EXCEEDED'
+                  : 'PROVIDER_ERROR',
+            };
       }
       delivering = false;
       if (outcome.state === 'completed') {

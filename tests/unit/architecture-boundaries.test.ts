@@ -92,6 +92,8 @@ describe('enforced architecture boundaries', () => {
       'core',
     ],
     [core, "import('@mentor/backend/conversation/persistence');", 'core'],
+    [core, "import '@mentor/backend/memory';", 'core'],
+    [core, "import '@mentor/backend/memory/persistence';", 'core'],
     [core, "import '../domain/../../config/environment.js';", 'core'],
     [domain, "import '../application/conversation.contracts.js';", 'core'],
     [domain, "import 'zod';", 'core'],

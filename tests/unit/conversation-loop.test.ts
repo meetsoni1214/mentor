@@ -11,6 +11,7 @@ import type {
 } from '../../packages/backend/src/conversation/application/conversation.contracts.js';
 import type { ConversationModel } from '../../packages/backend/src/conversation/application/ports/conversation.model.js';
 import type { ConversationRepository } from '../../packages/backend/src/conversation/application/ports/conversation.repository.js';
+import type { ConversationProfileReader } from '../../packages/backend/src/conversation/application/ports/conversation-profile.reader.js';
 import type { RunOutcome } from '../../packages/backend/src/conversation/domain/conversation.js';
 
 const limits: RunLimits = {
@@ -92,11 +93,19 @@ function setup(operation: 'submit' | 'retry' = 'submit') {
   const model = {
     complete: vi.fn<ConversationModel['complete']>().mockResolvedValue(output),
   };
-  const loop = new ConversationLoop(repository, {
-    enabled: true,
-    model,
-    limits,
-  });
+  const profile = {
+    read: vi.fn<ConversationProfileReader['read']>().mockResolvedValue([]),
+  };
+  const loop = new ConversationLoop(
+    repository,
+    {
+      enabled: true,
+      model,
+      limits,
+    },
+    undefined,
+    profile,
+  );
   const run = (observer: ConversationProgressObserver) =>
     operation === 'submit'
       ? loop.submit(
@@ -117,6 +126,7 @@ function setup(operation: 'submit' | 'retry' = 'submit') {
     repository,
     model,
     loop,
+    profile,
   };
 }
 
@@ -125,6 +135,96 @@ afterEach(() => {
 });
 
 describe('bounded conversation execution', () => {
+  it.each(['submit', 'retry'] as const)(
+    '%s reads the current owner profile only after new admission',
+    async (operation) => {
+      const { run, profile, model, input, repository } = setup(operation);
+      profile.read.mockImplementation(async (ownerId) => {
+        expect(ownerId).toBe(input.ownerId);
+        expect(repository[operation]).toHaveBeenCalledTimes(1);
+        return ['I prefer exercises.'];
+      });
+      await run(() => {});
+      expect(model.complete.mock.calls[0]?.[0]).toMatchObject({
+        personalContext: ['I prefer exercises.'],
+        messages: [{ role: 'user', text: input.text }],
+      });
+      expect(profile.read).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['submit', 'retry'] as const)(
+    '%s keeps an empty profile compatible with ordinary messages',
+    async (operation) => {
+      const { run, model, input } = setup(operation);
+      await run(() => {});
+      expect(model.complete.mock.calls[0]?.[0]).toMatchObject({
+        personalContext: [],
+        messages: [{ role: 'user', text: input.text }],
+      });
+    },
+  );
+
+  it.each(['submit', 'retry'] as const)(
+    '%s returns saved replay without rereading memory',
+    async (operation) => {
+      const { run, profile, repository, admission, model } = setup(operation);
+      repository[operation].mockResolvedValue({ ...admission, execute: false });
+      await run(() => {});
+      expect(profile.read).not.toHaveBeenCalled();
+      expect(model.complete).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['submit', 'retry'] as const)(
+    '%s persists an input-limit failure without a model call or silently dropping memories',
+    async (operation) => {
+      const { run, profile, repository, model } = setup(operation);
+      profile.read.mockResolvedValue(['Large preference'.repeat(20)]);
+      await run(() => {});
+      expect(model.complete).not.toHaveBeenCalled();
+      expect(repository.finish.mock.calls[0]?.[1]).toEqual({
+        state: 'failed',
+        errorCode: 'LIMIT_EXCEEDED',
+      });
+    },
+  );
+
+  it('fails visibly without a provider call when the profile cannot be read', async () => {
+    const { run, profile, repository, model } = setup();
+    profile.read.mockRejectedValue(new Error('PRIVATE memory details'));
+    await run(() => {});
+    expect(model.complete).not.toHaveBeenCalled();
+    expect(repository.finish.mock.calls[0]?.[1]).toEqual({
+      state: 'failed',
+      errorCode: 'PROVIDER_ERROR',
+    });
+  });
+
+  it('ends a stalled profile read at the deadline and prevents late provider work', async () => {
+    vi.useFakeTimers();
+    const { run, profile, repository, model } = setup();
+    let release!: (value: string[]) => void;
+    profile.read.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const running = run(() => {});
+    await vi.advanceTimersByTimeAsync(1000);
+    await running;
+    expect(repository.finish.mock.calls[0]?.[1]).toEqual({
+      state: 'interrupted',
+      errorCode: 'INTERRUPTED',
+    });
+    release([]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(model.complete).not.toHaveBeenCalled();
+    expect(repository.finish).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it.each(['submit', 'retry'] as const)(
     '%s acknowledges committed admission, delivers provisional text, and awaits persistence before returning',
     async (operation) => {

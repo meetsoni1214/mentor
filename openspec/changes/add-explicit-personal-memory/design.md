@@ -3,7 +3,8 @@
 ## Context
 
 See proposal.md and docs/memory-evaluation.md for motivation and evaluation. The owner confirmed saving their wording directly, then requested simpler persistence after reviewing checkpoint 1. This design replaces the initial four-table implementation with one `memories` table. Checkpoint 2 implements composer capture, the Memory panel, and scoped save
-recovery. Model personalization remains disabled.
+recovery. Checkpoint 3 adds correction/forgetting and context boundaries;
+checkpoint 4 supplies current active wording to conversation input.
 
 Preserve the existing boundaries: framework-independent memory core, Drizzle and HTTP adapters, authenticated session ownership, and PostgreSQL as conversation authority. Conversation admission already locks the owner row. Memory reuses that lock. The browser's draft/recovery coordinator and public session-scope contract remain the integration points for checkpoint 2.
 
@@ -89,7 +90,7 @@ The [personal-memory walkthrough](../../../docs/personal-memory.md#checkpoint-3-
 is the implementation reference for storage, replay/conflict behavior, source
 provenance, request flow, and verification. Keep entry revisions, content-free
 forgotten records, owner locking, and atomic context-boundary updates. Model use
-remains deferred to checkpoint 4.
+is implemented in checkpoint 4 below.
 
 The owner-approved browser cleanup shares only execution and failure mechanics,
 uses one list cache with stale-read cancellation, and requires explicit review of
@@ -97,7 +98,7 @@ a newer entry while preserving the edit draft. Save-specific draft handling and
 edit-specific checks remain separate. PATCH/DELETE payloads and backend policy
 are unchanged by that cleanup.
 
-### 5. Conversation use remains gated
+### 5. Active profile in conversation (checkpoint 4)
 
 Checkpoint 3 establishes the conversation-owned `context_start_sequence`
 boundary on accepted memory changes. Earlier exchanges are omitted from model
@@ -106,6 +107,15 @@ with the sequence counter. See the walkthrough for coordination and migration
 behavior.
 
 Checkpoint 4 adds a conversation-owned profile port at API composition and a separate labeled personal-data field at the model boundary. Fit the full profile and current input within existing context bytes, then fit eligible prior exchanges. If required context cannot fit, fail visibly before a provider call. Replay returns saved conversation state; intentional retry uses current memory. Preserve SDK defaults, existing privacy/retry controls, and always-available hosted search with valid model configuration.
+
+API composition implements the port through `PersonalMemory.list` and maps only
+active wording in its stable creation-time/ID order. The model port carries a
+readonly string profile separately from transcript messages. Shared serialization
+prepends a labeled user-data message for both context-byte accounting and SDK
+input; an empty profile adds nothing. Saved content is never interpolated into
+governing instructions, and no memory write tool is registered. The existing
+`LIMIT_EXCEEDED` attempt outcome represents required-context overflow without
+API/schema changes. Preparation/read failures are redacted and deadline-bounded.
 
 ### 6. Review checkpoints
 

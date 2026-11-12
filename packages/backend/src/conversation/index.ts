@@ -16,6 +16,10 @@ export type {
   Submission,
 } from './application/conversation.contracts.js';
 export type { ConversationModel } from './application/ports/conversation.model.js';
+export type {
+  ConversationProfileReader,
+  PersonalContext,
+} from './application/ports/conversation-profile.reader.js';
 export type { ConversationRepository } from './application/ports/conversation.repository.js';
 export type {
   ConversationTurn,
