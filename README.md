@@ -56,7 +56,7 @@ Preserve an existing `.env`; do not copy over it to pick up optional values.
 
 | Service           | Address                                   | Purpose                                    |
 | ----------------- | ----------------------------------------- | ------------------------------------------ |
-| Web               | http://127.0.0.1:3000                     | Sign-in and conversation workspace         |
+| Web               | https://mentor.localhost                  | Sign-in and conversation workspace         |
 | API               | http://127.0.0.1:3001/api/v1/health/live  | API liveness                               |
 | API readiness     | http://127.0.0.1:3001/api/v1/health/ready | Database connection and pgvector migration |
 | API documentation | http://127.0.0.1:3001/api/docs            | Development OpenAPI explorer               |
@@ -64,9 +64,18 @@ Preserve an existing `.env`; do not copy over it to pick up optional values.
 | Worker readiness  | http://127.0.0.1:3002/health/ready        | Worker database connectivity               |
 | PostgreSQL        | 127.0.0.1:55432                           | Persistent development database            |
 
-`pnpm dev` builds the service code, generates API client types, and starts the
-TypeScript watcher, API, worker, and web processes together. Ctrl+C stops the
-application processes. `pnpm db:down` stops PostgreSQL without deleting its volume.
+`pnpm dev` uses the pinned Portless dependency to serve the web app at
+https://mentor.localhost, builds the service code, generates API client types,
+and starts the TypeScript watcher, API, worker, and web processes together.
+Portless assigns the web server's internal port; `/api` requests still pass through
+Next.js to the loopback API. The launcher supplies the public URL as `APP_ORIGIN`
+without editing `.env`. On first use, Portless may request sudo to trust its local
+certificate and start its HTTPS proxy on port 443. See the
+[Portless development notes](docs/development.md#portless-local-https).
+
+Ctrl+C stops the application processes; the shared Portless proxy stays available
+for other projects. `pnpm db:down` stops PostgreSQL without deleting its volume.
+Use `pnpm dev:direct` for the original http://127.0.0.1:3000 setup without Portless.
 
 All application listeners and the database port bind to loopback by default.
 Sign-in has local database, API, and browser verification. Deployment hardening
@@ -93,10 +102,10 @@ Local sign-in details can be kept in [README.local.md](README.local.md), which i
 excluded from Git.
 
 See [owner setup](docs/owner-setup.md) for the command's flow and current limits.
-After creating the account, open http://127.0.0.1:3000 and sign in. Keep this
+After creating the account, open https://mentor.localhost and sign in. Keep this
 browser address consistent: mutation requests must match `APP_ORIGIN`, which
-defaults to `http://127.0.0.1:3000`. Restart `pnpm dev` after applying the new
-migration. See [sign-in and sessions](docs/sign-in.md) for the request flow.
+`pnpm dev` sets from Portless's public URL. Restart `pnpm dev` after applying the
+new migration. See [sign-in and sessions](docs/sign-in.md) for the request flow.
 
 ## Conversation API checkpoint
 

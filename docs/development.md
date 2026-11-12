@@ -7,28 +7,55 @@ Node's environment-file support. Existing exported variables take precedence.
 The web server loads it in `next.config.ts`; only explicitly public frontend
 variables could be bundled, and none are required here.
 
+`pnpm dev` overrides `APP_ORIGIN` in its child processes with Portless's public URL.
+The `APP_ORIGIN` in `.env` remains available for direct or production startup.
+
 Database credentials appear in both Compose variables and `DATABASE_URL`; keep
 them consistent. Restart services after configuration changes. Changing the
 Compose password does not alter a role inside an existing database volume.
 
-| Variable                    | Default/example       | Meaning                                    |
-| --------------------------- | --------------------- | ------------------------------------------ |
-| NODE_ENV                    | development           | Runtime mode                               |
-| HOST                        | 127.0.0.1             | API and worker bind address                |
-| API_PORT                    | 3001                  | API listener                               |
-| WORKER_PORT                 | 3002                  | Worker health listener                     |
-| API_INTERNAL_URL            | http://127.0.0.1:3001 | Web server's API destination               |
-| APP_ORIGIN                  | http://127.0.0.1:3000 | Exact browser origin allowed for mutations |
-| SESSION_IDLE_SECONDS        | 1800                  | Session idle lifetime                      |
-| SESSION_ABSOLUTE_SECONDS    | 86400                 | Maximum session lifetime                   |
-| POSTGRES_PORT               | 55432                 | Development database host port             |
-| DATABASE_URL                | See `.env.example`    | PostgreSQL connection string               |
-| DATABASE_POOL_MAX           | 5                     | Per-process maximum database connections   |
-| DATABASE_CONNECT_TIMEOUT_MS | 3000                  | Connection deadline                        |
+| Variable                    | Default/example       | Meaning                                                  |
+| --------------------------- | --------------------- | -------------------------------------------------------- |
+| NODE_ENV                    | development           | Runtime mode                                             |
+| HOST                        | 127.0.0.1             | API and worker bind address                              |
+| API_PORT                    | 3001                  | API listener                                             |
+| WORKER_PORT                 | 3002                  | Worker health listener                                   |
+| API_INTERNAL_URL            | http://127.0.0.1:3001 | Web server's API destination                             |
+| APP_ORIGIN                  | http://127.0.0.1:3000 | Exact browser origin; supplied by Portless in `pnpm dev` |
+| SESSION_IDLE_SECONDS        | 1800                  | Session idle lifetime                                    |
+| SESSION_ABSOLUTE_SECONDS    | 86400                 | Maximum session lifetime                                 |
+| POSTGRES_PORT               | 55432                 | Development database host port                           |
+| DATABASE_URL                | See `.env.example`    | PostgreSQL connection string                             |
+| DATABASE_POOL_MAX           | 5                     | Per-process maximum database connections                 |
+| DATABASE_CONNECT_TIMEOUT_MS | 3000                  | Connection deadline                                      |
 
 Invalid backend configuration reports variable names without including values.
 Use separate API and worker ports. A database connection is acquired on readiness
 requests, so liveness remains available during a database outage.
+
+## Portless local HTTPS
+
+Run `pnpm dev`, then open **https://mentor.localhost**. Portless is pinned in the
+root development dependencies; a global installation is not required. The web
+server reads Portless's assigned `PORT` instead of fixing port 3000. The public
+URL is passed to the API as `APP_ORIGIN`, enabling Secure cookies and preserving
+the exact-origin and CSRF checks. Browser `/api` requests continue through the
+existing Next.js rewrite to `API_INTERNAL_URL`.
+
+Portless starts its shared HTTPS proxy automatically. First-time setup may need
+sudo to install its local certificate authority and bind port 443. To inspect or
+repair that setup, run `pnpm exec portless doctor` or `pnpm exec portless trust`.
+If the shared proxy is no longer needed, stop it with `pnpm exec portless proxy stop`.
+The default proxy and application listeners remain local to this machine.
+
+Use the URL Portless prints. Linked Git worktrees receive a branch prefix, and
+the launcher passes that full origin to the API automatically. API and worker
+ports, and PostgreSQL, retain their existing configuration: simultaneous checkouts
+still need separate API/worker ports and matching `API_INTERNAL_URL` values.
+
+For development without Portless, run `pnpm dev:direct`. With the example
+configuration and no exported `PORT`, this serves http://127.0.0.1:3000 and uses
+the original `.env`/default `APP_ORIGIN`. Production start commands are unchanged.
 
 ## Migrations
 
@@ -90,9 +117,18 @@ pullable. Missing Docker is a failed/unavailable integration check, not a pass.
   `pnpm api:generate`.
 - **No background jobs execute:** expected at this milestone. The worker is a
   running foundation; capture and queue processors have not been implemented.
-- **Sign-in returns 403:** use the exact `APP_ORIGIN` browser address. If you
-  prefer localhost, set `APP_ORIGIN=http://localhost:3000` in `.env` and restart
-  the API. Do not disable Origin or CSRF checks.
+- **Sign-in returns 403:** with `pnpm dev`, open the HTTPS URL Portless prints
+  (normally https://mentor.localhost). With `pnpm dev:direct` or individually
+  started services, use the exact `APP_ORIGIN` browser address from `.env`/defaults.
+  Restart all services together after changing modes. Do not disable Origin or
+  CSRF checks.
+- **Chrome rejects the local HTTPS certificate on Linux:** even after
+  `pnpm exec portless trust`, Chrome may need the existing `~/.portless/ca.pem`
+  imported into its user NSS certificate store. Follow Chromium's
+  [Linux certificate guide](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/linux/cert_management.md)
+  to import that CA with SSL trust (`C,,`), then fully restart Chrome. The store
+  is `~/.pki/nssdb` when present, otherwise `~/.local/share/pki/nssdb` in current
+  Chromium. Do not disable certificate verification.
 - **Sign-in returns 429:** the shared budget permits five attempts per fifteen
   minutes. Wait for the `Retry-After` interval; restarting the API does not reset it.
 - **Sign-in returns 500:** check service health and apply migration
